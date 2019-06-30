@@ -84,7 +84,7 @@ while iterate
         x0    = dp;
         e0    = de;
         V     = V ./ 1.5;   % increase precision 
-        %gridn = gridn * 10; % refine grid
+        gridn = gridn / 2; % refine grid
         
         pupdate(n,de,e0,'accept');
         if doplot; makeplot(x0); end
@@ -93,8 +93,8 @@ while iterate
         pupdate(n,de,e0,'reject');
         
         % reset grid and variance
-        V               = V * (10/n);
-        gridn           = gridn * (10/n);
+        V               = V * 2;
+        gridn           = gridn * 2;
         n_reject_consec = n_reject_consec + 1;
         
         % invoke a sampling routine temporarily?
@@ -128,7 +128,7 @@ while iterate
         % print tidy update
         s  = sprintf('Parameter: %d/%d',length(x0),length(x0));
         fprintf(repmat(' ',[length(s),1]));
-        pupdate(n,de,e0,'reseed');
+        pupdate(n,de,e0,'sample');
     end
     
     % give up after 10 failed iterations
@@ -208,6 +208,7 @@ for i = 1:length(x0)
             ex = dex;
 
             [~,I]  = min(ex);
+            I      = I(1);     % catch if theres more than 1 minimum..
             dP(i)  = px(I);
             Ers(i) = ex(I);
             

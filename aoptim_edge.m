@@ -1,5 +1,34 @@
-function [X,F] = aoptim_edge(fun,x0,V,y,maxit)
+function [X,F] = aoptim_edge(fun,x0,V,y,maxit,type)
 global aopt
+% minimise a problem of the form:
+%
+% y = f(x)
+% e = sum(Y0 - y).^2
+%
+% usage:
+%   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type)
+%
+% fun = functional handle / anonymous function
+% x0  = starting points (vector input to fun)
+% V   = variances for each element of x0
+% y   = Y0, for computing the objective: e = sum(Y0 - y).^2
+% maxit = number of iterations (def=128)
+% type = 'lin' or 'pol'  - locally linear model or polynomial (def lin)
+%
+% 
+% To fit problems of the form:
+% 
+% e = f(x)
+%
+% usage - set y=0:
+%   [X,F] = aoptim_edge(fun,x0,V,0,maxit,type)
+%
+%
+% AS
+
+if nargin < 6 || isempty(type)
+    type = 'lin';
+end
 
 if nargin < 5 || isempty(maxit)
     maxit = 128;
@@ -23,10 +52,17 @@ Vb = V;
 
 % initial grid reolution
 gridn = 10000;
+gridn = 100;
 
 % initial point plot
 if doplot
     makeplot(x0);
+end
+
+% print type of model
+switch lower(type)
+    case {'lin' 'linear'}; fprintf('Using locally linear model\n');
+    case {'pol' 'poly' 'polinomial'}; fprintf('Using polynomial model\n');
 end
 
 n_reject_consec = 0;
@@ -38,7 +74,7 @@ while iterate
     n = n + 1;
    
     % construct an optimiser
-    [de,dp,V] = pol_opt(x0,V,gridn);
+    [de,dp,V] = pol_opt(x0,V,gridn,type);
     
     % ignore complex parameter values
     dp = real(dp);
@@ -102,7 +138,7 @@ end
 
 end
 
-function [e,x1,V] = pol_opt(x0,V,gridn)
+function [e,x1,V] = pol_opt(x0,V,gridn,type)
 global aopt
 
 x0        = full(x0(:));
@@ -143,7 +179,7 @@ for i   = 1:length(x0)
 end
 
 
-% make an n-dim linear model, passing through fp: f(0)
+% make an n-dim linear or poly model, passing through fp: f(0)
 %--------------------------------------------------------------------------
 for i = 1:length(x0)
     px     = [ LB(i) mean([LB(i),x0(i)]) x0(i) mean([UB(i),x0(i)]) UB(i) ];
@@ -152,17 +188,36 @@ for i = 1:length(x0)
     chunks = gridn/length(px);
     dpx    = [];
     dex    = [];
-    for j  = 1:length(px) - 1
-        dpx = [dpx linspace(px(j),px(j+1),chunks) ];
-        dex = [dex linspace(ex(j),ex(j+1),chunks) ];
-    end
-    px = dpx;
-    ex = dex;
+    
+    switch lower(type)
         
-    [~,I]  = min(ex);
-    dP(i)  = px(I);
-    Ers(i) = ex(I);
+        case {'lin' 'linear'}
+    
+            for j  = 1:length(px) - 1
+                dpx = [dpx linspace(px(j),px(j+1),chunks) ];
+                dex = [dex linspace(ex(j),ex(j+1),chunks) ];
+            end
+            px = dpx;
+            ex = dex;
 
+            [~,I]  = min(ex);
+            dP(i)  = px(I);
+            Ers(i) = ex(I);
+            
+        case {'pol' 'poly' 'polinomial'}
+            
+            dex = linspace(ex(1),ex(end),chunks);
+            p0  = polyfit(ex,px,3);
+            dpx = polyval(p0, dex);
+                
+            px  = dpx;
+            ex  = dex;
+
+            [~,I]  = min(ex);
+            dP(i)  = px(I);
+            Ers(i) = ex(I);
+    
+    end
 end
 
 BadFit = find(isnan(dP));

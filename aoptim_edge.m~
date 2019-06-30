@@ -93,8 +93,8 @@ while iterate
         pupdate(n,de,e0,'reject');
         
         % reset grid and variance
-        V               = V * (10/n);
-        gridn           = gridn * (10/n);
+        V               = V * 10;
+        gridn           = gridn * 10;
         n_reject_consec = n_reject_consec + 1;
         
         % invoke a sampling routine temporarily?
@@ -125,10 +125,8 @@ while iterate
         V = Vb;     
         % add some random (sampling)
         x0 = x0 + ( randn(size(x0)) ./ V);
-        % print tidy update
-        s  = sprintf('Parameter: %d/%d',length(x0),length(x0));
-        fprintf(repmat(' ',[length(s),1]));
-        pupdate(n,de,e0,'reseed');
+        s  = sprintf('Parameter: %d/%d',
+        pupdate(n,0,e0,'reseed');
     end
     
     % give up after 10 failed iterations

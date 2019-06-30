@@ -52,7 +52,7 @@ Vb = V;
 
 % initial grid reolution
 %gridn = 10000;
-gridn = 20;
+gridn = 50;
 
 % initial point plot
 if doplot
@@ -84,7 +84,7 @@ while iterate
         x0    = dp;
         e0    = de;
         V     = V ./ 1.5;   % increase precision 
-        gridn = gridn / 2; % refine grid
+        %gridn = gridn / 2; % refine grid
         
         pupdate(n,de,e0,'accept');
         if doplot; makeplot(x0); end
@@ -195,6 +195,9 @@ for i = 1:length(x0)
     chunks = gridn/length(px);
     dpx    = [];
     dex    = [];
+    
+    % don't undersample: must be min 5 points!
+    chunks = max([ chunks 5 ]);
     
     switch lower(type)
         

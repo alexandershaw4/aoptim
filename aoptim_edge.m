@@ -53,6 +53,7 @@ Vb = V;
 % initial grid reolution
 %gridn = 10000;
 gridn = 50;
+grido = gridn; % keep initial res. for resets
 
 % initial point plot
 if doplot
@@ -76,8 +77,8 @@ while iterate
     % construct an optimiser
     [de,dp,V] = pol_opt(x0,V,gridn,type);
     
-    % ignore complex parameter values
-    % dp = real(dp);
+    % ignore complex parameter values?
+    dp = real(dp);
     
     % assess output
     if de < e0
@@ -114,6 +115,17 @@ while iterate
         X = x0;
         F = e0;
         return;
+    end
+    
+    if (gridn/grido) >= 100
+        s  = sprintf('Parameter: %d/%d',length(x0),length(x0));
+        fprintf(repmat(' ',[length(s),1]));
+        
+        pupdate(n,de,e0,'REGRID');
+        
+        % reset the grid
+        gridn = grido;
+        
     end
     
     % don't go endlessly without improvement

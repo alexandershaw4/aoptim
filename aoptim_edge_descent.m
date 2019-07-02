@@ -1,4 +1,4 @@
-function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
+function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 % gradient descent based optimisation
 %
 % minimise a problem of the form:

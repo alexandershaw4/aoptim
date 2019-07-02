@@ -1,4 +1,4 @@
-function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit)
+function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit)
 global aopt
 % gradient descent based optimisation
 %
@@ -53,9 +53,37 @@ if doplot
 end
 
 n_reject_consec = 0;
-    
+search          = 0;
+
 % initialise step size
-red = 1;
+%red = V./max(V);
+v     = V;
+pC    = diag(V);
+% variance (reduced space)
+V     = spm_svd(pC);
+pC    = V'*pC*V;
+ipC   = inv(spm_cat(spm_diag({pC})));
+red   = diag(pC);
+
+% parameters (reduced space)
+np    = size(V,2); 
+p     = [V'*x0];
+ip    = (1:np)';
+Ep    = V*p(ip);
+
+% now: x0 = V*p(ip)
+%-------------------------------------------------------------
+if obj( V*p(ip) ) ~= e0
+    fprintf('Something went wrong during svd parameter reduction\n');
+else
+    % backup start points
+    X0 = x0;
+    % overwrite x0
+    x0 = p;
+end
+
+% print start point
+pupdate(n,0,e0,e0,'start:');
 
 % start loop
 while iterate
@@ -63,28 +91,139 @@ while iterate
     % counter
     n = n + 1;
    
-    % construct an optimiser
-    [de,dp,V] = pol_opt(x0,red);
+    % compute gradients & search directions
+    %----------------------------------------------------------------------
+    [e0,df0,er,Q] = obj( V*x0(ip) );
+    
+    s   = -df0';
+    d0  = -s'*s;           % initial search direction (steepest) and slope
+    x3  = V*red(ip)./(1-d0);     % initial step is red/(|s|+1)
+    
+    % make copies of error and param set
+    x1  = x0;
+    e1  = e0;
+
+    % start counters
+    improve = true;
+    nfun    = 0;
+
+    % iterative descent on this slope
+    %----------------------------------------------------------------------
+    while improve
+        
+        % descend while we can
+        nfun = nfun + 1;
+        %dx   = (V*x1(ip)+V*x3(ip).*s);
+        dx = (V*x1(ip)+x3*s');
+        %[de] = obj(dx);
+
+        % assess each new parameter individually, then find the best mix
+        for nip = 1:length(dx)
+            XX       = V*x0;
+            XX(nip)  = dx(nip);
+            DFE(nip) = obj(XX);
+        end
+        
+        % compute improver-parameters
+        gp  = double(DFE < e0);
+        gpi = find(gp);
+        
+        % only update select parameters
+        ddx        = V*x0;
+        ddx(gpi)   = dx(gpi);
+        dx         = ddx;
+        de         = obj(dx);
+                
+        if de < e1
+            % update the error
+            e1 = de;
+            % update the (reduced) parameter set
+            x1 = V'*dx;
+        else
+            % return
+            improve = false;
+        end
+    end
     
     % ignore complex parameter values?
-    dp = real(dp);
+    x1 = real(x1);
     
-    % assess output
-    if de < e0
-        x0    = dp;
-        e0    = de;
-        red   = red / 2;
-        
-        pupdate(n,de,e0,'accept');
-        if doplot; makeplot(x0); end
+    % evaluate - accept/reject - adjust variance
+    %----------------------------------------------------------------------
+    if e1 < e0
+        x0 = x1;
+        e0 = e1;
+        pupdate(n,nfun,e1,e0,'accept');
+        if doplot; makeplot(V*x0(ip)); end
         n_reject_consec = 0;
+                
     else
-        pupdate(n,de,e0,'reject');
+        % if didn't improve: what to do?
+        %----------------------------------------------------------
+        pupdate(n,nfun,e1,e0,'reject');
         
-        % reset grid and variance
-        red             = red * 2;
-        n_reject_consec = n_reject_consec + 1;
+        % update covariance
+        %----------------------------------------------------------
+        Pp    = real(df0*df0');
+        Pp    = V'*Pp*V;            % compact covariance
+        Cp    = spm_inv(Pp + ipC);
+        ipC   = inv(Cp);
+        
+        % update 'variance' term from covariance
+        %----------------------------------------------------------
+        red = diag(Cp);
+        
+        % change step: distance between initial point and accepted updates
+        % so far for each parameter
+        %----------------------------------------------------------
+        eu  = diag(cdist(X0,x0));
+        red = (red./eu);
+        
+        % quick diagnostic on parameter contributions
+        %----------------------------------------------------------
+        pupdate(n,nfun,e1,e0,'study:');
+        for nip = 1:length(dx)
+            XX       = V*x0;
+            XX(nip)  = dx(nip);
+            dfe(nip) = obj(XX); % observe f(x,P[i])
+            if dfe(nip) < e0
+                px_check(nip) = 1;
+            else
+                px_check(nip) = 0;
+            end
+        end
+        
+        % check whether accepting all 'good' together is a good fit
+        %----------------------------------------------------------
+        XX              = V*x0;
+        XX(px_check==1) = dx(px_check==1);
+        DFE             = obj(XX);
+        
+        if DFE < e0
+            % ok, good - accept
+            %-----------------------------------
+            e0 = DFE;    % new error
+            x0 = V'*XX;  % compact parameter form
             
+            % now adjust 'red' accounting for this new knowledge
+            %-----------------------------------
+            dred              = V*red;
+            dred(px_check==0) = dred(px_check==0)*0.8;
+            red               = V'*dred;
+            
+            pupdate(n,nfun,e0,e0,'accept');
+            if doplot; makeplot(V*x0(ip)); end
+        else
+            % do this adjustment without updating model
+            %-----------------------------------
+            dred              = V*red;
+            dred(px_check==0) = dred(px_check==0)*0.8;
+            red               = V'*dred;
+            
+            pupdate(n,nfun,DFE,e0,'reject');
+        end
+        
+        n_reject_consec = n_reject_consec + 1;
     end
         
     % stop at max iterations
@@ -116,55 +255,17 @@ end
 
 end
 
-function [e,x1,V] = pol_opt(x0,red)
-global aopt
+function pupdate(it,nfun,err,best,action)
 
-% points
-x0 = full(x0(:));
-
-% get gradient
-[e0,J,er,Q] = obj(x0);
-
-% compute search directions
-df0 = J;
-%red = 1;
-s   = -df0; 
-d0  = -s'*s;           % initial search direction (steepest) and slope
-x3  = red/(1-d0);     % initial step is red/(|s|+1)
-
-improve = true;
-while improve
-    % descend 
-    dx       = (x0+x3.*s);
-    [f3,df3] = obj(dx);
-    
-    if f3 < e0
-        e0 = f3;
-        x0 = dx;
-        
-        d3 = df3'*s; % new slope
-        x3 = red/(1-d3); 
-    else
-        % return
-        improve = false;
-    end
-end
-
-e  = e0;
-x1 = x0;
-
-end
-
-function pupdate(it,err,best,action)
-
-fprintf('| Main It: %04i | Err: %04i | Best: %04i | %s |\n',it,err,best,action);
+fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
 
 end
 
 function makeplot(x)
 
 % compute objective and get data and model preidction
-[e,~,er,Q,Y,y] = obj(x);
+%[e,~,er,Q,Y,y] = obj(x);
+[Y,y] = GetStates(x);
 
 if iscell(Y)
     plot(spm_cat(Y),':'); hold on;
@@ -172,6 +273,17 @@ if iscell(Y)
     drawnow;
 end
 
+
+end
+
+function [Y,y] = GetStates(x)
+global aopt
+
+IS = aopt.fun;
+P  = x(:);
+
+y  = IS(P); 
+Y  = aopt.y;
 
 end
 
@@ -195,7 +307,7 @@ er = spm_vec(y) - spm_vec(Y);
 if nargout > 1
     % compute jacobi
     V = ones(size(x0));
-    [J,ip] = jaco(@obj,x0,V);
+    [J,ip] = jaco(@obj,x0,V,0);
 end
 
 

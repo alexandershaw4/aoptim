@@ -1,11 +1,9 @@
 function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
-global aopt
 % gradient descent based optimisation
 %
 % minimise a problem of the form:
-%
-% y = f(x)
-% e = sum(Y0 - y).^2
+%   y = f(x)
+%   e = sum(Y0 - y).^2
 %
 % usage:
 %   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type)
@@ -18,16 +16,17 @@ global aopt
 % inner_loop = num iters to continue on a specific descent
 %
 % To fit problems of the form:
-% 
 % e = f(x)
 %
 % usage - set y=0:
 %   [X,F] = aoptim_edge(fun,x0,V,0,maxit,type)
 %
 %
-% if failing, try transposing input vector x0
+% * note: - if failing to run properly, try transposing input vector x0
+% *       - may need to remove the transpose at line 299: P = x0(:)';
 %
 % AS2019
+global aopt
 
 if nargin < 6 || isempty(inner_loop)
     inner_loop = 999;
@@ -53,25 +52,30 @@ V  = smooth(V);
 Vb = V;
 
 % initial point plot
+%--------------------------------------------------------------------------
 if doplot
     makeplot(x0);
 end
 
 % initialise counters
+%--------------------------------------------------------------------------
 n_reject_consec = 0;
 search          = 0;
 
 % initialise step size
+%--------------------------------------------------------------------------
 v     = V;
 pC    = diag(V);
 
 % variance (reduced space)
+%--------------------------------------------------------------------------
 V     = spm_svd(pC);
 pC    = V'*pC*V;
 ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
 % parameters (reduced space)
+%--------------------------------------------------------------------------
 np    = size(V,2); 
 p     = [V'*x0];
 ip    = (1:np)';
@@ -99,6 +103,7 @@ pupdate(n,0,e0,e0,'start:');
 while iterate
     
     % counter
+    %----------------------------------------------------------------------
     n = n + 1;      
    
     % compute gradients & search directions
@@ -109,7 +114,7 @@ while iterate
     %----------------------------------------------------------------------
     s   = -df0';
     d0  = -s'*s;           
-    x3  = V*red(ip)./(1-d0);     % initial step is red/(|s|+1)
+    x3  = V*red(ip)./(1-d0);                 % initial step is red/(|s|+1)
     
     % make copies of error and param set
     x1  = x0;
@@ -120,7 +125,7 @@ while iterate
     nfun    = 0;
 
     % iterative descent on this slope
-    %----------------------------------------------------------------------
+    %======================================================================
     while improve
         
         % descend while we can
@@ -156,12 +161,15 @@ while iterate
         de         = obj(dx);
                 
         if de  < e1
-            % update the error
+            
+            % update the error & the (reduced) parameter set
+            %--------------------------------------------------------------
             e1 = de;
-            % update the (reduced) parameter set
             x1 = V'*dx;
         else
-            % return
+            
+            % flag to stop this loop
+            %--------------------------------------------------------------
             improve = false;
         end
         
@@ -171,39 +179,34 @@ while iterate
         end
         
     end  % end while improve...
-    
-    
-    % ignore complex parameter values?
+      
+    % ignore complex parameter values - for most functions, yes
+    %----------------------------------------------------------------------
     x1 = real(x1);
     
-    % evaluate - accept/reject - adjust variance
-    %----------------------------------------------------------------------
+    % evaluate - accept/reject - plot - adjust rate
+    %======================================================================
     if e1 < e0
+        
+        % accept new parameters and error
+        %------------------------------------------------------------------
         x0 = x1;
         e0 = e1;
+        
+        % print & plots success
+        %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'accept');
         if doplot; makeplot(V*x0(ip)); end
         n_reject_consec = 0;
                 
     else
+        
         % if didn't improve: what to do?
-        %----------------------------------------------------------
+        %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'reject');
-        
-        % update covariance
-        %----------------------------------------------------------
-        Pp    = real(df0*df0');
-        Pp    = V'*Pp*V;            % compact covariance
-        Cp    = spm_inv(Pp + ipC);
-        ipC   = inv(Cp);
-        
-        % update 'variance' term from covariance
-        %----------------------------------------------------------
-        % red = diag(Cp);
-        
-        % change step: distance between initial point and accepted updates
-        % so far for each parameter
-        %----------------------------------------------------------
+                        
+        % change step: distance between initial point and latest
+        %------------------------------------------------------------------
         eu  = diag(cdist(X0,x0));
         red = red.*eu;
         
@@ -211,13 +214,14 @@ while iterate
         n_reject_consec = n_reject_consec + 1;
     end
     
+    % stopping criteria, rules etc.
+    %======================================================================
     
     % if 3 fails, reset the reduction term (based on the specified variance)
     if n_reject_consec == 3
         fprintf('resetting variance\n');
         red = red ./ max(red(:));
     end
-    
     
     % stop at max iterations
     if n == maxit
@@ -255,9 +259,10 @@ fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,e
 end
 
 function makeplot(x)
+% plot the function output (f(x)) on top of the thing we're ditting (Y)
+%
+%
 
-% compute objective and get data and model preidction
-%[e,~,er,Q,Y,y] = obj(x);
 [Y,y] = GetStates(x);
 
 if iscell(Y)
@@ -270,6 +275,9 @@ end
 end
 
 function [Y,y] = GetStates(x)
+% - evaluates the model and returns it along with the stored data Y
+%
+
 global aopt
 
 IS = aopt.fun;
@@ -281,6 +289,10 @@ Y  = aopt.y;
 end
 
 function [e,J,er,Q,Y,y] = obj(x0)
+% - compute the objective function - i.e. the sqaured error to minimise
+% - also returns the parameter Jacobian
+%
+
 global aopt
 
 IS = aopt.fun;

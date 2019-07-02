@@ -1,4 +1,4 @@
-function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit)
+function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 global aopt
 % gradient descent based optimisation
 %
@@ -10,13 +10,13 @@ global aopt
 % usage:
 %   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type)
 %
-% fun = functional handle / anonymous function
-% x0  = starting points (vector input to fun)
-% V   = variances for each element of x0
-% y   = Y0, for computing the objective: e = sum(Y0 - y).^2
-% maxit = number of iterations (def=128)
+% fun   = functional handle / anonymous function
+% x0    = starting points (vector input to fun)
+% V     = variances for each element of x0
+% y     = Y0, for computing the objective: e = sum(Y0 - y).^2
+% maxit = number of iterations (def=128) to restart descent
+% inner_loop = num iters to continue on a specific descent
 %
-% 
 % To fit problems of the form:
 % 
 % e = f(x)
@@ -25,8 +25,13 @@ global aopt
 %   [X,F] = aoptim_edge(fun,x0,V,0,maxit,type)
 %
 %
+% if failing, try transposing input vector x0
+%
 % AS2019
 
+if nargin < 6 || isempty(inner_loop)
+    inner_loop = 999;
+end
 if nargin < 5 || isempty(maxit)
     maxit = 128;
 end
@@ -52,13 +57,14 @@ if doplot
     makeplot(x0);
 end
 
+% initialise counters
 n_reject_consec = 0;
 search          = 0;
 
 % initialise step size
-%red = V./max(V);
 v     = V;
 pC    = diag(V);
+
 % variance (reduced space)
 V     = spm_svd(pC);
 pC    = V'*pC*V;
@@ -70,6 +76,9 @@ np    = size(V,2);
 p     = [V'*x0];
 ip    = (1:np)';
 Ep    = V*p(ip);
+
+% print updates at n_print intervals along the inner loop
+n_print    = 10;
 
 % now: x0 = V*p(ip)
 %-------------------------------------------------------------
@@ -86,17 +95,20 @@ end
 pupdate(n,0,e0,e0,'start:');
 
 % start loop
+%==========================================================================
 while iterate
     
     % counter
-    n = n + 1;
+    n = n + 1;      
    
     % compute gradients & search directions
     %----------------------------------------------------------------------
     [e0,df0,er,Q] = obj( V*x0(ip) );
     
+    % initial search direction (steepest) and slope
+    %----------------------------------------------------------------------
     s   = -df0';
-    d0  = -s'*s;           % initial search direction (steepest) and slope
+    d0  = -s'*s;           
     x3  = V*red(ip)./(1-d0);     % initial step is red/(|s|+1)
     
     % make copies of error and param set
@@ -113,10 +125,19 @@ while iterate
         
         % descend while we can
         nfun = nfun + 1;
+        
+        % print updates and update plot intermittently
+        if ismember(nfun,linspace( (inner_loop/n_print),inner_loop,n_print ) )
+            pupdate(nfun,nfun,e1,e0,'contin');
+            if doplot; makeplot(V*x1(ip)); end
+        end
+        
         %dx   = (V*x1(ip)+V*x3(ip).*s);
-        dx = (V*x1(ip)+x3*s');
         %[de] = obj(dx);
-
+        
+        % the descent
+        dx    = (V*x1(ip)+x3*s');
+        
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
@@ -134,7 +155,7 @@ while iterate
         dx         = ddx;
         de         = obj(dx);
                 
-        if de < e1
+        if de  < e1
             % update the error
             e1 = de;
             % update the (reduced) parameter set
@@ -143,7 +164,14 @@ while iterate
             % return
             improve = false;
         end
-    end
+        
+        % upper limit on the length of this loop
+        if nfun == inner_loop
+            improve = false;
+        end
+        
+    end  % end while improve...
+    
     
     % ignore complex parameter values?
     x1 = real(x1);
@@ -171,61 +199,26 @@ while iterate
         
         % update 'variance' term from covariance
         %----------------------------------------------------------
-        red = diag(Cp);
+        % red = diag(Cp);
         
         % change step: distance between initial point and accepted updates
         % so far for each parameter
         %----------------------------------------------------------
         eu  = diag(cdist(X0,x0));
-        red = (red./eu);
+        red = red.*eu;
         
-        % quick diagnostic on parameter contributions
-        %----------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'study:');
-        for nip = 1:length(dx)
-            XX       = V*x0;
-            XX(nip)  = dx(nip);
-            dfe(nip) = obj(XX); % observe f(x,P[i])
-            if dfe(nip) < e0
-                px_check(nip) = 1;
-            else
-                px_check(nip) = 0;
-            end
-        end
-        
-        % check whether accepting all 'good' together is a good fit
-        %----------------------------------------------------------
-        XX              = V*x0;
-        XX(px_check==1) = dx(px_check==1);
-        DFE             = obj(XX);
-        
-        if DFE < e0
-            % ok, good - accept
-            %-----------------------------------
-            e0 = DFE;    % new error
-            x0 = V'*XX;  % compact parameter form
-            
-            % now adjust 'red' accounting for this new knowledge
-            %-----------------------------------
-            dred              = V*red;
-            dred(px_check==0) = dred(px_check==0)*0.8;
-            red               = V'*dred;
-            
-            pupdate(n,nfun,e0,e0,'accept');
-            if doplot; makeplot(V*x0(ip)); end
-        else
-            % do this adjustment without updating model
-            %-----------------------------------
-            dred              = V*red;
-            dred(px_check==0) = dred(px_check==0)*0.8;
-            red               = V'*dred;
-            
-            pupdate(n,nfun,DFE,e0,'reject');
-        end
-        
+        % keep counting rejections
         n_reject_consec = n_reject_consec + 1;
     end
-        
+    
+    
+    % if 3 fails, reset the reduction term (based on the specified variance)
+    if n_reject_consec == 3
+        fprintf('resetting variance\n');
+        red = red ./ max(red(:));
+    end
+    
+    
     % stop at max iterations
     if n == maxit
         X = x0;
@@ -291,7 +284,7 @@ function [e,J,er,Q,Y,y] = obj(x0)
 global aopt
 
 IS = aopt.fun;
-P  = x0(:);
+P  = x0(:)';
 
 y  = IS(P); 
 Y  = aopt.y;

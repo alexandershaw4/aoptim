@@ -26,6 +26,8 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 % *       - may need to remove the transpose at line 299: P = x0(:)';
 %
 % AS2019
+% alexandershaw4@gmail.com
+%
 global aopt
 
 if nargin < 6 || isempty(inner_loop)
@@ -82,7 +84,7 @@ ip    = (1:np)';
 Ep    = V*p(ip);
 
 % print updates at n_print intervals along the inner loop
-n_print    = 12;
+n_print    = 0;
 
 % now: x0 = V*p(ip)
 %-------------------------------------------------------------

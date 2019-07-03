@@ -1,4 +1,4 @@
-function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
+function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 % gradient descent based optimisation
 %
 % minimise a problem of the form:
@@ -23,7 +23,7 @@ function [X,F,Cp] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 %
 %
 % * note: - if failing to run properly, try transposing input vector x0
-% *       - may need to remove the transpose at line 283: P = x0(:)';
+% *       - may need to remove the transpose at line 299: P = x0(:)';
 %
 % AS2019
 global aopt
@@ -233,7 +233,7 @@ while iterate
     % check for convergence
     if e0 <= criterion
         fprintf('Convergence.\n');
-        X = x0;
+        X = V*x0(ip);
         F = e0;
         return;
     end
@@ -241,7 +241,7 @@ while iterate
     % give up after 10 failed iterations
     if n_reject_consec == 10
         fprintf('Failed to converge... \nReturning best estimates.\n');
-        X = x0;
+        X = V*x0(ip);
         F = e0;
         return;
     end
@@ -259,9 +259,10 @@ fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,e
 end
 
 function makeplot(x)
+% plot the function output (f(x)) on top of the thing we're ditting (Y)
+%
+%
 
-% compute objective and get data and model preidction
-%[e,~,er,Q,Y,y] = obj(x);
 [Y,y] = GetStates(x);
 
 if iscell(Y)
@@ -274,6 +275,9 @@ end
 end
 
 function [Y,y] = GetStates(x)
+% - evaluates the model and returns it along with the stored data Y
+%
+
 global aopt
 
 IS = aopt.fun;
@@ -285,9 +289,10 @@ Y  = aopt.y;
 end
 
 function [e,J,er,Q,Y,y] = obj(x0)
-% compute the objective function - i.e. the sqaured error to minimise
+% - compute the objective function - i.e. the sqaured error to minimise
+% - also returns the parameter Jacobian
 %
-%
+
 global aopt
 
 IS = aopt.fun;

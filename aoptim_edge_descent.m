@@ -82,7 +82,7 @@ ip    = (1:np)';
 Ep    = V*p(ip);
 
 % print updates at n_print intervals along the inner loop
-n_print    = 10;
+n_print    = 12;
 
 % now: x0 = V*p(ip)
 %-------------------------------------------------------------
@@ -132,7 +132,7 @@ while iterate
         nfun = nfun + 1;
         
         % print updates and update plot intermittently
-        if ismember(nfun,linspace( (inner_loop/n_print),inner_loop,n_print ) )
+        if ismember(nfun,round(linspace( (inner_loop/n_print),inner_loop,n_print )) )
             pupdate(nfun,nfun,e1,e0,'contin');
             if doplot; makeplot(V*x1(ip)); end
         end
@@ -225,7 +225,7 @@ while iterate
     
     % stop at max iterations
     if n == maxit
-        X = x0;
+        X = V*x0(ip);
         F = e0;
         return;
     end
@@ -233,7 +233,7 @@ while iterate
     % check for convergence
     if e0 <= criterion
         fprintf('Convergence.\n');
-        X = x0;
+        X = V*x0(ip);
         F = e0;
         return;
     end
@@ -241,7 +241,7 @@ while iterate
     % give up after 10 failed iterations
     if n_reject_consec == 10
         fprintf('Failed to converge... \nReturning best estimates.\n');
-        X = x0;
+        X = V*x0(ip);
         F = e0;
         return;
     end

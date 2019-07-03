@@ -1,12 +1,12 @@
-function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
+function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop,Q)
 % gradient descent based optimisation
 %
-% minimise a problem of the form:
+% minimise a model fitting problem of the form:
 %   y = f(x)
 %   e = sum(Y0 - y).^2
 %
 % usage:
-%   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type)
+%   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type,Q)
 %
 % fun   = functional handle / anonymous function
 % x0    = starting points (vector input to fun)
@@ -14,11 +14,13 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 % y     = Y0, for computing the objective: e = sum(Y0 - y).^2
 % maxit = number of iterations (def=128) to restart descent
 % inner_loop = num iters to continue on a specific descent
+% Q     = optional precision matrix, e.g. e = sum( Q*(Y0-y) ).^2
 %
-% To fit problems of the form:
+%
+% to minimise objective problems of the form:
 % e = f(x)
 %
-% usage - set y=0:
+% usage is set y=0:
 %   [X,F] = aoptim_edge(fun,x0,V,0,maxit,type)
 %
 %
@@ -30,6 +32,9 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 %
 global aopt
 
+if nargin < 7 || isempty(Q)
+    Q = 1;
+end
 if nargin < 6 || isempty(inner_loop)
     inner_loop = 9999;
 end
@@ -41,6 +46,7 @@ end
 %--------------------------------------------------------------------------
 aopt.fun  = fun;
 aopt.y    = y(:);
+aopt.Q    = Q;
 x0        = full(x0(:));
 V         = full(V(:));
 [e0]      = obj(x0);
@@ -87,7 +93,7 @@ Ep    = V*p(ip);
 n_print    = 0;
 
 % now: x0 = V*p(ip)
-%-------------------------------------------------------------
+%--------------------------------------------------------------------------
 if obj( V*p(ip) ) ~= e0
     fprintf('Something went wrong during svd parameter reduction\n');
 else
@@ -142,7 +148,7 @@ while iterate
         %dx   = (V*x1(ip)+V*x3(ip).*s);
         %[de] = obj(dx);
         
-        % the descent
+        % continue the descent
         dx    = (V*x1(ip)+x3*s');
         
         % assess each new parameter individually, then find the best mix
@@ -206,14 +212,60 @@ while iterate
         % if didn't improve: what to do?
         %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'reject');
-                        
-        % change step: distance between initial point and latest
+                                
+        % sample from improvers params in dx
         %------------------------------------------------------------------
-        eu  = diag(cdist(X0,x0));
-        red = red.*eu;
+        pupdate(n,nfun,e1,e0,'sample');
+        thisgood = gp*0;
+        if any(gp)
+            
+            % sort good params by improvement amount
+            %--------------------------------------------------------------
+            [~,PO] = sort(DFE(gpi),'ascend');
+            dx0    = V'*dx;
+            
+            % loop the good params in effect-size order
+            % accept on the fly (additive effects)
+            %--------------------------------------------------------------
+            improve1 = 1;
+            while improve1
+                thisgood = gp*0;
+                
+                for i  = 1:length(gpi)
+                    xnew             = real(x0);
+                    xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
+                    xnew             = real(xnew);
+                    enew             = obj(V*xnew);
+
+                    if enew < e0
+                        x0  = xnew;
+                        e0  = enew;
+                        thisgood(gpi(PO(i))) = 1;
+                    end
+                end
+                if any(thisgood)
+
+                    pupdate(n,nfun,e1,e0,'accept');
+                    if doplot; makeplot(V*x0); end
+
+                    % update red
+                    %red = red + (red.*thisgood');
+                    red = red-(red.*(thisgood'*.2));
+                else
+                    % reduce and go back to main loop
+                    red = red*.8;
+                    
+                    % halt this while loop
+                    improve1 = 0;
+                    
+                    % keep counting rejections
+                    n_reject_consec = n_reject_consec + 1;
+                end
+            end
+            
+        end
+                            
         
-        % keep counting rejections
-        n_reject_consec = n_reject_consec + 1;
     end
     
     % stopping criteria, rules etc.
@@ -221,8 +273,9 @@ while iterate
     
     % if 3 fails, reset the reduction term (based on the specified variance)
     if n_reject_consec == 3
-        fprintf('resetting variance\n');
-        red = red ./ max(red(:));
+        pupdate(n,nfun,e1,e0,'resetV');
+        %red = red ./ max(red(:));
+        red = diag(pC);
     end
     
     % stop at max iterations
@@ -302,11 +355,12 @@ P  = x0(:)';
 
 y  = IS(P); 
 Y  = aopt.y;
-Q  = 1;
+Q  = aopt.Q;
+e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
 
-try;   e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
-catch; e  = sum(   (spm_vec(Y) - spm_vec(y)).^2 );
-end
+%try;   e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
+%catch; e  = sum(   (spm_vec(Y) - spm_vec(y)).^2 );
+%end
 
 % error along output vector
 er = spm_vec(y) - spm_vec(Y);

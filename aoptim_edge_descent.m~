@@ -26,10 +26,12 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 % *       - may need to remove the transpose at line 299: P = x0(:)';
 %
 % AS2019
+% alexandershaw4@gmail.com
+%
 global aopt
 
 if nargin < 6 || isempty(inner_loop)
-    inner_loop = 999;
+    inner_loop = 9999;
 end
 if nargin < 5 || isempty(maxit)
     maxit = 128;
@@ -82,10 +84,10 @@ ip    = (1:np)';
 Ep    = V*p(ip);
 
 % print updates at n_print intervals along the inner loop
-n_print    = 10;
+n_print    = 0;
 
 % now: x0 = V*p(ip)
-%-------------------------------------------------------------
+%--------------------------------------------------------------------------
 if obj( V*p(ip) ) ~= e0
     fprintf('Something went wrong during svd parameter reduction\n');
 else
@@ -132,7 +134,7 @@ while iterate
         nfun = nfun + 1;
         
         % print updates and update plot intermittently
-        if ismember(nfun,linspace( (inner_loop/n_print),inner_loop,n_print ) )
+        if ismember(nfun,round(linspace( (inner_loop/n_print),inner_loop,n_print )) )
             pupdate(nfun,nfun,e1,e0,'contin');
             if doplot; makeplot(V*x1(ip)); end
         end
@@ -207,8 +209,36 @@ while iterate
                         
         % change step: distance between initial point and latest
         %------------------------------------------------------------------
-        eu  = diag(cdist(X0,x0));
-        red = red.*eu;
+        %eu  = diag(cdist(X0,x0));
+        %red = red.*eu;
+        %red = (red+eu)*.8;
+        
+        
+        % sample from improvers params in dx
+        pupdate(n,nfun,e1,e0,'sample');
+        thisgood = gp*0;
+        if any(gp)
+            [~,PO] = sort(DFE(gpi),'ascend');
+            xnew   = x0;
+            dx0    = V'*dx;
+            for i  = 1:length(gpi)
+                xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
+                enew = obj(V*xnew);
+                if enew < e0
+                    x0  = V*xnew;
+                    e0  = enew;
+                    thisgood(gpi(PO(i))) = 1;
+                end
+            end
+            if any(thisgood)
+                pupdate(n,nfun,e1,e0,'accept');
+                if doplot; makeplot(V*x0(ip)); end
+                
+        end
+                    
+        
+        
+        
         
         % keep counting rejections
         n_reject_consec = n_reject_consec + 1;
@@ -225,7 +255,7 @@ while iterate
     
     % stop at max iterations
     if n == maxit
-        X = x0;
+        X = V*x0(ip);
         F = e0;
         return;
     end
@@ -281,7 +311,7 @@ function [Y,y] = GetStates(x)
 global aopt
 
 IS = aopt.fun;
-P  = x(:);
+P  = x(:)';
 
 y  = IS(P); 
 Y  = aopt.y;

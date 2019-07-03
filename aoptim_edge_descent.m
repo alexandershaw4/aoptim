@@ -31,7 +31,7 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 global aopt
 
 if nargin < 6 || isempty(inner_loop)
-    inner_loop = 999;
+    inner_loop = 9999;
 end
 if nargin < 5 || isempty(maxit)
     maxit = 128;
@@ -283,7 +283,7 @@ function [Y,y] = GetStates(x)
 global aopt
 
 IS = aopt.fun;
-P  = x(:);
+P  = x(:)';
 
 y  = IS(P); 
 Y  = aopt.y;

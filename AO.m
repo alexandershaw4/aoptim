@@ -1,31 +1,39 @@
 function [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q)
-% gradient descent based optimisation primarily for model fitting
+% gradient descent based optimisation, primarily for model fitting
+% 
+% Fit models of the form:
+%   Y0 = f(x) + e
 %
-% minimise a model fitting problem of the form:
+% Y0 = empirical data (to fit)
+% f  = model (function)
+% x  = model parameters/inputs to be optimised
+%
+%
+% to minimise a model fitting problem of the form:
 %   y = f(x)
 %   e = sum(Y0 - y).^2
 %
-% usage:
+% the usage is:
 %   [X,F] = AO(fun,x0,V,y,maxit,type,Q)
 %
-% fun   = functional handle / anonymous function
-% x0    = starting points (vector input to fun)
-% V     = variances for each element of x0
-% y     = Y0, for computing the objective: e = sum(Y0 - y).^2
-% maxit = number of iterations (def=128) to restart descent
-% inner_loop = num iters to continue on a specific descent
-% Q     = optional precision matrix, e.g. e = sum( Q*(Y0-y) ).^2
+% fun        = function handle / anonymous function
+% x0         = starting points (vector input to fun)
+% V          = variances controlling each element of x0
+% y          = Y0 / the data to fit, for computing the objective: e = sum(Y0 - y).^2
+% maxit      = number of iterations (def=128) to restart descent
+% inner_loop = num iters to continue on a specific descent (def=9999)
+% Q          = optional precision matrix, e.g. e = sum( diag(Q).*(Y0-y) ).^2
 %
 %
 % to minimise objective problems of the form:
-% e = f(x)
+%   e = f(x)
 %
-% usage is set y=0:
-%   [X,F] = AO(fun,x0,V,0,maxit,type)
+% the usage is: [note: set y=0 if f(x) returns the error/objective]
+%   [X,F] = AO(fun,x0,V,0,maxit,type) 
 %
 %
 % * note: - if failing to run properly, try transposing input vector x0
-% *       - may need to remove the transpose at line 299: P = x0(:)';
+% *       - may need to remove the transpose at line 406: P = x0(:)';
 %
 % AS2019
 % alexandershaw4@gmail.com

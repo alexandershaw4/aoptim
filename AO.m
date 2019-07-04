@@ -298,7 +298,7 @@ while iterate
             end
         else
             
-            pupdate(n,nfun,e0,e0,'nogood');
+            pupdate(n,nfun,e0,e0,'reject');
             
             % reduce step and go back to main loop
             red = red*.8;

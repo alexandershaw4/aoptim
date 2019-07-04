@@ -58,10 +58,8 @@ function [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q)
 % other notes:
 % - an svd parameter reduction is applied
 % - the step size is adjusted as the loops progress 
-% - after 3 complete runs without any improvement, step size resets
-% - after 5 complete runs without any improvement, gives up
-% - if the variance in the improvement over a period is small, assumes
-% stuck in a local minima and gives up
+% - 
+%
 %
 % AS2019
 % alexandershaw4@gmail.com

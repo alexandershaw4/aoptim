@@ -17,11 +17,11 @@ P  = x0(:);
 % else;           ip = 1:length(x0);
 % end
 
-if nargin == 3; ip = ~~(V(:));
+if nargin >= 3; ip = ~~(V(:));
 else;           ip = 1:length(x0);
 end
 
-j  = jacf(IS,P,ip,verbose);
+j  = jacf(IS,P,ip,verbose,V);
 
 j(isnan(j)) = 0;
 
@@ -29,7 +29,7 @@ end
 
 
 
-function j = jacf(IS,P,ip,verbose)
+function j = jacf(IS,P,ip,verbose,V)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
@@ -52,7 +52,7 @@ for i = 1:length(P)
         % Compute Jacobi: A(j,:) = ( f(x+h) - f(x-h) ) / (2 * h)
         P0     = P;
         P1     = P;
-        d      = P0(i) * 0.01;
+        d      = P0(i) * V(i);
         
         if d == 0
             d = 0.01;

@@ -1,12 +1,12 @@
-function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
-% gradient descent based optimisation
+function [X,F] = AOb(fun,x0,V,y,maxit,inner_loop,Q)
+% gradient descent based optimisation primarily for model fitting
 %
-% minimise a problem of the form:
+% minimise a model fitting problem of the form:
 %   y = f(x)
 %   e = sum(Y0 - y).^2
 %
 % usage:
-%   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type)
+%   [X,F] = AO(fun,x0,V,y,maxit,type,Q)
 %
 % fun   = functional handle / anonymous function
 % x0    = starting points (vector input to fun)
@@ -14,12 +14,14 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 % y     = Y0, for computing the objective: e = sum(Y0 - y).^2
 % maxit = number of iterations (def=128) to restart descent
 % inner_loop = num iters to continue on a specific descent
+% Q     = optional precision matrix, e.g. e = sum( Q*(Y0-y) ).^2
 %
-% To fit problems of the form:
+%
+% to minimise objective problems of the form:
 % e = f(x)
 %
-% usage - set y=0:
-%   [X,F] = aoptim_edge(fun,x0,V,0,maxit,type)
+% usage is set y=0:
+%   [X,F] = AO(fun,x0,V,0,maxit,type)
 %
 %
 % * note: - if failing to run properly, try transposing input vector x0
@@ -30,6 +32,9 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop)
 %
 global aopt
 
+if nargin < 7 || isempty(Q)
+    Q = 1;
+end
 if nargin < 6 || isempty(inner_loop)
     inner_loop = 9999;
 end
@@ -41,6 +46,7 @@ end
 %--------------------------------------------------------------------------
 aopt.fun  = fun;
 aopt.y    = y(:);
+aopt.Q    = Q;
 x0        = full(x0(:));
 V         = full(V(:));
 [e0]      = obj(x0);
@@ -142,7 +148,7 @@ while iterate
         %dx   = (V*x1(ip)+V*x3(ip).*s);
         %[de] = obj(dx);
         
-        % the descent
+        % continue the descent
         dx    = (V*x1(ip)+x3*s');
         
         % assess each new parameter individually, then find the best mix
@@ -155,14 +161,18 @@ while iterate
         % compute improver-parameters
         gp  = double(DFE < e0);
         gpi = find(gp);
-        
+                
         % only update select parameters
         ddx        = V*x0;
         ddx(gpi)   = dx(gpi);
         dx         = ddx;
         de         = obj(dx);
                 
-        if de  < e1
+        % parameter divergence term
+        pd = real( KLDiv((V*x0)',dx') );
+        de = de + pd; 
+        
+        if de < e1
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -190,10 +200,39 @@ while iterate
     %======================================================================
     if e1 < e0
         
-        % accept new parameters and error
+        % compute deltas & accept new parameters and error
         %------------------------------------------------------------------
-        x0 = x1;
+        %e0 = e1;
+        %x0 = x1;
+        
+        df =  e0 - e1;
+        dp =  x0 - x1;
+        x0 = -dp + x0;
+        e0 =  e1;
+        
+        % do a quick exploit of df./dp 
+        %------------------------------------------------------------------
+        exploit = true;
+        nexpl   = 0;
+        while exploit
+            upd = obj(V*(x1-(dp./df)));
+            div = real( KLDiv((V*x1)',(V*(x1-(dp./df)))' ));
+            upd = upd + div;
+            
+            if upd < e1
+                x1    = V*(x1-(dp./df));
+                e1    = obj(x1);
+                e1    = e1 + div;
+                x1    = V'*x1;
+                nexpl = nexpl + 1;
+            else
+                exploit = false;
+                pupdate(n,nexpl,e1,e0,'extrap');
+            end
+        end
         e0 = e1;
+        x0 = x1;
+            
         
         % print & plots success
         %------------------------------------------------------------------
@@ -206,42 +245,69 @@ while iterate
         % if didn't improve: what to do?
         %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'reject');
-                        
-        % change step: distance between initial point and latest
-        %------------------------------------------------------------------
-        %eu  = diag(cdist(X0,x0));
-        %red = red.*eu;
-        %red = (red+eu)*.8;
-        
-        
+                                
         % sample from improvers params in dx
+        %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'sample');
         thisgood = gp*0;
         if any(gp)
+            
+            % sort good params by improvement amount
+            %--------------------------------------------------------------
             [~,PO] = sort(DFE(gpi),'ascend');
-            xnew   = x0;
-            dx0    = V'*dx;
-            for i  = 1:length(gpi)
-                xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
-                enew = obj(V*xnew);
-                if enew < e0
-                    x0  = V*xnew;
-                    e0  = enew;
-                    thisgood(gpi(PO(i))) = 1;
+            dx0    = dx;
+            
+            % loop the good params in effect-size order
+            % accept on the fly (additive effects)
+            %--------------------------------------------------------------
+            improve1 = 1;
+            while improve1
+                thisgood = gp*0;
+                
+                for i  = 1:length(gpi)
+                    xnew             = real(V*x0);
+                    xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
+                    xnew             = real(xnew);
+                    enew             = obj(xnew);
+                    
+                    div  = real( KLDiv((V*x0)',(xnew)') );
+                    enew = enew + div;
+
+                    if enew < e0
+                        x0  = V'*xnew;
+                        e0  = enew;
+                        thisgood(gpi(PO(i))) = 1;
+                    end
+                end
+                if any(thisgood)
+
+                    % print & plot update
+                    pupdate(n,nfun,e0,e0,'accept');
+                    if doplot; makeplot(V*x0); end
+
+                    % update step size for these params
+                    red = red+(red.*(V'*thisgood'*.2));
+                else
+                    % reduce step and go back to main loop
+                    red = red*.8;
+                    
+                    % halt this while loop
+                    improve1 = 0;
+                    
+                    % keep counting rejections
+                    n_reject_consec = n_reject_consec + 1;
                 end
             end
-            if any(thisgood)
-                pupdate(n,nfun,e1,e0,'accept');
-                if doplot; makeplot(V*x0(ip)); end
-                
+        else
+            
+            % reduce step and go back to main loop
+            red = red*.8;
+            
+            % keep counting rejections
+            n_reject_consec = n_reject_consec + 1;
         end
-                    
+                            
         
-        
-        
-        
-        % keep counting rejections
-        n_reject_consec = n_reject_consec + 1;
     end
     
     % stopping criteria, rules etc.
@@ -249,8 +315,9 @@ while iterate
     
     % if 3 fails, reset the reduction term (based on the specified variance)
     if n_reject_consec == 3
-        fprintf('resetting variance\n');
-        red = red ./ max(red(:));
+        pupdate(n,nfun,e1,e0,'resetV');
+        %red = red ./ max(red(:));
+        red = diag(pC);
     end
     
     % stop at max iterations
@@ -330,11 +397,22 @@ P  = x0(:)';
 
 y  = IS(P); 
 Y  = aopt.y;
-Q  = 1;
+Q  = aopt.Q;
+%e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 
-try;   e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
-catch; e  = sum(   (spm_vec(Y) - spm_vec(y)).^2 );
+if all(size(Q)>1)
+    Q = diag(Q);
+    Q = (Q)./sum( ( Q(:) ));
+    e = (spm_vec(Y) - spm_vec(y)).^2;
+    e = e + (e.*Q);
+    e = sum(e);
+else
+    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 end
+
+%try;   e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
+%catch; e  = sum(   (spm_vec(Y) - spm_vec(y)).^2 );
+%end
 
 % error along output vector
 er = spm_vec(y) - spm_vec(Y);

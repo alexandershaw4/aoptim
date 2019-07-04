@@ -1,12 +1,12 @@
-function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop,Q)
-% gradient descent based optimisation
+function [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q)
+% gradient descent based optimisation primarily for model fitting
 %
 % minimise a model fitting problem of the form:
 %   y = f(x)
 %   e = sum(Y0 - y).^2
 %
 % usage:
-%   [X,F] = aoptim_edge(fun,x0,V,y,maxit,type,Q)
+%   [X,F] = AO(fun,x0,V,y,maxit,type,Q)
 %
 % fun   = functional handle / anonymous function
 % x0    = starting points (vector input to fun)
@@ -21,7 +21,7 @@ function [X,F] = aoptim_edge_descent(fun,x0,V,y,maxit,inner_loop,Q)
 % e = f(x)
 %
 % usage is set y=0:
-%   [X,F] = aoptim_edge(fun,x0,V,0,maxit,type)
+%   [X,F] = AO(fun,x0,V,0,maxit,type)
 %
 %
 % * note: - if failing to run properly, try transposing input vector x0
@@ -82,6 +82,8 @@ pC    = V'*pC*V;
 ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
+aopt.pC = V*red; % store for derivative function access
+
 % parameters (reduced space)
 %--------------------------------------------------------------------------
 np    = size(V,2); 
@@ -116,7 +118,7 @@ while iterate
    
     % compute gradients & search directions
     %----------------------------------------------------------------------
-    [e0,df0,er,Q] = obj( V*x0(ip) );
+    [e0,df0] = obj( V*x0(ip) );
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
@@ -150,7 +152,7 @@ while iterate
         
         % continue the descent
         dx    = (V*x1(ip)+x3*s');
-        
+                
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
@@ -196,10 +198,39 @@ while iterate
     %======================================================================
     if e1 < e0
         
-        % accept new parameters and error
+        % compute deltas & accept new parameters and error
         %------------------------------------------------------------------
-        x0 = x1;
+        %e0 = e1;
+        %x0 = x1;
+        %eX =  e0;
+        
+        df =  e0 - e1;
+        dp =  x0 - x1;
+        x0 = -dp + x0;
+        e0 =  e1;
+        
+        %m  = (eX-e0)./e0;
+        
+        %if the system is (locally?) linear, and we know what dp caused de
+        %we can quickly exploit this to estimate the minimum on this descent
+        %df./dp 
+        %------------------------------------------------------------------
+        exploit = true;
+        nexpl   = 0;
+        while exploit
+            if obj(V*(x1-(dp./df))) < e1
+               x1    = V*(x1-(dp./df));
+                e1    = obj(x1);
+                x1    = V'*x1;
+                nexpl = nexpl + 1;
+            else
+                exploit = false;
+                pupdate(n,nexpl,e1,e0,'extrap');
+            end
+        end
         e0 = e1;
+        x0 = x1;
+            
         
         % print & plots success
         %------------------------------------------------------------------
@@ -211,7 +242,7 @@ while iterate
         
         % if didn't improve: what to do?
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'reject');
+        pupdate(n,nfun,e1,e0,'adjust');
                                 
         % sample from improvers params in dx
         %------------------------------------------------------------------
@@ -222,7 +253,7 @@ while iterate
             % sort good params by improvement amount
             %--------------------------------------------------------------
             [~,PO] = sort(DFE(gpi),'ascend');
-            dx0    = V'*dx;
+            dx0    = dx;
             
             % loop the good params in effect-size order
             % accept on the fly (additive effects)
@@ -232,27 +263,27 @@ while iterate
                 thisgood = gp*0;
                 
                 for i  = 1:length(gpi)
-                    xnew             = real(x0);
+                    xnew             = real(V*x0);
                     xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
                     xnew             = real(xnew);
-                    enew             = obj(V*xnew);
+                    enew             = obj(xnew);
 
                     if enew < e0
-                        x0  = xnew;
+                        x0  = V'*xnew;
                         e0  = enew;
                         thisgood(gpi(PO(i))) = 1;
                     end
                 end
                 if any(thisgood)
 
-                    pupdate(n,nfun,e1,e0,'accept');
+                    % print & plot update
+                    pupdate(n,nfun,e0,e0,'accept');
                     if doplot; makeplot(V*x0); end
 
-                    % update red
-                    %red = red + (red.*thisgood');
-                    red = red-(red.*(thisgood'*.2));
+                    % update step size for these params
+                    red = red+V'*((V*red).*thisgood'*.2);
                 else
-                    % reduce and go back to main loop
+                    % reduce step and go back to main loop
                     red = red*.8;
                     
                     % halt this while loop
@@ -261,8 +292,20 @@ while iterate
                     % keep counting rejections
                     n_reject_consec = n_reject_consec + 1;
                 end
+                
+                % update global store of V
+                aopt.pC = V*red;
             end
+        else
             
+            pupdate(n,nfun,e0,e0,'nogood');
+            
+            % reduce step and go back to main loop
+            red = red*.8;
+            % update global store of V
+            aopt.pC = V*red;
+            % keep counting rejections
+            n_reject_consec = n_reject_consec + 1;
         end
                             
         
@@ -275,7 +318,8 @@ while iterate
     if n_reject_consec == 3
         pupdate(n,nfun,e1,e0,'resetV');
         %red = red ./ max(red(:));
-        red = diag(pC);
+        red = V*diag(pC);
+        aopt.pC = red;
     end
     
     % stop at max iterations
@@ -294,7 +338,7 @@ while iterate
     end
     
     % give up after 10 failed iterations
-    if n_reject_consec == 10
+    if n_reject_consec == 5
         fprintf('Failed to converge... \nReturning best estimates.\n');
         X = V*x0(ip);
         F = e0;
@@ -356,7 +400,18 @@ P  = x0(:)';
 y  = IS(P); 
 Y  = aopt.y;
 Q  = aopt.Q;
-e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
+
+%e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
+
+if all(size(Q)>1)
+    Q = diag(Q);
+    Q = (Q)./sum( ( Q(:) ));
+    e = (spm_vec(Y) - spm_vec(y)).^2;
+    e = e + (e.*Q);
+    e = sum(e);
+else
+    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
+end
 
 %try;   e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
 %catch; e  = sum(   (spm_vec(Y) - spm_vec(y)).^2 );
@@ -366,8 +421,9 @@ e  = sum( Q*(spm_vec(Y) - spm_vec(y)).^2 );
 er = spm_vec(y) - spm_vec(Y);
 
 if nargout > 1
+    V  = aopt.pC;
     % compute jacobi
-    V = ones(size(x0));
+    %V = ones(size(x0));
     [J,ip] = jaco(@obj,x0,V,0);
 end
 

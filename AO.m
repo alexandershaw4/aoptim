@@ -99,6 +99,9 @@ p     = [V'*x0];
 ip    = (1:np)';
 Ep    = V*p(ip);
 
+dff          = [];
+localminflag = 0;
+
 % print updates at n_print intervals along the inner loop
 n_print    = 0;
 
@@ -165,7 +168,7 @@ while iterate
         for nip = 1:length(dx)
             XX       = V*x0;
             XX(nip)  = dx(nip);
-            DFE(nip) = obj(XX);
+            DFE(nip) = obj(real(XX));
         end
         
         % compute improver-parameters
@@ -182,17 +185,19 @@ while iterate
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
-            e1 = de;
-            x1 = V'*dx;
+            df  = e1 - de;
+            e1  = de;
+            x1  = V'*dx;
+            dff = [dff df];
         else
             
             % flag to stop this loop
             %--------------------------------------------------------------
-            improve = false;
+            improve = false;            
         end
         
         % upper limit on the length of this loop
-        if nfun == inner_loop
+        if nfun >= inner_loop
             improve = false;
         end
         
@@ -227,13 +232,18 @@ while iterate
         nexpl   = 0;
         while exploit
             if obj(V*(x1-(dp./df))) < e1
-               x1    = V*(x1-(dp./df));
-                e1    = obj(x1);
-                x1    = V'*x1;
+                x1    = V*(x1-(dp./df));
+                e1    = obj(real(x1));
+                x1    = V'*real(x1);
                 nexpl = nexpl + 1;
             else
                 exploit = false;
                 pupdate(n,nexpl,e1,e0,'extrap');
+            end
+            
+            % upper limit on the length of this loop
+            if nexpl == inner_loop
+                %exploit = false;
             end
         end
         e0 = e1;
@@ -245,13 +255,13 @@ while iterate
         pupdate(n,nfun,e1,e0,'accept');
         if doplot; makeplot(V*x0(ip)); end
         n_reject_consec = 0;
-                
+        dff = [dff df];
     else
         
         % if didn't improve: what to do?
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'adjust');
-                                
+        pupdate(n,nfun,e1,e0,'adjust');             
+        
         % sample from improvers params in dx
         %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'sample');
@@ -261,7 +271,7 @@ while iterate
             % sort good params by improvement amount
             %--------------------------------------------------------------
             [~,PO] = sort(DFE(gpi),'ascend');
-            dx0    = dx;
+            dx0    = real(dx);
             
             % loop the good params in effect-size order
             % accept on the fly (additive effects)
@@ -277,7 +287,8 @@ while iterate
                     enew             = obj(xnew);
 
                     if enew < e0
-                        x0  = V'*xnew;
+                        dff = [dff (e0-enew)];
+                        x0  = V'*real(xnew);
                         e0  = enew;
                         thisgood(gpi(PO(i))) = 1;
                     end
@@ -290,6 +301,8 @@ while iterate
 
                     % update step size for these params
                     red = red+V'*((V*red).*thisgood'*.2);
+                    
+                    n_reject_consec = 0;
                 else
                     % reduce step and go back to main loop
                     red = red*.8;
@@ -321,6 +334,21 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
+    if length(dff) > 30
+        if var( dff(end-30:end) ) < 0.002
+            localminflag = 3;
+        end
+    end
+    if length(dff) > 31
+        dff = dff(end-30:end);
+    end
+        
+    if localminflag == 3
+        fprintf('I think we''re stuck...stopping\n');
+        X = V*real(x0(ip));
+        F = e0;
+        return;
+    end
     
     % if 3 fails, reset the reduction term (based on the specified variance)
     if n_reject_consec == 3
@@ -332,7 +360,7 @@ while iterate
     
     % stop at max iterations
     if n == maxit
-        X = V*x0(ip);
+        X = V*(x0(ip));
         F = e0;
         return;
     end
@@ -340,7 +368,7 @@ while iterate
     % check for convergence
     if e0 <= criterion
         fprintf('Convergence.\n');
-        X = V*x0(ip);
+        X = V*real(x0(ip));
         F = e0;
         return;
     end
@@ -348,7 +376,7 @@ while iterate
     % give up after 10 failed iterations
     if n_reject_consec == 5
         fprintf('Failed to converge... \nReturning best estimates.\n');
-        X = V*x0(ip);
+        X = V*real(x0(ip));
         F = e0;
         return;
     end

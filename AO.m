@@ -78,9 +78,9 @@ if nargin < 5 || isempty(maxit)
     maxit = 128;
 end
 
-% check functions
+% check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt.order = 2;              % first or second order derivatives
+aopt.order = 2;               % first or second order derivatives [use 2nd]
 aopt.fun   = fun;
 aopt.y     = y(:);
 aopt.Q     = Q;

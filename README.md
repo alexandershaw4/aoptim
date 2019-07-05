@@ -1,4 +1,4 @@
 # aoptim
-another gradient based optimisation routine
+A gradient & curvature based optimisation routine for model fitting / function minimisation.
 
-![screenshot](shot.png)
+![screenshot](AO_ModelOptimisation.gif)

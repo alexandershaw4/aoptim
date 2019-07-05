@@ -1,10 +1,22 @@
-function [j,ip] = jaco(fun,x0,V,verbose)
-% Compute the Jacobian matrix (parameter gradients) for a model using:
+function [j,ip] = jaco(fun,x0,V,verbose,order)
+% Compute the 1st or 2nd order partial (numerical) derivates of a function
+%
+% usage: [j,ip] = jaco(fun,x0,V,verbose,order)
+%
+% (order 1:) Compute the 1st order partial derivatives
+% Jacobian matrix (parameter gradients) for a model using:
 %
 % j(ip,:) = ( f(x(ip)+h)  - f(x(ip)-h) )  / (2 * h)
 %
+% (order 2:) Compute the 2nd order derivatives (curvature)
+%
+% j(ip,:) = [ (f0 - f1) / 2 / d ] ./ [ (f0 - 2 * fx + f1) / d ^ 2 ]
 %
 % AS2019
+
+if nargin < 5 || isempty(order)
+    order = 1;
+end
 
 if nargin < 4 || isempty(verbose)
     verbose = 0;
@@ -21,7 +33,7 @@ if nargin >= 3; ip = ~~(V(:));
 else;           ip = 1:length(x0);
 end
 
-j  = jacf(IS,P,ip,verbose,V);
+j  = jacf(IS,P,ip,verbose,V,order);
 
 j(isnan(j)) = 0;
 
@@ -29,14 +41,22 @@ end
 
 
 
-function j = jacf(IS,P,ip,verbose,V)
+function j = jacf(IS,P,ip,verbose,V,order)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
 warning off ;
 
+if verbose
+    switch order
+        case 1 ; fprintf('Copmuting 1st order pd (Gradient/Jacobian)\n');
+        case 2 ; fprintf('Computing 2nd order pd (Curvature)\n');
+    end
+end
+
 %f0    = feval(IS,P);
 f0    = spm_cat( feval(IS,P) );
+fx    = f0;
 j     = zeros(length(P),length(f0(:))); % n param x n output
 for i = 1:length(P)
     if ip(i)
@@ -65,10 +85,12 @@ for i = 1:length(P)
         f1     = spm_vec(spm_cat(feval(IS,P1)));
         j(i,:) = (f0 - f1) / (2 * d);
         
-        % Alternatively, include curvature
-        %deriv1 = (f0 - f1) / 2 / d;
-        %deriv2 = (f0 - 2 * fx + f1) / d ^ 2;
-        %j(i,:) = deriv1 ./ deriv2;
+        if order == 2
+            % Alternatively, include curvature
+            deriv1 = (f0 - f1) / 2 / d;
+            deriv2 = (f0 - 2 * fx + f1) / d ^ 2;
+            j(i,:) = deriv1 ./ deriv2;
+        end
     end
 end
 

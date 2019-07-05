@@ -1,5 +1,5 @@
 function [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q)
-% gradient descent based optimisation, primarily for model fitting
+% gradient/curvature descent based optimisation, primarily for model fitting
 % 
 % Fit models of the form:
 %   Y0 = f(x) + e
@@ -28,7 +28,7 @@ function [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q)
 % to minimise objective problems of the form:
 %   e = f(x)
 %
-% the usage is: [note: set y=0 if f(x) returns the error/objective]
+% the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
 %   [X,F] = AO(fun,x0,V,0,maxit,type) 
 %
 %
@@ -36,7 +36,7 @@ function [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q)
 % *       - may need to remove the transpose at line 406: P = x0(:)';
 %
 %
-% Pseudo code on how it works:
+% Pseudo-code on how it works:
 %
 % - while improving:
 %   * compute parameter gradients (1st order partial derivatives)
@@ -80,17 +80,18 @@ end
 
 % check functions
 %--------------------------------------------------------------------------
-aopt.fun  = fun;
-aopt.y    = y(:);
-aopt.Q    = Q;
-x0        = full(x0(:));
-V         = full(V(:));
-[e0]      = obj(x0);
+aopt.order = 2;              % first or second order derivatives
+aopt.fun   = fun;
+aopt.y     = y(:);
+aopt.Q     = Q;
+x0         = full(x0(:));
+V          = full(V(:));
+[e0]       = obj(x0);
 
-n         = 0;
-iterate   = true;
-criterion = 1e-2;
-doplot    = 1;
+n          = 0;
+iterate    = true;
+criterion  = 1e-2;
+doplot     = 1;
 
 V  = smooth(V);
 Vb = V;
@@ -363,8 +364,11 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    if length(dff) > 30
-        if var( dff(end-30:end) ) < 0.0002
+    if order == 1; ldf = 30; dftol = 0.002;  end
+    if order == 2; ldf = 50; dftol = 0.0001; end
+    
+    if length(dff) > ldf
+        if var( dff(end-ldf:end) ) < dftol
             localminflag = 3;            
         end
     end
@@ -383,8 +387,8 @@ while iterate
     if n_reject_consec == 3
         pupdate(n,nfun,e1,e0,'resetV');
         %red = red ./ max(red(:));
-        red = V*diag(pC);
-        aopt.pC = red;
+        red     = diag(pC);
+        aopt.pC = V*red;
     end
     
     % stop at max iterations
@@ -486,10 +490,11 @@ end
 er = spm_vec(y) - spm_vec(Y);
 
 if nargout > 1
-    V  = aopt.pC;
+    V   = aopt.pC;
+    Ord = aopt.order; 
     % compute jacobi
     %V = ones(size(x0));
-    [J,ip] = jaco(@obj,x0,V,0);
+    [J,ip] = jaco(@obj,x0,V,0,Ord);
 end
 
 

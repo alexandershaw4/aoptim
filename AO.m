@@ -364,8 +364,8 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    if order == 1; ldf = 30; dftol = 0.002;  end
-    if order == 2; ldf = 50; dftol = 0.0001; end
+    if aopt.order == 1; ldf = 30; dftol = 0.002;  end
+    if aopt.order == 2; ldf = 50; dftol = 0.0001; end
     
     if length(dff) > ldf
         if var( dff(end-ldf:end) ) < dftol

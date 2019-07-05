@@ -242,17 +242,11 @@ while iterate
         
         % compute deltas & accept new parameters and error
         %------------------------------------------------------------------
-        %e0 = e1;
-        %x0 = x1;
-        %eX =  e0;
-        
         df =  e0 - e1;
         dp =  x0 - x1;
         x0 = -dp + x0;
         e0 =  e1;
-        
-        %m  = (eX-e0)./e0;
-        
+                
         %if the system is (locally?) linear, and we know what dp caused de
         %we can quickly exploit this to estimate the minimum on this descent
         %df./dp 

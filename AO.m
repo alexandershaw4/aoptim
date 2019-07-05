@@ -163,7 +163,7 @@ while iterate
     %----------------------------------------------------------------------
     s   = -df0';
     d0  = -s'*s;           
-    x3  = V*red(ip)./(1-d0);                 % initial step is red/(|s|+1)
+    x3  = V*red(ip)./(1-d0);                 % initial step 
     
     % make copies of error and param set
     x1  = x0;
@@ -270,8 +270,8 @@ while iterate
             end
             
             % upper limit on the length of this loop: no don't do this
-            if nexpl == inner_loop
-                %exploit = false;
+            if nexpl == (inner_loop*10)
+                exploit = false;
             end
         end
         e0 = e1;
@@ -328,7 +328,7 @@ while iterate
                     if doplot; makeplot(V*x0); end
 
                     % update step size for these params
-                    red = red+V'*((V*red).*thisgood'*.2);
+                    red = red+V'*((V*red).*thisgood');
                     
                     % reset rejection counter
                     n_reject_consec = 0;
@@ -364,7 +364,7 @@ while iterate
     % stopping criteria, rules etc.
     %======================================================================
     if length(dff) > 30
-        if var( dff(end-30:end) ) < 0.002
+        if var( dff(end-30:end) ) < 0.0002
             localminflag = 3;            
         end
     end

@@ -249,8 +249,8 @@ while iterate
         x0 = -dp + x0;
         e0 =  e1;
                 
-        % M-step
-        %============
+        % M-step (line search)
+        %==================================================================
         
         %if the system is (locally?) linear, and we know what dp caused de
         %we can quickly exploit this to estimate the minimum on this descent

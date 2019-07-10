@@ -1,4 +1,4 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
+function [X,F,Cp] = AO_dev(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 % gradient/curvature descent based optimisation, primarily for model fitting
 % 
 % Fit models of the form:
@@ -184,10 +184,11 @@ while iterate
         nfun = nfun + 1;
         
         % print updates and update plot intermittently
-        if ismember(nfun,round(linspace( (inner_loop/n_print),inner_loop,n_print )) )
-            pupdate(nfun,nfun,e1,e0,'contin');
-            if doplot; makeplot(V*x1(ip)); end
-        end
+        pupdate(n,nfun,e1,e0,'contin');
+        %if ismember(nfun,round(linspace( (inner_loop/n_print),inner_loop,n_print )) )
+        %    pupdate(nfun,nfun,e1,e0,'contin');
+        %    if doplot; makeplot(V*x1(ip)); end
+        %end
                 
         % continue the descent
         dx    = (V*x1(ip)+x3*s');
@@ -261,15 +262,16 @@ while iterate
                 e1    = obj(real(x1));
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;
+                pupdate(n,nexpl,e1,e1,'improv');
             else
                 exploit = false;
                 pupdate(n,nexpl,e1,e0,'extrap');
             end
             
             % upper limit on the length of this loop: no don't do this
-            %if nexpl == (inner_loop*10)
-            %    exploit = false;
-            %end
+            if nexpl >= (inner_loop)
+                exploit = false;
+            end
         end
         e0 = e1;
         x0 = x1;
@@ -312,6 +314,7 @@ while iterate
                     enew             = obj(xnew);
                     % accept new error and parameters and continue
                     if enew < e0
+                        pupdate(n,nfun,enew,e0,'improv');
                         dff = [dff (e0-enew)];
                         x0  = V'*real(xnew);
                         e0  = enew;

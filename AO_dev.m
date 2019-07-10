@@ -172,6 +172,13 @@ while iterate
     x1  = x0;
     e1  = e0;
 
+            
+    % covariance estimation
+    J       = df0;
+    Pp      = real(J*1*J');
+    Pp      = V'*Pp*V;
+    Cp      = spm_inv(Pp + ipC);
+    
     % start counters
     improve = true;
     nfun    = 0;
@@ -192,9 +199,10 @@ while iterate
         %dx   = (V*x1(ip)+V*x3(ip).*s);
         %[de] = obj(dx);
         
-        % continue the descent
+        % E-step: continue the descent
+        %==================================================================
         dx    = (V*x1(ip)+x3*s');
-        
+
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
@@ -249,8 +257,8 @@ while iterate
         x0 = -dp + x0;
         e0 =  e1;
                 
-        % M-step
-        %============
+        % M-step (line search)
+        %==================================================================
         
         %if the system is (locally?) linear, and we know what dp caused de
         %we can quickly exploit this to estimate the minimum on this descent
@@ -270,9 +278,9 @@ while iterate
             end
             
             % upper limit on the length of this loop: no don't do this
-            %if nexpl == (inner_loop*10)
-            %    exploit = false;
-            %end
+            if nexpl == (inner_loop/2)
+                exploit = false;
+            end
         end
         e0 = e1;
         x0 = x1;

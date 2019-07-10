@@ -1,4 +1,4 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
+function [X,F,Cp] = AO_dev(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 % gradient/curvature descent based optimisation, primarily for model fitting
 % 
 % Fit models of the form:
@@ -172,6 +172,13 @@ while iterate
     x1  = x0;
     e1  = e0;
 
+            
+    % covariance estimation
+    J       = df0;
+    Pp      = real(J*1*J');
+    Pp      = V'*Pp*V;
+    Cp      = spm_inv(Pp + ipC);
+    
     % start counters
     improve = true;
     nfun    = 0;
@@ -188,10 +195,20 @@ while iterate
             pupdate(nfun,nfun,e1,e0,'contin');
             if doplot; makeplot(V*x1(ip)); end
         end
-                
-        % continue the descent
+        
+        %dx   = (V*x1(ip)+V*x3(ip).*s);
+        %[de] = obj(dx);
+        
+        % E-step: continue the descent
+        %==================================================================
         dx    = (V*x1(ip)+x3*s');
         
+        % Laplace
+        dFdp  = -real(df0*1*e0)    - (V*ipC*V')*(V*p);
+        dFdpp = -real(df0*1*df0') - ipC;
+        dp    = spm_dx(dFdpp,dFdp,{v});
+        
+                
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
@@ -200,7 +217,7 @@ while iterate
         end
         
         % compute improver-parameters
-        gp  = double(DFE < e0); % e0
+        gp  = double(DFE < e1); % e0
         gpi = find(gp);
         
         % only update select parameters
@@ -251,7 +268,7 @@ while iterate
         
         %if the system is (locally?) linear, and we know what dp caused de
         %we can quickly exploit this to estimate the minimum on this descent
-        %df./dp using an expansion
+        %df./dp 
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
@@ -267,9 +284,9 @@ while iterate
             end
             
             % upper limit on the length of this loop: no don't do this
-            %if nexpl == (inner_loop*10)
-            %    exploit = false;
-            %end
+            if nexpl == (inner_loop/2)
+                exploit = false;
+            end
         end
         e0 = e1;
         x0 = x1;
@@ -489,7 +506,7 @@ Y  = aopt.y;
 
 end
 
-function [e,J] = obj(x0)
+function [e,J,er,Q,Y,y] = obj(x0)
 % - compute the objective function - i.e. the sqaured error to minimise
 % - also returns the parameter Jacobian
 %
@@ -507,10 +524,10 @@ Q  = aopt.Q;
 
 if all(size(Q)>1)
     Q = diag(Q);
-    Q = 1 + (2 - 1) .* (Q - min(Q)) / ( max(Q) - min(Q) );
+    Q = (Q)./sum( ( Q(:) ));
     e = (spm_vec(Y) - spm_vec(y)).^2;
-    e = Q.*e;
-    e = sum(e.^2);
+    e = e + (e.*Q);
+    e = sum(e);
 else
     e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 end
@@ -524,7 +541,8 @@ if nargout > 1
     Ord = aopt.order; 
     % compute jacobi
     %V = ones(size(x0));
-    [J,ip] = jaco(@obj,x0,V,0,Ord);  
+    [J,ip] = jaco(@obj,x0,V,0,Ord);
 end
+
 
 end

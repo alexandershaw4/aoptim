@@ -153,6 +153,7 @@ pupdate(n,0,e0,e0,'start:');
 % start loop
 %==========================================================================
 while iterate
+    fprintf('(re)starting iterate loop\n');
     
     % counter
     %----------------------------------------------------------------------
@@ -160,7 +161,9 @@ while iterate
    
     % compute gradients & search directions
     %----------------------------------------------------------------------
+    fprintf('Computing derivatives\n');
     [e0,df0] = obj( V*x0(ip) );
+    fprintf('Finished computing derivatives\n');
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
@@ -172,13 +175,6 @@ while iterate
     x1  = x0;
     e1  = e0;
 
-            
-    % covariance estimation
-    J       = df0;
-    Pp      = real(J*1*J');
-    Pp      = V'*Pp*V;
-    Cp      = spm_inv(Pp + ipC);
-    
     % start counters
     improve = true;
     nfun    = 0;
@@ -186,6 +182,7 @@ while iterate
     % iterative descent on this slope
     %======================================================================
     while improve
+        fprintf('(re)starting improvement loop\n');
         
         % descend while we can
         nfun = nfun + 1;
@@ -195,14 +192,10 @@ while iterate
             pupdate(nfun,nfun,e1,e0,'contin');
             if doplot; makeplot(V*x1(ip)); end
         end
-        
-        %dx   = (V*x1(ip)+V*x3(ip).*s);
-        %[de] = obj(dx);
-        
-        % E-step: continue the descent
-        %==================================================================
+                
+        % continue the descent
         dx    = (V*x1(ip)+x3*s');
-
+        
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
@@ -241,7 +234,8 @@ while iterate
         end
         
     end  % end while improve...
-      
+    fprintf('end of improvement loop\n');  
+    
     % ignore complex parameter values - for most functions, yes
     %----------------------------------------------------------------------
     x1 = real(x1);
@@ -262,13 +256,14 @@ while iterate
         
         %if the system is (locally?) linear, and we know what dp caused de
         %we can quickly exploit this to estimate the minimum on this descent
-        %df./dp 
+        %dp./de using an expansion
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
         while exploit
-            if obj(V*(x1-(dp./df))) < e1
-                x1    = V*(x1-(dp./df));
+            fprintf('(re)starting exploit loop\n');
+            if obj(V*(x1+(dp./df))) < e1
+                x1    = V*(x1+(dp./df));
                 e1    = obj(real(x1));
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;
@@ -278,10 +273,11 @@ while iterate
             end
             
             % upper limit on the length of this loop: no don't do this
-            if nexpl == (inner_loop/2)
-                exploit = false;
-            end
+            %if nexpl == (inner_loop*10)
+            %    exploit = false;
+            %end
         end
+        fprintf('end exploit loop\n');
         e0 = e1;
         x0 = x1;
             
@@ -314,6 +310,7 @@ while iterate
             %--------------------------------------------------------------
             improve1 = 1;
             while improve1
+                fprintf('(re)starting selective update loop\n');
                 thisgood = gp*0;
                 % evaluate the 'good' parameters
                 for i  = 1:length(gpi)
@@ -326,13 +323,13 @@ while iterate
                         dff = [dff (e0-enew)];
                         x0  = V'*real(xnew);
                         e0  = enew;
-                        thisgood(gpi(PO(i))) = 1;
+                        thisgood(gpi(PO(i))) = thisgood(gpi(PO(i))) + 1;
                     end
                 end
                 if any(thisgood)
 
                     % print & plot update
-                    pupdate(n,nfun,e0,e0,'accept');
+                    pupdate(n,sum(thisgood),e0,e0,'accept');
                     if doplot; makeplot(V*x0); end
 
                     % update step size for these params
@@ -354,6 +351,7 @@ while iterate
                 % update global store of V
                 aopt.pC = V*red;
             end
+            fprintf('end selective update loop\n');
         else
             
             pupdate(n,nfun,e0,e0,'reject');
@@ -500,7 +498,7 @@ Y  = aopt.y;
 
 end
 
-function [e,J,er,Q,Y,y] = obj(x0)
+function [e,J] = obj(x0)
 % - compute the objective function - i.e. the sqaured error to minimise
 % - also returns the parameter Jacobian
 %
@@ -518,10 +516,10 @@ Q  = aopt.Q;
 
 if all(size(Q)>1)
     Q = diag(Q);
-    Q = (Q)./sum( ( Q(:) ));
+    Q = 1 + (2 - 1) .* (Q - min(Q)) / ( max(Q) - min(Q) );
     e = (spm_vec(Y) - spm_vec(y)).^2;
-    e = e + (e.*Q);
-    e = sum(e);
+    e = Q.*e;
+    e = sum(e.^2);
 else
     e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 end
@@ -535,8 +533,7 @@ if nargout > 1
     Ord = aopt.order; 
     % compute jacobi
     %V = ones(size(x0));
-    [J,ip] = jaco(@obj,x0,V,0,Ord);
+    [J,ip] = jaco(@obj,x0,V,0,Ord);  
 end
-
 
 end

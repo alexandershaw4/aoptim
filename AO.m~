@@ -1,4 +1,4 @@
-function [X,F,Cp] = AO_dev(fun,x0,V,y,maxit,inner_loop,Q,criterion)
+function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 % gradient/curvature descent based optimisation, primarily for model fitting
 % 
 % Fit models of the form:
@@ -148,22 +148,20 @@ else
 end
 
 % print start point
+refdate();
 pupdate(n,0,e0,e0,'start:');
 
 % start loop
 %==========================================================================
 while iterate
-    fprintf('(re)starting iterate loop\n');
     
     % counter
     %----------------------------------------------------------------------
-    n = n + 1;      
+    n = n + 1;    tic;
    
     % compute gradients & search directions
     %----------------------------------------------------------------------
-    fprintf('Computing derivatives\n');
     [e0,df0] = obj( V*x0(ip) );
-    fprintf('Finished computing derivatives\n');
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
@@ -182,7 +180,6 @@ while iterate
     % iterative descent on this slope
     %======================================================================
     while improve
-        fprintf('(re)starting improvement loop\n');
         
         % descend while we can
         nfun = nfun + 1;
@@ -234,8 +231,7 @@ while iterate
         end
         
     end  % end while improve...
-    fprintf('end of improvement loop\n');  
-    
+      
     % ignore complex parameter values - for most functions, yes
     %----------------------------------------------------------------------
     x1 = real(x1);
@@ -261,17 +257,14 @@ while iterate
         exploit = true;
         nexpl   = 0;
         while exploit
-            fprintf('(re)starting exploit loop\n');
-            %if obj(V*(x1+(dp./df))) < e1
-             if obj( V*x1 + V*(( 100*(dp-e0./e0) ./df)'*ipC)' ) < e1
-                %x1    = V*(x1+(dp./df));
-                x1    = V*x1 + V*(( 100*(dp-e0./e0) ./df)'*ipC)';
+            if obj(V*(x1+(dp./df))) < e1
+                x1    = V*(x1+(dp./df));
                 e1    = obj(real(x1));
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;
             else
                 exploit = false;
-                pupdate(n,nexpl,e1,e0,'extrap');
+                pupdate(n,nexpl,e1,e0,'extrap',toc);
             end
             
             % upper limit on the length of this loop: no don't do this
@@ -279,14 +272,13 @@ while iterate
             %    exploit = false;
             %end
         end
-        fprintf('end exploit loop\n');
         e0 = e1;
         x0 = x1;
             
         
         % print & plots success
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'accept');
+        pupdate(n,nfun,e1,e0,'accept',toc);
         if doplot; makeplot(V*x0(ip)); end
         n_reject_consec = 0;
         dff = [dff df];
@@ -294,11 +286,11 @@ while iterate
         
         % if didn't improve: what to do?
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'adjust');             
+        pupdate(n,nfun,e1,e0,'adjust',toc);             
         
         % sample from improvers params in dx
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'sample');
+        pupdate(n,nfun,e1,e0,'sample',toc);
         thisgood = gp*0;
         if any(gp)
             
@@ -312,7 +304,6 @@ while iterate
             %--------------------------------------------------------------
             improve1 = 1;
             while improve1
-                fprintf('(re)starting selective update loop\n');
                 thisgood = gp*0;
                 % evaluate the 'good' parameters
                 for i  = 1:length(gpi)
@@ -325,13 +316,13 @@ while iterate
                         dff = [dff (e0-enew)];
                         x0  = V'*real(xnew);
                         e0  = enew;
-                        thisgood(gpi(PO(i))) = thisgood(gpi(PO(i))) + 1;
+                        thisgood(gpi(PO(i))) = 1;
                     end
                 end
                 if any(thisgood)
 
                     % print & plot update
-                    pupdate(n,sum(thisgood),e0,e0,'accept');
+                    pupdate(n,nfun,e0,e0,'accept',toc);
                     if doplot; makeplot(V*x0); end
 
                     % update step size for these params
@@ -353,10 +344,9 @@ while iterate
                 % update global store of V
                 aopt.pC = V*red;
             end
-            fprintf('end selective update loop\n');
         else
             
-            pupdate(n,nfun,e0,e0,'reject');
+            pupdate(n,nfun,e0,e0,'reject',toc);
             
             % reduce step and go back to main loop
             red = red*.8;
@@ -464,9 +454,20 @@ end
 
 end
 
-function pupdate(it,nfun,err,best,action)
+function refdate()
 
-fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
+fprintf('| ITERATION     | FUN EVAL | CURRENT ERROR    | BEST ERROR SF | ACTION | TIME\n');
+
+end
+
+function pupdate(it,nfun,err,best,action,varargin)
+
+if nargin >= 6
+    n = varargin{1};
+    fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
+else
+    fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
+end
 
 end
 

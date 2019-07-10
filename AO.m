@@ -148,6 +148,7 @@ else
 end
 
 % print start point
+refdate();
 pupdate(n,0,e0,e0,'start:');
 
 % start loop
@@ -156,7 +157,7 @@ while iterate
     
     % counter
     %----------------------------------------------------------------------
-    n = n + 1;      
+    n = n + 1;    tic;
    
     % compute gradients & search directions
     %----------------------------------------------------------------------
@@ -182,13 +183,7 @@ while iterate
         
         % descend while we can
         nfun = nfun + 1;
-        
-        % print updates and update plot intermittently
-        if ismember(nfun,round(linspace( (inner_loop/n_print),inner_loop,n_print )) )
-            pupdate(nfun,nfun,e1,e0,'contin');
-            if doplot; makeplot(V*x1(ip)); end
-        end
-                
+                        
         % continue the descent
         dx    = (V*x1(ip)+x3*s');
         
@@ -251,19 +246,19 @@ while iterate
         
         %if the system is (locally?) linear, and we know what dp caused de
         %we can quickly exploit this to estimate the minimum on this descent
-        %df./dp using an expansion
+        %dp./de using an expansion
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
         while exploit
-            if obj(V*(x1-(dp./df))) < e1
-                x1    = V*(x1-(dp./df));
+            if obj(V*(x1+(dp./df))) < e1
+                x1    = V*(x1+(dp./df));
                 e1    = obj(real(x1));
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;
             else
                 exploit = false;
-                pupdate(n,nexpl,e1,e0,'extrap');
+                pupdate(n,nexpl,e1,e0,'extrap',toc);
             end
             
             % upper limit on the length of this loop: no don't do this
@@ -277,7 +272,7 @@ while iterate
         
         % print & plots success
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'accept');
+        pupdate(n,nfun,e1,e0,'accept',toc);
         if doplot; makeplot(V*x0(ip)); end
         n_reject_consec = 0;
         dff = [dff df];
@@ -285,11 +280,11 @@ while iterate
         
         % if didn't improve: what to do?
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'adjust');             
+        pupdate(n,nfun,e1,e0,'adjust',toc);             
         
         % sample from improvers params in dx
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'sample');
+        pupdate(n,nfun,e1,e0,'sample',toc);
         thisgood = gp*0;
         if any(gp)
             
@@ -321,7 +316,7 @@ while iterate
                 if any(thisgood)
 
                     % print & plot update
-                    pupdate(n,nfun,e0,e0,'accept');
+                    pupdate(n,nfun,e0,e0,'accept',toc);
                     if doplot; makeplot(V*x0); end
 
                     % update step size for these params
@@ -345,7 +340,7 @@ while iterate
             end
         else
             
-            pupdate(n,nfun,e0,e0,'reject');
+            pupdate(n,nfun,e0,e0,'reject',toc);
             
             % reduce step and go back to main loop
             red = red*.8;
@@ -453,9 +448,22 @@ end
 
 end
 
-function pupdate(it,nfun,err,best,action)
+function refdate()
+fprintf('\n');
 
-fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
+fprintf('| ITERATION     | FUN EVAL | CURRENT ERROR     | BEST ERROR SO FAR  | ACTION | TIME\n');
+fprintf('|---------------|----------|-------------------|--------------------|--------|-------------\n');
+
+end
+
+function pupdate(it,nfun,err,best,action,varargin)
+
+if nargin >= 6
+    n = varargin{1};
+    fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
+else
+    fprintf('| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
+end
 
 end
 

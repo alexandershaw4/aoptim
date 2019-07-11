@@ -1,4 +1,4 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
+function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % gradient/curvature descent based optimisation, primarily for model fitting
 % 
 % Fit models of the form:
@@ -14,7 +14,10 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 %   e = sum(Y0 - y).^2
 %
 % the usage is:
-%   [X,F] = AO(fun,x0,V,y,maxit,type,Q)
+%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df)
+%
+% minimum usage (using defaults):
+%   [X,F] = AO(fun,x0,V,[y])
 %
 % fun        = function handle / anonymous function
 % x0         = starting points (vector input to fun)
@@ -23,13 +26,14 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 % maxit      = number of iterations (def=128) to restart descent
 % inner_loop = num iters to continue on a specific descent (def=9999)
 % Q          = optional precision matrix, e.g. e = sum( diag(Q).*(Y0-y) ).^2
-%
+% crit       = convergence value @(e=crit)
+% min_df     = minimum change in function value (Error) to continue
 %
 % to minimise objective problems of the form:
 %   e = f(x)
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
-%   [X,F] = AO(fun,x0,V,0,maxit,type) 
+%   [X,F] = AO(fun,x0,V,0,maxit,inner_loop) 
 %
 %
 % * note: - if failing to run properly, try transposing input vector x0
@@ -39,8 +43,8 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 % Pseudo-code on how it works:
 %
 % - while improving:
-%   * compute parameter gradients (1st order partial derivatives)
-%   * derive descent path / initial step
+%   * compute parameter gradients (1st/2nd order partial derivatives)
+%   * derive descent path & initial step
 %   - while improving on this path:
 %     * descend a step
 %     * evaluate effect of each parameters new value
@@ -68,6 +72,9 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion)
 %
 global aopt
 
+if nargin < 9 || isempty(min_df)
+    min_df = 0;
+end
 if nargin < 8 || isempty(criterion)
     criterion = 1e-2;
 end
@@ -356,8 +363,14 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    if aopt.order == 1; ldf = 30; dftol = 0.002;  end
-    if aopt.order == 2; ldf = 50; dftol = 0.0001; end
+    if min_df ~= 0
+        % user can define minimum DF
+        ldf = 30; dftol = min_df;
+    else
+        % otherwise invoke some defaults
+        if aopt.order == 1; ldf = 30; dftol = 0.002;  end
+        if aopt.order == 2; ldf = 50; dftol = 0.0001; end
+    end
     
     if length(dff) > ldf
         if var( dff(end-ldf:end) ) < dftol

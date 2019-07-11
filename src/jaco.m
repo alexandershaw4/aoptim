@@ -3,16 +3,19 @@ function [j,ip] = jaco(fun,x0,V,verbose,order)
 %
 % usage: [j,ip] = jaco(fun,x0,V,verbose,order)
 %
-% (order 1:) Compute the 1st order partial derivatives (parameter gradients,
-% Jacobian) for a function using:
+% (order 1:) Compute the 1st order partial derivatives (gradient) 
+% of a function using:
 %
 % j(ip,:) = ( f(x(ip)+h)  - f(x(ip)-h) )  / (2 * h)
 %
-% (order 2:) Compute the 2nd order derivatives (Hessian):
+% (order 2:) Compute the 2nd order derivatives (curvature):
 %
 % j(ip,:) = [ (f0 - f1) / 2 / d ] ./ [ (f0 - 2 * fx + f1) / d ^ 2 ]
 %
 %
+% if order==1, when j is square, it is the Jacobian
+% if order==2, when j is square, it is the Hessian
+% 
 % AS2019
 
 if nargin < 5 || isempty(order)

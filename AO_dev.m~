@@ -206,10 +206,12 @@ while iterate
         % compute improver-parameters
         gp  = double(DFE < e0); % e0
         gpi = find(gp);
+        gpb = find(~gp);
         
         % only update select parameters
         ddx        = V*x0;
         ddx(gpi)   = dx(gpi);
+        ddx(gpb)   = -dx(gpb);
         dx         = ddx;
         de         = obj(dx);
                 
@@ -262,10 +264,8 @@ while iterate
         nexpl   = 0;
         while exploit
             fprintf('(re)starting exploit loop\n');
-            %if obj(V*(x1+(dp./df))) < e1
-             if obj( V*x1 + V*(( 100*(dp-e0./e0) ./df)'*ipC)' ) < e1
-                %x1    = V*(x1+(dp./df));
-                x1    = V*x1 + V*(( 100*(dp-e0./e0) ./df)'*ipC)';
+            if obj(V*(x1+(dp./df))) < e1
+                x1    = V*(x1+(dp./df));
                 e1    = obj(real(x1));
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;

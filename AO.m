@@ -365,7 +365,7 @@ while iterate
     %======================================================================
     if min_df ~= 0
         % user can define minimum DF
-        ldf = 30; dftol = min_df;
+        ldf = 100; dftol = min_df;
     else
         % otherwise invoke some defaults
         if aopt.order == 1; ldf = 30; dftol = 0.002;  end
@@ -407,6 +407,7 @@ while iterate
     
     % stop at max iterations
     if n == maxit
+        fprintf('Reached max iterations: stopping\n');
         
         % return current best
         X = V*real(x0(ip));

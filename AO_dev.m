@@ -262,6 +262,7 @@ while iterate
         nexpl   = 0;
         while exploit
             fprintf('(re)starting exploit loop\n');
+            
             if obj(V*(x1+(dp./df))) < e1
                 x1    = V*(x1+(dp./df));
                 e1    = obj(real(x1));
@@ -273,9 +274,9 @@ while iterate
             end
             
             % upper limit on the length of this loop: no don't do this
-            %if nexpl == (inner_loop*10)
-            %    exploit = false;
-            %end
+            if nexpl == (inner_loop)
+                exploit = false;
+            end
         end
         fprintf('end exploit loop\n');
         e0 = e1;

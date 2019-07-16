@@ -488,12 +488,11 @@ function makeplot(x)
 
 [Y,y] = GetStates(x);
 
-if iscell(Y)
+%if iscell(Y)
     plot(spm_cat(Y),':'); hold on;
     plot(spm_cat(y)    ); hold off;
     drawnow;
-end
-
+%end
 
 end
 

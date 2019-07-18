@@ -528,7 +528,7 @@ Q  = aopt.Q;
 
 if all(size(Q)>1)
     Q = diag(Q);
-    Q = 1 + (2 - 1) .* (Q - min(Q)) / ( max(Q) - min(Q) );
+    %Q = 1 + (2 - 1) .* (Q - min(Q)) / ( max(Q) - min(Q) );
     e = (spm_vec(Y) - spm_vec(y)).^2;
     e = Q.*e;
     e = sum(e.^2);

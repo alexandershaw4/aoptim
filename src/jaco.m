@@ -1,5 +1,7 @@
 function [j,ip] = jaco(fun,x0,V,verbose,order)
 % Compute the 1st or 2nd order partial (numerical) derivates of a function
+% - parameter version: i.e. dp/dx
+%
 %
 % usage: [j,ip] = jaco(fun,x0,V,verbose,order)
 %

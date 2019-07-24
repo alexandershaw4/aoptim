@@ -1,7 +1,7 @@
 function [j,ip] = jaco(fun,x0,V,verbose,order)
 % Compute the 1st or 2nd order partial (numerical) derivates of a function
 % - parameter version: i.e. dp/dx
-%
+% using symmetric finite difference
 %
 % usage: [j,ip] = jaco(fun,x0,V,verbose,order)
 %
@@ -62,7 +62,7 @@ end
 
 %f0    = feval(IS,P);
 f0    = spm_cat( feval(IS,P) );
-fx    = f0;
+fx    = f0(:);
 j     = zeros(length(P),length(f0(:))); % n param x n output
 for i = 1:length(P)
     if ip(i)

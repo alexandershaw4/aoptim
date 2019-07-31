@@ -87,6 +87,9 @@ end
 if nargin < 5 || isempty(maxit)
     maxit = 128;
 end
+if nargin < 4 || isempty(y)
+    y = 0;
+end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
@@ -175,7 +178,7 @@ while iterate
     s   = -df0';
     d0  = -s'*s;                             % trace
     x3  = V*red(ip)./(1-d0);                 % initial step 
-    
+            
     % make copies of error and param set
     x1  = x0;
     e1  = e0;
@@ -190,10 +193,10 @@ while iterate
         
         % descend while we can
         nfun = nfun + 1;
-                        
+                                
         % continue the descent
         dx    = (V*x1(ip)+x3*s');
-        
+                
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
@@ -545,7 +548,9 @@ if nargout > 1
     Ord = aopt.order; 
     % compute jacobi
     %V = ones(size(x0));
-    [J,ip] = jaco(@obj,x0,V,0,Ord);  
+    [J,ip] = jaco(@obj,x0,V,0,Ord);  ... df[e]/dx
+    %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
+    %J = repmat(V,[1 size(J,2)])./J;
 end
 
 end

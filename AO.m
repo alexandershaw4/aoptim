@@ -40,8 +40,16 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % *       - may need to remove the transpose at line 406: P = x0(:)';
 %
 %
-% Pseudo-code on how it works:
+% EXAMPLE: Minimise Ackley function:
+%--------------------------------------------------------------------------
+%     arg min: e = 20*(1 - exp(-0.2*sqrt(0.5*(x1.^2 + x2.^2)))) - exp(0.5*(cos(2*pi*x1)...
+%                                               + cos(2*pi*x2))) + exp(1);
 %
+%     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-6)
+%
+%
+% Pseudo-code on how it works:
+%--------------------------------------------------------------------------
 % - while improving:
 %   * compute parameter gradients (1st/2nd order partial derivatives)
 %   * derive descent path & initial step
@@ -93,10 +101,11 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt.order = 2;               % first or second order derivatives [use 2nd]
-aopt.fun   = fun;
-aopt.y     = y(:);
-aopt.Q     = Q;
+aopt.order   = 2;        % first or second order derivatives [use 2nd]
+aopt.fun     = fun;      % (objective?) function handle
+aopt.y       = y(:);     % truth / data to fit
+aopt.Q       = Q;        % precision
+aopt.history = [];       % error history when y=e & arg min y = f(x)
 x0         = full(x0(:));
 V          = full(V(:));
 [e0]       = obj(x0);
@@ -488,14 +497,24 @@ function makeplot(x)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
 %
+global aopt
 
 [Y,y] = GetStates(x);
 
+if length(y)==1 && length(Y) == 1 && isnumeric(y)
+    % memory based error trace when y==e
+    aopt.history = [aopt.history y];
+    plot(aopt.history,'ro');hold on;
+    plot(aopt.history,'--b');hold off;drawnow;
+    ylabel('Error^2');xlabel('Step'); title('Error plot');
+else
 %if iscell(Y)
     plot(spm_cat(Y),':'); hold on;
     plot(spm_cat(y)    ); hold off;
     drawnow;
 %end
+end
+
 
 end
 

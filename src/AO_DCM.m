@@ -5,9 +5,17 @@ function [EP,F,CP] = AO_DCM(P,DCM)
 %
 %    [EP,F,CP] = AO_DCM(P,DCM)
 %
-% returns posterior parameters [EP], squared error [F] and approximate
+% Prior to system identification, this function reformulates the problem as 
+% a generalised model of the form
+%   y = f(x,Pß)
+% where AO.m calculates the coefficients, ß. These are then multipled back
+% out to the actual parameter values.
+%
+% Returns posterior parameters [EP], squared error [F] and approximate
 % covariance [CP]
 %
+% Dependencies: SPM
+% AS
 global DD
 
 DD    = DCM;
@@ -48,13 +56,14 @@ X0 = sum(diag(Px)*cm');
 X0(X0==0) = 1;
 X0 = full(X0.*exp(P'));
 X0 = log(X0);
-X0(isinf(X0)) = 0;
+X0(isinf(X0)) = -1000;
 
 PP = spm_unvec(X0,DD.SP);
 
 IS   = spm_funcheck(DD.M.IS);       % Integrator
 y    = IS(PP,DD.M,DD.xU);           % Prediction
-y    = spm_vec(y);                  
+y    = spm_vec(y);
 y    = real(y);
+
 
 end

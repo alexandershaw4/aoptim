@@ -1,18 +1,15 @@
 function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % gradient/curvature descent based optimisation, primarily for model fitting
-% [system identification / parameter estimation]
-%
-% Fit models of the forms:
-%   Y0 = f(x) + e   ..or
-%   e  = f(x)
+% 
+% Fit models of the form:
+%   Y0 = f(x) + e
 %
 % Y0 = empirical data (to fit)
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
 %
 %
-% USAGE 1: to minimise a model fitting problem of the form:
-%--------------------------------------------------------------------------
+% to minimise a model fitting problem of the form:
 %   y = f(x)
 %   e = sum(Y0 - y).^2
 %
@@ -32,8 +29,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
 %
-% USAGE 2: to minimise objective problems of the form:
-%--------------------------------------------------------------------------
+% to minimise objective problems of the form:
 %   e = f(x)
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
@@ -550,6 +546,16 @@ P  = x0(:)';
 y  = IS(P); 
 Y  = aopt.y;
 Q  = aopt.Q;
+
+% states covariance adjustment
+global DD
+X0 = sum(diag(P)*DD.cm');
+X0(X0==0) = 1;
+X0 = full(X0.*exp(DD.P'));
+X0 = log(X0);
+X0(isinf(X0)) = -1000;
+j = atcm.fun.dfdx(DD,spm_unvec(X0,DD.M.pE),1);
+j(isnan(j))=0;
 
 %e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 

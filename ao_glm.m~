@@ -1,0 +1,36 @@
+function [b,F,Cp,fit] = ao_glm(x,y)
+% use AO optimser to fit a GLM...
+%
+% AS
+global aoglm
+
+% orthogonalise predictors
+oy  = [y] * real(inv([y]' * [y])^(1/2));
+id  = y'/oy'; % oy*id ~ y
+
+
+% x = y(1)*b(1) + y(2)*b(2) ...
+%----------------------------------------------------
+nb = size(y,2);
+n  = size(y,1);
+b  = ones(1,nb);
+V  = b/8;
+
+aoglm.x = x;
+aoglm.y = y;
+
+fun = @(b) (b*oy');
+
+[b,F,Cp] = AO(fun,b,V,x,inf);
+
+% assess fit using adjusted r^2
+%----------------------------------------------------
+%m             = b'*y';
+
+m             = b'*(y/id)';
+
+[fit.r,fit.p] = corr(x(:),m(:)); 
+fit.r2        = (fit.r).^2;
+fit.ar2       = 1 - (1 - fit.r2) * (n - 1)./(n - nb - 1);
+
+end

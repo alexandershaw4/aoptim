@@ -22,7 +22,7 @@ fun = @(b) (b(1)+b(2:end)*oy');
 
 % compute betas on the non-orthongal predictors
 %----------------------------------------------------
-m             = b(1)+b(2:end)'*(y/id)';
+m             = b(2:end)'*(y/id)';
 b             = [b(1) m/y'];
 
 % assess fit using adjusted r^2

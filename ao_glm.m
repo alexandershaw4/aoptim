@@ -1,7 +1,9 @@
 function [b,F,Cp,fit] = ao_glm(x,y)
 % use AO curvature optimser to fit a GLM...
 %
-% fits: X = c + Y(:,1)*ß(1) + Y(:,n)*ß(n)
+% - fits the lm: X = c + Y(:,1)*ß(1) + Y(:,n)*ß(n)
+% - performs similarly to glmfit
+% - see 'example_aoglm.m' for usage and comparison
 %
 % AS
 
@@ -31,4 +33,14 @@ b             = [b(1) m/y'];
 fit.r2        = (fit.r).^2;
 fit.ar2       = 1 - (1 - fit.r2) * (n - 1)./(n - nb - 1);
 
+
+% explicitly compute fitted variables to get correlations
+%----------------------------------------------------
+for i = 1:nb
+    v0(:,i) = b(i+1)*y(:,i);
 end
+
+% fitted predictor correlations
+%----------------------------------------------------
+[fit.fitted_par_r,fit.fitted_par_p]=corr(x,v0);
+fit.fitted_params = v0;

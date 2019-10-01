@@ -1,8 +1,8 @@
 function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
-% gradient/curvature descent based optimisation, primarily for model fitting
-% [system identification / parameter estimation]
+% Gradient/curvature descent based optimisation, primarily for model fitting
+% [system identification & parameter estimation]
 %
-% Fit models of the forms:
+% Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
 %   e  = f(x)
 %
@@ -11,7 +11,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % x  = model parameters/inputs to be optimised
 %
 %
-% USAGE 1: to minimise a model fitting problem of the form:
+% Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
 %   y = f(x)
 %   e = sum(Y0 - y).^2
@@ -32,19 +32,14 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
 %
-% USAGE 2: to minimise objective problems of the form:
+% Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
 %   e = f(x)
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop) 
 %
-%
-% * note: - if failing to run properly, try transposing input vector x0
-% *       - may need to remove the transpose at line 406: P = x0(:)';
-%
-%
-% EXAMPLE: Minimise Ackley function:
+% Example: Minimise Ackley function:
 %--------------------------------------------------------------------------
 %     arg min: e = 20*(1 - exp(-0.2*sqrt(0.5*(x1.^2 + x2.^2)))) ...
 %                                - exp(0.5*(cos(2*pi*x1)...
@@ -52,33 +47,8 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 %
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-6)
 %
-%
-% Pseudo-code on how it works:
-%--------------------------------------------------------------------------
-% - while improving:
-%   * compute parameter gradients (1st/2nd order partial derivatives)
-%   * derive descent path & initial step
-%   - while improving on this path:
-%     * descend a step
-%     * evaluate effect of each parameters new value
-%     * evaluate effect of accepting all params that decreased error
-%     * if good, restart this loop (keep descending)
-%     * if bad, stop this loop and:
-%       * try exploiting best model achieved in prev loop using dp/df
-%         (e.g. all good parameters taking the same steps on same paths again)
-%       * if this works, keep doing it until it doesn't improve, then:
-%         * of the good parameters, compute relative effects
-%         * in effect-size order, individually test and accept each param
-%         * when this stops improving, go back to the start, i.e. recompute
-%         the gradients
-%
-% other notes:
-% - an svd parameter reduction is applied
-% - the step size is adjusted as the loops progress 
-% - after 3 complete runs without any improvement, step size resets
-% - after 5 complete runs without any improvement, gives up
-% - if the variance in the improvement over a period is small, assumes
-% stuck in a local minima and gives up
+% * Scroll to the bottom for a step-by-step description of how it works.
+% See also ao_glm AO_dcm
 %
 % AS2019
 % alexandershaw4@gmail.com
@@ -387,6 +357,7 @@ while iterate
         % otherwise invoke some defaults
         if aopt.order == 1; ldf = 30; dftol = 0.002;  end
         if aopt.order == 2; ldf = 50; dftol = 0.0001; end
+        if aopt.order == 0; ldf = 30; dftol = 0.002; end
     end
     
     if length(dff) > ldf
@@ -514,12 +485,12 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     ylabel('Error^2');xlabel('Step'); title('Error plot');
 else
 %if iscell(Y)
-    plot(spm_cat(Y),':'); hold on;
-    plot(spm_cat(y)    ); hold off;
-    drawnow;
+    plot(spm_cat(Y),':','linewidth',2); hold on;
+    plot(spm_cat(y)    ,'linewidth',2); hold off;
+    grid on;grid minor;drawnow;
 %end
 end
-
+title('System Identification');
 
 end
 
@@ -578,3 +549,31 @@ if nargout > 1
 end
 
 end
+
+% 
+% Pseudo-code on how it works:
+%--------------------------------------------------------------------------
+% - while improving:
+%   * compute parameter gradients (1st/2nd order partial derivatives)
+%   * derive descent path & initial step
+%   - while improving on this path:
+%     * descend a step
+%     * evaluate effect of each parameters new value
+%     * evaluate effect of accepting all params that decreased error
+%     * if good, restart this loop (keep descending)
+%     * if bad, stop this loop and:
+%       * try exploiting best model achieved in prev loop using dp/df
+%         (e.g. all good parameters taking the same steps on same paths again)
+%       * if this works, keep doing it until it doesn't improve, then:
+%         * of the good parameters, compute relative effects
+%         * in effect-size order, individually test and accept each param
+%         * when this stops improving, go back to the start, i.e. recompute
+%         the gradients
+%
+% other notes:
+% - an svd parameter reduction is applied
+% - the step size is adjusted as the loops progress 
+% - after 3 complete runs without any improvement, step size resets
+% - after 5 complete runs without any improvement, gives up
+% - if the variance in the improvement over a period is small, assumes
+% stuck in a local minima and gives up

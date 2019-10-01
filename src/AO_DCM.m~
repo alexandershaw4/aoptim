@@ -44,6 +44,17 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
+% prior to inversion, adjust initial parameter precisions
+adj = true;
+while adj
+    [j,ip] = adjust_pvar(@fakeDM,p(:),c,1,0)
+    je = repmat( spm_vec(DCM.xY.y)' , [size(j,1), 1]) - j;
+    jo =       ( spm_vec(DCM.xY.y)                    - fakeDM(p(:)) )';
+    
+    de = (je - jo)./jo;
+    
+    
+
 [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3);
 [~,EP]    = fakeDM(X);
 

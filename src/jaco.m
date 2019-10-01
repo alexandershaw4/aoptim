@@ -148,7 +148,24 @@ elseif ismember(order,5)
         end
     end
     
+elseif ismember(order,0)
     
+    % 0 order diff, i.e. f(x+d) - f(x) / d
+    % this is a cheap approximation but requires half the number of
+    % function evaluations that order 1&2 would...
+    for i = 1:length(P)
+            if ip(i)
+                P0     = P;
+                d      = P0(i) * V(i);
+
+                if d == 0;d = 0.01;end
+
+                P0(i)  = P0(i) + d  ;
+                f0     = spm_vec(spm_cat(feval(IS,P0)));
+                j(i,:) = (f0 - fx) / (d);
+            end
+    end
+
 end
 
 warning on;

@@ -91,7 +91,7 @@ n          = 0;
 iterate    = true;
 doplot     = 1;
 
-V  = smooth(V);
+%V  = smooth(V);
 Vb = V;
 
 % initial point plot

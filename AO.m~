@@ -97,7 +97,7 @@ Vb = V;
 % initial point plot
 %--------------------------------------------------------------------------
 if doplot
-    setfig();
+    figure('Color',[.1 .1 .1],'InvertHardcopy','off','position',[1043 654 517 684]);
     makeplot(x0,x0);
 end
 
@@ -472,15 +472,6 @@ end
 
 end
 
-function setfig()
-
-figure('Color',[.3 .3 .3],'InvertHardcopy','off','position',[1043 654 517 684]);
-set(gcf, 'MenuBar', 'none');
-set(gcf, 'ToolBar', 'none');
-drawnow;
-    
-end
-
 function makeplot(x,ox)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
@@ -490,38 +481,37 @@ global aopt
 [Y,y] = GetStates(x);
 
 if length(y)==1 && length(Y) == 1 && isnumeric(y)
-    ax        = gca;
+    ax = child(gca);
     ax.YColor = [1 1 1];
     ax.XColor = [1 1 1];
-    ax.Color  = [.3 .3 .3];hold on;
+    ax.Color  = [0 0 0];
     
     % memory based error trace when y==e
     aopt.history = [aopt.history y];
-    plot(aopt.history,'wo');hold on;
-    plot(aopt.history,'w');hold off;grid on;
-    ylabel('Error^2');xlabel('Step'); 
-    title('System Identification: Error','color','w','fontsize',18);
-    drawnow;
+    plot(aopt.history,'ro');hold on;
+    plot(aopt.history,'--b');hold off;drawnow;
+    ylabel('Error^2');xlabel('Step'); title('Error plot');
 else
 %if iscell(Y)
     s(1) = subplot(211);
-    plot(spm_cat(Y),'w:','linewidth',3); hold on;
-    plot(spm_cat(y),'r'   ,'linewidth',3); hold off;
-    grid on;grid minor;title('System Identification','color','w','fontsize',18);
+    plot(spm_cat(Y),':','linewidth',2); hold on;
+    plot(spm_cat(y)    ,'linewidth',2); hold off;
+    grid on;grid minor;title('System Identification');
     s(1).YColor = [1 1 1];
     s(1).XColor = [1 1 1];
-    s(1).Color  = [.3 .3 .3];
+    s(1).Color  = [0.1 0.1 0.1];
 
     
     s(2) = subplot(212);
     bar([ x(:)-ox(:) ],'FaceColor',[.4 .4 .4],'EdgeColor','w');
-    title('dParameter','color','w','fontsize',18);
+    title('dParameter');
     ax = gca;
     ax.XGrid = 'off';
     ax.YGrid = 'on';
     s(2).YColor = [1 1 1];
     s(2).XColor = [1 1 1];
-    s(2).Color  = [.3 .3 .3];
+    s(2).Color  = [0.1 0. 0];
+
     drawnow;
 %end
 end

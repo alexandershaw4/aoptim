@@ -135,14 +135,14 @@ n_print    = 0;
 
 % now: x0 = V*p(ip)
 %--------------------------------------------------------------------------
-if obj( V*p(ip) ) ~= e0
-    fprintf('Something went wrong during svd parameter reduction\n');
-else
-    % backup start points
-    X0 = x0;
-    % overwrite x0
-    x0 = p;
-end
+% if obj( V*p(ip) ) ~= e0
+%     fprintf('Something went wrong during svd parameter reduction\n');
+% else
+%     % backup start points
+%     X0 = x0;
+%     % overwrite x0
+%     x0 = p;
+% end
 
 % print start point
 refdate();

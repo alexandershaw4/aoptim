@@ -2,6 +2,8 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
+% The same AOf.m, but this version minimises sq-error, not free energy.
+%
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
 %   e  = f(x)
@@ -47,7 +49,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df)
 %
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-6)
 %
-% * Scroll to the bottom for a step-by-step description of how it works.
+% Scroll to the bottom for a step-by-step description of how it works.
 % See also ao_glm AO_dcm
 %
 % AS2019
@@ -95,7 +97,7 @@ Vb = V;
 % initial point plot
 %--------------------------------------------------------------------------
 if doplot
-    makeplot(x0);
+    makeplot(x0,x0);
 end
 
 % initialise counters
@@ -244,6 +246,7 @@ while iterate
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
+        pupdate(n,nexpl,e1,e0,'descnd',toc);
         while exploit
             if obj(V*(x1+(dp./df))) < e1
                 x1    = V*(x1+(dp./df));
@@ -252,7 +255,7 @@ while iterate
                 nexpl = nexpl + 1;
             else
                 exploit = false;
-                pupdate(n,nexpl,e1,e0,'extrap',toc);
+                pupdate(n,nexpl,e1,e0,'finish',toc);
             end
             
             % upper limit on the length of this loop: no don't do this
@@ -267,18 +270,17 @@ while iterate
         % print & plots success
         %------------------------------------------------------------------
         pupdate(n,nfun,e1,e0,'accept',toc);
-        if doplot; makeplot(V*x0(ip)); end
+        if doplot; makeplot(V*x0(ip),x1); end
         n_reject_consec = 0;
         dff = [dff df];
     else
         
         % if didn't improve: what to do?
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'adjust',toc);             
+        pupdate(n,nfun,e1,e0,'select',toc);             
         
         % sample from improvers params in dx
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'sample',toc);
         thisgood = gp*0;
         if any(gp)
             
@@ -311,7 +313,7 @@ while iterate
 
                     % print & plot update
                     pupdate(n,nfun,e0,e0,'accept',toc);
-                    if doplot; makeplot(V*x0); end
+                    if doplot; makeplot(V*x0,x1); end
 
                     % update step size for these params
                     red = red+V'*((V*red).*thisgood');
@@ -387,7 +389,7 @@ while iterate
     
     % if 3 fails, reset the reduction term (based on the specified variance)
     if n_reject_consec == 3
-        pupdate(n,nfun,e1,e0,'resetV');
+        pupdate(n,nfun,e1,e0,'resetv');
         %red = red ./ max(red(:));
         red     = diag(pC);
         aopt.pC = V*red;
@@ -469,7 +471,7 @@ end
 
 end
 
-function makeplot(x)
+function makeplot(x,ox)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
 %
@@ -485,12 +487,18 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     ylabel('Error^2');xlabel('Step'); title('Error plot');
 else
 %if iscell(Y)
+    subplot(211)
     plot(spm_cat(Y),':','linewidth',2); hold on;
     plot(spm_cat(y)    ,'linewidth',2); hold off;
-    grid on;grid minor;drawnow;
+    grid on;grid minor;title('System Identification');
+    subplot(212)
+    bar([ x(:)-ox(:) ]);title('dParameter');
+    ax = gca;
+    ax.XGrid = 'off';
+    ax.YGrid = 'on';
+    drawnow;
 %end
 end
-title('System Identification');
 
 end
 

@@ -1,5 +1,5 @@
 function [b,F,Cp,fit] = ao_glm(x,y)
-% use AO curvature optimser to fit a GLM...
+% use AO curvature optimiser to fit a GLM...
 %
 % - fits the lm: X = c + Y(:,1)*ß(1) + Y(:,n)*ß(n)
 % - performs similarly to glmfit

@@ -58,7 +58,7 @@ c = V(ip);
 
 end
 
-function [e,J] = fakeDM(Px,varargin)
+function [e,PP] = fakeDM(Px,varargin)
 global DD
 
 cm  = DD.cm;

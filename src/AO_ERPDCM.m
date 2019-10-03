@@ -1,9 +1,10 @@
 function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter)
 % A wrapper for fitting DCMs with AO.m curvature optimisation routine.
-% 
+% This version for ERP models. 
+%
 % Input parameter structure, P and a fully specified DCM structure:
 %
-%    [EP,F,CP] = AO_DCM(P,DCM)
+%    [EP,F,CP] = AO_DCM(P,G,DCM)
 %
 % Prior to system identification, this function reformulates the problem as 
 % a generalised model of the form

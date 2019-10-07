@@ -500,21 +500,21 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     plot(aopt.history,'wo');hold on;
     plot(aopt.history,'w');hold off;grid on;
     ylabel('Error^2');xlabel('Step'); 
-    title('System Identification: Error','color','w','fontsize',18);
+    title('AO: System Identification: Error','color','w','fontsize',18);
     drawnow;
 else
 %if iscell(Y)
     s(1) = subplot(211);
     plot(spm_cat(Y),'w:','linewidth',3); hold on;
-    plot(spm_cat(y),'r'   ,'linewidth',3); hold off;
-    grid on;grid minor;title('System Identification','color','w','fontsize',18);
+    plot(spm_cat(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
+    grid on;grid minor;title('AO: System Identification','color','w','fontsize',18);
     s(1).YColor = [1 1 1];
     s(1).XColor = [1 1 1];
     s(1).Color  = [.3 .3 .3];
 
     
     s(2) = subplot(212);
-    bar([ x(:)-ox(:) ],'FaceColor',[.4 .4 .4],'EdgeColor','w');
+    bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('dParameter','color','w','fontsize',18);
     ax = gca;
     ax.XGrid = 'off';

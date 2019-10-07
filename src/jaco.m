@@ -42,6 +42,7 @@ end
 j  = jacf(IS,P,ip,verbose,V,order);
 
 j(isnan(j)) = 0;
+%j(isinf(j)) = 0;
 
 end
 

@@ -559,18 +559,38 @@ Q  = aopt.Q;
 %e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 
 if all(size(Q)>1)
-    Q = diag(Q);
+    %Q = diag(Q);
     %Q = 1 + (2 - 1) .* (Q - min(Q)) / ( max(Q) - min(Q) );
-    e = (spm_vec(Y) - spm_vec(y)).^2;
-    e = Q.*e;
-    e = sum(e.^2);
+    %e = (spm_vec(Y) - spm_vec(y)).^2;
+    %e = Q.*e;
+    %e = sum(e.^2);
+    
+    ey  = spm_vec(Y) - spm_vec(y);
+    qh  = Q*(ey*ey')*Q';
+    e   = sum(qh(:).^2);    
+    
 else
     
     % ses: sum of error squared
-    %e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
+    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
     
     % mse: mean squared error
-    e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));
+    %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));
+    
+    % rmse: root mean squaree error
+    %e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+    
+    % 1 - r^2 (bc. minimisation routine == maximisation)
+    %e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
+    
+    % combination:
+    %SSE = sum( (spm_vec(Y) - spm_vec(y)).^2 );
+    %R2  = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
+    %e   = SSE + R2;
+    
+    %ey  = spm_vec(Y) - spm_vec(y);
+    %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
+    %e   = sum(qh(:).^2);
 end
 
 % error along output vector

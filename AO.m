@@ -1,4 +1,4 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
+function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
@@ -34,6 +34,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
+% order      = [-1, 0, 1, or 2] - see jaco.m
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -58,6 +59,9 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 %
 global aopt
 
+if nargin < 11 || isempty(order)
+    order = 2;
+end
 if nargin < 10 || isempty(mimo)
     mimo = 0;
 end
@@ -82,7 +86,7 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt.order   = 2;        % first or second order derivatives [-1,0,1,2]
+aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
 aopt.Q       = Q;        % precision

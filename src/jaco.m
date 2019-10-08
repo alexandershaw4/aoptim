@@ -1,10 +1,11 @@
 function [j,ip] = jaco(fun,x0,V,verbose,order)
 % Compute the 1st or 2nd order partial (numerical) derivates of a function
-% - parameter version: i.e. dp/dx
-% using symmetric finite difference
+% - parameter version: i.e. dp/dx - using symmetric finite difference
 %
 % usage: [j,ip] = jaco(fun,x0,V,verbose,order)
 %
+% Orders:
+% --------------------------------------------------------
 % (order 1:) Compute the 1st order partial derivatives (gradient) 
 % of a function using:
 %
@@ -14,7 +15,18 @@ function [j,ip] = jaco(fun,x0,V,verbose,order)
 %
 % j(ip,:) = [ (f0 - f1) / 2 / d ] ./ [ (f0 - 2 * fx + f1) / d ^ 2 ]
 %
+% (order 0:) One-sided 1st order approximation (quick)
 %
+% j(ip,:) = ( f(x(ip)+h) - fx ) / h
+%
+% (order -1:) Complex conjugate curvature method:
+%
+% f0(ip)  = ( f(x(ip) + h * 1i) - fx ) / h
+% d1      = ( real(f0) - imag(f0) ) / 2 / d;
+% d2      = ( real(f0) - 2 * fx + imag(f0) ) / d ^ 2;
+% j(i,:)  = d1 ./ d2;
+%
+% For systems of the form dx = f(x):
 % if order==1, when j is square, it is the Jacobian
 % if order==2, when j is square, it is the Hessian
 % 
@@ -167,6 +179,31 @@ elseif ismember(order,0)
             end
     end
 
+elseif ismember(order,-1)
+    
+    % complex conjugate gradient method
+    % d(i,:) = imag(f(x+d*i1))/d
+    
+    for i = 1:length(P)
+            if ip(i)
+                P0     = P;
+                d      = P0(i) * V(i);
+
+                if d == 0;d = 0.01;end
+
+                P0(i)  = P0(i) + d * 1i  ;
+                f0     = spm_vec(spm_cat(feval(IS,P0)));
+                j(i,:) = imag(f0) / d;
+                
+                deriv1 = ( real(f0) - imag(f0) ) / 2 / d;
+                deriv2 = ( real(f0) - 2 * fx + imag(f0) ) / d ^ 2;
+                j(i,:) = deriv1 ./ deriv2;
+            end
+    end
+    
+    
+    
+    
 end
 
 warning on;

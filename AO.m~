@@ -33,7 +33,6 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 % Q          = optional precision matrix, e.g. e = sum( diag(Q).*(Y0-y) ).^2
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
-% mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -51,7 +50,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-6)
 %
 % Scroll to the bottom for a step-by-step description of how it works.
-% See also ao_glm AO_dcm AOf jaco
+% See also ao_glm AO_dcm AOf
 %
 % AS2019
 % alexandershaw4@gmail.com
@@ -82,13 +81,11 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt.order   = 2;        % first or second order derivatives [-1,0,1,2]
+aopt.order   = -1;        % first or second order derivatives [use 2nd]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
 aopt.Q       = Q;        % precision
 aopt.history = [];       % error history when y=e & arg min y = f(x)
-aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
-
 x0         = full(x0(:));
 V          = full(V(:));
 [e0]       = obj(x0);
@@ -526,7 +523,7 @@ else
     
     s(2) = subplot(212);
     bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
-    title('Parameter Change','color','w','fontsize',18);
+    title('dParameter','color','w','fontsize',18);
     ax = gca;
     ax.XGrid = 'off';
     ax.YGrid = 'on';
@@ -614,14 +611,12 @@ J = [];
 % this hands off to jaco, which computes the derivatives
 % - note this can be used differently for multi-output systems
 if nargout == 2
-    V    = aopt.pC;
-    Ord  = aopt.order; 
-    mimo = aopt.mimo;
+    V   = aopt.pC;
+    Ord = aopt.order; 
     
-    if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
-    else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
-    end
-
+    %[J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
+    [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
+    
     %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
     %J = repmat(V,[1 size(J,2)])./J;
 end

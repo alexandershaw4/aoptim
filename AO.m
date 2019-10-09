@@ -92,6 +92,7 @@ aopt.y       = y(:);     % truth / data to fit
 aopt.Q       = Q;        % precision
 aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
+aopt.svd     = 1;
 
 x0         = full(x0(:));
 V          = full(V(:));
@@ -171,12 +172,21 @@ while iterate
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
     
+    %if mimo && ismatrix(Q)
+    %    df0 = df0*HighResMeanFilt(full(Q),1,4) ;
+    %end
+
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
-    s   = -df0';
+    s   = -df0';    
     d0  = -s'*s;                             % trace
-    %x3  = V*red(ip)./(1-d0);                 % initial step 
-    x3 = (1-d0)./(V*red(ip));
+    
+    if aopt.svd
+        [uu,ss,vv] = spm_svd(d0);
+        d0 = uu(:,1)*ss(1,1)*vv(:,1)';
+    end
+    
+    x3  = V*red(ip)./(1-d0);                 % initial step 
     
     % make copies of error and param set
     x1  = x0;
@@ -194,8 +204,8 @@ while iterate
         nfun = nfun + 1;
                                 
         % continue the descent
-        if ~mimo; dx    = (V*x1(ip)+x3*s');         % MISO
-        else;     dx    = (V*x1(ip)+x3*mean(s)');   % MIMO
+        if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
+        else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
         end
         
         % assess each new parameter individually, then find the best mix

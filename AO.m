@@ -19,7 +19,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 %   e = sum(Y0 - y).^2
 %
 % the usage is:
-%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df)
+%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
@@ -42,6 +42,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop) 
+%
 %
 % Example: Minimise Ackley function:
 %--------------------------------------------------------------------------
@@ -172,15 +173,15 @@ while iterate
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
     
-    %if mimo && ismatrix(Q)
-    %    df0 = df0*HighResMeanFilt(full(Q),1,4) ;
-    %end
+    if mimo && ismatrix(Q)
+        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
+    end
 
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
     s   = -df0';    
     d0  = -s'*s;                             % trace
-    
+        
     if aopt.svd
         [uu,ss,vv] = spm_svd(d0);
         d0 = uu(:,1)*ss(1,1)*vv(:,1)';
@@ -341,7 +342,7 @@ while iterate
                     if doplot; makeplot(V*x0,x1); end
 
                     % update step size for these params
-                    %red = red+V'*((V*red).*thisgood');       % CHANGE
+                    red = red+V'*((V*red).*thisgood');       % CHANGE
                     
                     % reset rejection counter
                     n_reject_consec = 0;
@@ -515,6 +516,13 @@ global aopt
 
 [Y,y] = GetStates(x);
 
+if ~isfield(aopt,'oerror')
+    aopt.oerror = spm_vec(Y) - spm_vec(y);
+end
+
+former_error = aopt.oerror;
+new_error    = spm_vec(Y) - spm_vec(y);
+
 if length(y)==1 && length(Y) == 1 && isnumeric(y)
     ax        = gca;
     ax.YColor = [1 1 1];
@@ -530,7 +538,7 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     drawnow;
 else
 %if iscell(Y)
-    s(1) = subplot(211);
+    s(1) = subplot(311);
     plot(spm_cat(Y),'w:','linewidth',3); hold on;
     plot(spm_cat(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
     grid on;grid minor;title('AO: System Identification','color','w','fontsize',18);
@@ -538,19 +546,30 @@ else
     s(1).XColor = [1 1 1];
     s(1).Color  = [.3 .3 .3];
 
+    s(2) = subplot(312);
+    %bar([former_error new_error]);
+    plot(former_error,'w--','linewidth',3); hold on;
+    plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
+    grid on;grid minor;title('Error Change','color','w','fontsize',18);
+    s(2).YColor = [1 1 1];
+    s(2).XColor = [1 1 1];
+    s(2).Color  = [.3 .3 .3];
     
-    s(2) = subplot(212);
+    
+    s(3) = subplot(313);
     bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
     ax = gca;
     ax.XGrid = 'off';
     ax.YGrid = 'on';
-    s(2).YColor = [1 1 1];
-    s(2).XColor = [1 1 1];
-    s(2).Color  = [.3 .3 .3];
+    s(3).YColor = [1 1 1];
+    s(3).XColor = [1 1 1];
+    s(3).Color  = [.3 .3 .3];
     drawnow;
 %end
 end
+
+aopt.oerror = new_error;
 
 end
 

@@ -1,4 +1,4 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
+function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
@@ -19,7 +19,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 %   e = sum(Y0 - y).^2
 %
 % the usage is:
-%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df)
+%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
@@ -33,6 +33,8 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 % Q          = optional precision matrix, e.g. e = sum( diag(Q).*(Y0-y) ).^2
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
+% mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
+% order      = [-1, 0, 1, or 2] - see jaco.m
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -40,6 +42,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop) 
+%
 %
 % Example: Minimise Ackley function:
 %--------------------------------------------------------------------------
@@ -50,13 +53,16 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo)
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-6)
 %
 % Scroll to the bottom for a step-by-step description of how it works.
-% See also ao_glm AO_dcm AOf
+% See also ao_glm AO_dcm AOf jaco
 %
 % AS2019
 % alexandershaw4@gmail.com
 %
 global aopt
 
+if nargin < 11 || isempty(order)
+    order = 2;
+end
 if nargin < 10 || isempty(mimo)
     mimo = 0;
 end
@@ -81,11 +87,14 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt.order   = -1;        % first or second order derivatives [use 2nd]
+aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
 aopt.Q       = Q;        % precision
 aopt.history = [];       % error history when y=e & arg min y = f(x)
+aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
+aopt.svd     = 1;
+
 x0         = full(x0(:));
 V          = full(V(:));
 [e0]       = obj(x0);
@@ -164,12 +173,22 @@ while iterate
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
     
+    if mimo && ismatrix(Q)
+        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
+    end
+
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
-    s   = -df0';
+    s   = -df0';    
     d0  = -s'*s;                             % trace
+        
+    if aopt.svd
+        [uu,ss,vv] = spm_svd(d0);
+        d0 = uu(:,1)*ss(1,1)*vv(:,1)';
+    end
+    
     x3  = V*red(ip)./(1-d0);                 % initial step 
-            
+    
     % make copies of error and param set
     x1  = x0;
     e1  = e0;
@@ -186,8 +205,8 @@ while iterate
         nfun = nfun + 1;
                                 
         % continue the descent
-        if ~mimo; dx    = (V*x1(ip)+x3*s');         % MISO
-        else;     dx    = (V*x1(ip)+x3*mean(s)');   % MIMO
+        if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
+        else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
         end
         
         % assess each new parameter individually, then find the best mix
@@ -323,7 +342,7 @@ while iterate
                     if doplot; makeplot(V*x0,x1); end
 
                     % update step size for these params
-                    %red = red+V'*((V*red).*thisgood');       % CHANGE
+                    red = red+V'*((V*red).*thisgood');       % CHANGE
                     
                     % reset rejection counter
                     n_reject_consec = 0;
@@ -497,6 +516,13 @@ global aopt
 
 [Y,y] = GetStates(x);
 
+if ~isfield(aopt,'oerrer')
+    aopt.oerrer = spm_vec(Y) - spm_vec(y);
+end
+
+former_error = aopt.oerrer;
+new_error    = spm_vec(Y) - spm_vec(y);
+
 if length(y)==1 && length(Y) == 1 && isnumeric(y)
     ax        = gca;
     ax.YColor = [1 1 1];
@@ -512,7 +538,7 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     drawnow;
 else
 %if iscell(Y)
-    s(1) = subplot(211);
+    s(1) = subplot(311);
     plot(spm_cat(Y),'w:','linewidth',3); hold on;
     plot(spm_cat(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
     grid on;grid minor;title('AO: System Identification','color','w','fontsize',18);
@@ -520,19 +546,30 @@ else
     s(1).XColor = [1 1 1];
     s(1).Color  = [.3 .3 .3];
 
-    
-    s(2) = subplot(212);
-    bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
-    title('dParameter','color','w','fontsize',18);
-    ax = gca;
-    ax.XGrid = 'off';
-    ax.YGrid = 'on';
+    s(2) = subplot(312);
+    %bar([former_error new_error]);
+    plot(former_error,'w--','linewidth',3); hold on;
+    plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
+    grid on;grid minor;title('Change in error','color','w','fontsize',18);
     s(2).YColor = [1 1 1];
     s(2).XColor = [1 1 1];
     s(2).Color  = [.3 .3 .3];
+    
+    
+    s(3) = subplot(313);
+    bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
+    title('Parameter Change','color','w','fontsize',18);
+    ax = gca;
+    ax.XGrid = 'off';
+    ax.YGrid = 'on';
+    s(3).YColor = [1 1 1];
+    s(3).XColor = [1 1 1];
+    s(3).Color  = [.3 .3 .3];
     drawnow;
 %end
 end
+
+aopt.oerror = 
 
 end
 
@@ -611,12 +648,14 @@ J = [];
 % this hands off to jaco, which computes the derivatives
 % - note this can be used differently for multi-output systems
 if nargout == 2
-    V   = aopt.pC;
-    Ord = aopt.order; 
+    V    = aopt.pC;
+    Ord  = aopt.order; 
+    mimo = aopt.mimo;
     
-    %[J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
-    [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
-    
+    if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
+    else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
+    end
+
     %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
     %J = repmat(V,[1 size(J,2)])./J;
 end

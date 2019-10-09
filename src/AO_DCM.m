@@ -47,7 +47,7 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
-[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,1,-1);
+[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,0,2);
 %if ~mimo; [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);   % MISO, 2nd order
 %else;     [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,1,-1);  % MIMO, complex 2nd order
 %end

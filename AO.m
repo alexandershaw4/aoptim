@@ -12,6 +12,12 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
 %
+% The output of fun(x) can be either a single value or a vector. The
+% derivatives can be returned w.r.t the objective (SSE, e.g. a MISO), or 
+% w.r.t the error at each point along the output (e.g. when model 
+% fitting, a MIMO). To invoke the latter, use the 10th input [0/1] to flag.
+% When using this option, flag order == -1, which will use the complex
+% conjugate method for the derivatives, otherwise probably use 2.
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
@@ -30,7 +36,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 % y          = Y0 / the data to fit, for computing the objective: e = sum(Y0 - y).^2
 % maxit      = number of iterations (def=128) to restart descent
 % inner_loop = num iters to continue on a specific descent (def=9999)
-% Q          = optional precision matrix, e.g. e = sum( diag(Q).*(Y0-y) ).^2
+% Q          = optional precision matrix of size == (fun(x),fun(x))
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR

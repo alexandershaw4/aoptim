@@ -12,6 +12,12 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
 %
+% The output of fun(x) can be either a single value or a vector. The
+% derivatives can be returned w.r.t the objective (SSE, e.g. a MISO), or 
+% w.r.t the error at each point along the output (e.g. when model 
+% fitting, a MIMO). To invoke the latter, use the 10th input [0/1] to flag.
+% When using this option, flag order to -1, which will use the cmplex
+% conjugate method for the deriva
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
@@ -30,7 +36,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 % y          = Y0 / the data to fit, for computing the objective: e = sum(Y0 - y).^2
 % maxit      = number of iterations (def=128) to restart descent
 % inner_loop = num iters to continue on a specific descent (def=9999)
-% Q          = optional precision matrix, e.g. e = sum( diag(Q).*(Y0-y) ).^2
+% Q          = optional precision matrix of size == (fun(x),fun(x))
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
@@ -516,11 +522,11 @@ global aopt
 
 [Y,y] = GetStates(x);
 
-if ~isfield(aopt,'oerrer')
-    aopt.oerrer = spm_vec(Y) - spm_vec(y);
+if ~isfield(aopt,'oerror')
+    aopt.oerror = spm_vec(Y) - spm_vec(y);
 end
 
-former_error = aopt.oerrer;
+former_error = aopt.oerror;
 new_error    = spm_vec(Y) - spm_vec(y);
 
 if length(y)==1 && length(Y) == 1 && isnumeric(y)
@@ -550,7 +556,7 @@ else
     %bar([former_error new_error]);
     plot(former_error,'w--','linewidth',3); hold on;
     plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
-    grid on;grid minor;title('Change in error','color','w','fontsize',18);
+    grid on;grid minor;title('Error Change','color','w','fontsize',18);
     s(2).YColor = [1 1 1];
     s(2).XColor = [1 1 1];
     s(2).Color  = [.3 .3 .3];
@@ -569,7 +575,7 @@ else
 %end
 end
 
-aopt.oerror = 
+aopt.oerror = new_error;
 
 end
 

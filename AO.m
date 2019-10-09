@@ -175,8 +175,9 @@ while iterate
     %----------------------------------------------------------------------
     s   = -df0';
     d0  = -s'*s;                             % trace
-    x3  = V*red(ip)./(1-d0);                 % initial step 
-            
+    %x3  = V*red(ip)./(1-d0);                 % initial step 
+    x3 = (1-d0)./(V*red(ip));
+    
     % make copies of error and param set
     x1  = x0;
     e1  = e0;

@@ -39,6 +39,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 % Q          = optional precision matrix of size == (fun(x),fun(x))
 % crit       = convergence value @(e=crit)
 % min_df     = minimum change in function value (Error) to continue
+%              (set to -1 to switch off)
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
 % order      = [-1, 0, 1, or 2] - see jaco.m
 %
@@ -56,40 +57,25 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 %                                - exp(0.5*(cos(2*pi*x1)...
 %                                         + cos(2*pi*x2))) + exp(1);
 %
-%     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-6)
+%     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-13,-1)
 %
 % Scroll to the bottom for a step-by-step description of how it works.
-% See also ao_glm AO_dcm AOf jaco
+% See also ao_glm AO_dcm AOf jaco AOls
 %
 % AS2019
 % alexandershaw4@gmail.com
 %
 global aopt
 
-if nargin < 11 || isempty(order)
-    order = 2;
-end
-if nargin < 10 || isempty(mimo)
-    mimo = 0;
-end
-if nargin < 9 || isempty(min_df)
-    min_df = 0;
-end
-if nargin < 8 || isempty(criterion)
-    criterion = 1e-2;
-end
-if nargin < 7 || isempty(Q)
-    Q = 1;
-end
-if nargin < 6 || isempty(inner_loop)
-    inner_loop = 9999;
-end
-if nargin < 5 || isempty(maxit)
-    maxit = 128;
-end
-if nargin < 4 || isempty(y)
-    y = 0;
-end
+if nargin < 11 || isempty(order);      order = 2;         end
+if nargin < 10 || isempty(mimo);       mimo = 0;          end
+if nargin < 9  || isempty(min_df);     min_df = 0;        end
+if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
+if nargin < 7  || isempty(Q);          Q = 1;             end
+if nargin < 6  || isempty(inner_loop); inner_loop = 9999; end
+if nargin < 5  || isempty(maxit);      maxit = 128;       end
+if nargin < 4  || isempty(y);          y = 0;             end
+
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
@@ -99,7 +85,7 @@ aopt.y       = y(:);     % truth / data to fit
 aopt.Q       = Q;        % precision
 aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
-aopt.svd     = 1;
+aopt.svd     = 0;        % use PCA on the gradient matrix
 
 x0         = full(x0(:));
 V          = full(V(:));
@@ -108,9 +94,7 @@ V          = full(V(:));
 n          = 0;
 iterate    = true;
 doplot     = 1;
-
-%V  = smooth(V);
-Vb = V;
+Vb         = V;
 
 % initial point plot
 %--------------------------------------------------------------------------
@@ -131,7 +115,8 @@ pC    = diag(V);
 
 % variance (reduced space)
 %--------------------------------------------------------------------------
-V     = spm_svd(pC);
+%V     = spm_svd(pC);
+V     = eye(length(x0));    %turn off svd 
 pC    = V'*pC*V;
 ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);

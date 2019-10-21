@@ -48,7 +48,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 %   e = f(x)
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
-%   [X,F] = AO(fun,x0,V,0,maxit,inner_loop) 
+%   [X,F] = AO(fun,x0,V,0,maxit,inner_loop, ... ) 
 %
 %
 % Example: Minimise Ackley function:
@@ -59,7 +59,6 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 %
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-13,-1)
 %
-% Scroll to the bottom for a step-by-step description of how it works.
 % See also ao_glm AO_dcm AOf jaco AOls
 %
 % AS2019
@@ -175,7 +174,7 @@ while iterate
         
     if aopt.svd
         [uu,ss,vv] = spm_svd(d0);
-        d0 = uu(:,1)*ss(1,1)*vv(:,1)';
+        d0 = uu(:,1:aopt.svd)*ss(1:aopt.svd,1:aopt.svd)*vv(:,1:aopt.svd)';
     end
     
     x3  = V*red(ip)./(1-d0);                 % initial step 
@@ -195,7 +194,7 @@ while iterate
         % descend while we can
         nfun = nfun + 1;
                                 
-        % continue the descent
+        % continue the ascent / descent
         if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
         else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
         end
@@ -654,32 +653,3 @@ end
 
 end
 
-
-
-% 
-% Pseudo-code on how it works:
-%--------------------------------------------------------------------------
-% - while improving:
-%   * compute parameter gradients (1st/2nd order partial derivatives)
-%   * derive descent path & initial step
-%   - while improving on this path:
-%     * descend a step
-%     * evaluate effect of each parameters new value
-%     * evaluate effect of accepting all params that decreased error
-%     * if good, restart this loop (keep descending)
-%     * if bad, stop this loop and:
-%       * try exploiting best model achieved in prev loop using dp/df
-%         (e.g. all good parameters taking the same steps on same paths again)
-%       * if this works, keep doing it until it doesn't improve, then:
-%         * of the good parameters, compute relative effects
-%         * in effect-size order, individually test and accept each param
-%         * when this stops improving, go back to the start, i.e. recompute
-%         the gradients
-%
-% other notes:
-% - an svd parameter reduction is applied
-% - the step size is adjusted as the loops progress 
-% - after 3 complete runs without any improvement, step size resets
-% - after 5 complete runs without any improvement, gives up
-% - if the variance in the improvement over a period is small, assumes
-% stuck in a local minima and gives up

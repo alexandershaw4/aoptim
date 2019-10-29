@@ -201,7 +201,61 @@ elseif ismember(order,-1)
             end
     end
     
+elseif ismember(order,007)
     
+    theta = P;
+    func  = @(x) spm_vec(spm_cat(feval(IS,x)));
+    y0    = fx;
+    DerivStep = eps^(1/3);
+    
+    % Use the appropriate class for variables.
+    classname = class(theta);
+    
+    % Handle optional arguments, starting with y0 since it will be needed to
+    % determine the appropriate size for a default groups.
+    if nargin < 4 || isempty(y0)
+        y0 = func(theta);
+    end
+    
+    % When there is only one group, ensure that theta is a row vector so
+    % that vectoriation works properly. Also ensure that the underlying
+    % function is called with an input with the original size of theta.
+    thetaOriginalSize = size(theta);
+    theta = reshape(theta, 1, []);
+    
+    func = @(theta) func(reshape(theta, thetaOriginalSize));
+    
+    % All observations belong to a single group; scalar expansion allows us
+    % to vectorize using a scalar index.
+    rowIdx = 1;
+    
+    [numThetaRows, numParams] = size(theta);
+    
+    if nargin < 3 || isempty(DerivStep)
+        % Best practice for forward/backward differences:
+        DerivStep = repmat(sqrt(eps(classname)), 1, numParams);
+        % However, NLINFIT's default is eps^(1/3).
+    elseif isscalar(DerivStep)
+        DerivStep = repmat(DerivStep, 1, numParams);
+    end
+    
+    delta = zeros(numThetaRows, numParams, classname);
+    J = zeros(numel(y0), numParams, classname);
+    for ii = 1:numParams
+        % Calculate delta(:,ii), but remember to set it back to 0 at the end of the loop.
+        delta(:,ii) = DerivStep(ii) * theta(:,ii);
+        deltaZero = delta(:,ii) == 0;
+        if any(deltaZero)
+            % Use the norm as the "scale", or 1 if the norm is 0.
+            nTheta = sqrt(sum(theta(deltaZero,:).^2, 2));
+            delta(deltaZero,ii) = DerivStep(ii) * (nTheta + (nTheta==0));
+        end
+        thetaNew = theta + delta;
+        yplus = func(thetaNew);
+        dy = yplus(:) - y0(:);
+        J(:,ii) = dy./delta(rowIdx,ii);
+        delta(:,ii) = 0;
+    end
     
     
 end

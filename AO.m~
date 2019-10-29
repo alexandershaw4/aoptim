@@ -199,7 +199,7 @@ while iterate
         else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
         end
         
-        %dx    = (V*x1(ip) + (x3/s.^2) );
+        
         
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)

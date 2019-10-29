@@ -1,7 +1,8 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order)
+function [X,F,Cp] = AOt(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
+% Same as AO.m, but this uses a taylor-like expansion to control stepsize. 
 % The same AOf.m, but this version minimises sq-error, not free energy.
 %
 % Fit multivariate linear/nonlinear models of the forms:
@@ -166,7 +167,7 @@ while iterate
     if mimo && ismatrix(Q)
         df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
-
+    
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
     s   = -df0';    
@@ -177,8 +178,9 @@ while iterate
         d0 = uu(:,1:aopt.svd)*ss(1:aopt.svd,1:aopt.svd)*vv(:,1:aopt.svd)';
     end
     
-    x3  = V*red(ip)./(1-d0);                 % initial step 
-    
+   %x3  = V*(1./red(ip))./(1-d0);                 % initial step 
+    x3  = V*(   red(ip))./(1-d0);                 % initial step 
+
     % make copies of error and param set
     x1  = x0;
     e1  = e0;
@@ -193,7 +195,7 @@ while iterate
         
         % descend while we can
         nfun = nfun + 1;
-                                
+        
         % continue the ascent / descent
         if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
         else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
@@ -201,17 +203,23 @@ while iterate
         
         %dx    = (V*x1(ip) + (x3/s.^2) );
         
+        % step size is taylor expansion on repeats
+        if nfun > 1
+            dx = dx + ( (dx - x0)./(e1 - e0) ).^nfun./factorial(nfun);
+            %dx = dx + ( (dx-x0)./(obj(dx) - e0) ).^nfun./factorial(nfun);
+        end
+        
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
             XX       = V*x0;
             XX(nip)  = dx(nip);
             DFE(nip) = obj(real(XX));
         end
-        
+                
         % compute improver-parameters
         gp  = double(DFE < e0); % e0
         gpi = find(gp);
-        
+                
         % only update select parameters
         ddx        = V*x0;
         ddx(gpi)   = dx(gpi);
@@ -266,8 +274,10 @@ while iterate
         nexpl   = 0;
         pupdate(n,nexpl,e1,e0,'descnd',toc);
         while exploit
-            if obj(V*(x1+(dp./df))) < e1
-                x1    = V*(x1+(dp./df));
+            ddx = ( x1-dp * (df*(nexpl+1)) ) ;%.^(nexpl+1)./factorial(nexpl+1) ;
+            if obj(V*ddx) < e1
+                %x1    = V*(x1+(dp./df));
+                x1    = ddx;
                 e1    = obj(real(x1));
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;
@@ -287,7 +297,7 @@ while iterate
         
         % print & plots success
         %------------------------------------------------------------------
-        pupdate(n,nfun,e1,e0,'accept',toc);
+        pupdate(n,nfun+nexpl,e1,e0,'accept',toc);
         if doplot; makeplot(V*x0(ip),x1); end
         n_reject_consec = 0;
         dff = [dff df];
@@ -646,6 +656,7 @@ if nargout == 2
     
     if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
+              %J = repmat(V,[1 size(J,2)])./J;
     end
 
     %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
@@ -654,3 +665,4 @@ end
 
 
 end
+

@@ -47,7 +47,15 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
+
+% non linear least squares using SVD
+%[X,F,CP]  = AO_nlls_svd(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,2,2);
+
+
 [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,0,2);
+
+%[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);
+
 %if ~mimo; [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);   % MISO, curvature 
 %else;     [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,1,1);   % MIMO, gradients 
 %end

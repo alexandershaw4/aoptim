@@ -1,8 +1,9 @@
-function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order)
+function [X,F,Cp] = AO_nlls_svd(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
-% The same AOf.m, but this version minimises sq-error, not free energy.
+% The same AO.m, but this version uses a non-linear least squares svd
+% approximation
 %
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
@@ -59,7 +60,7 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 %
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/32,0,[],[],[],1e-13,-1)
 %
-% See also ao_glm AO_dcm AOf jaco AOls
+% See also AO ao_glm AO_dcm AOf jaco AOls
 %
 % AS2019
 % alexandershaw4@gmail.com
@@ -67,7 +68,8 @@ function [X,F,Cp] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order
 global aopt
 
 if nargin < 11 || isempty(order);      order = 2;         end
-if nargin < 10 || isempty(mimo);       mimo = 0;          end
+%if nargin < 10 || isempty(mimo);       mimo = 0;          end
+mimo=2;
 if nargin < 9  || isempty(min_df);     min_df = 0;        end
 if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
 if nargin < 7  || isempty(Q);          Q = 1;             end
@@ -135,18 +137,6 @@ localminflag = 0;
 % print updates at n_print intervals along the inner loop
 n_print    = 0;
 
-% now: x0 = V*p(ip) 
-% --> this check was only valid for purely deterministic systems
-%--------------------------------------------------------------------------
-% if obj( V*p(ip) ) ~= e0
-%     fprintf('Something went wrong during svd parameter reduction\n');
-% else
-%     % backup start points
-%     X0 = x0;
-%     % overwrite x0
-%     x0 = p;
-% end
-
 % print start point
 refdate();
 pupdate(n,0,e0,e0,'start:');
@@ -168,16 +158,27 @@ while iterate
     end
 
     % initial search direction (steepest) and slope
-    %----------------------------------------------------------------------
-    s   = -df0';    
-    d0  = -s'*s;                             % trace
-        
-    if aopt.svd
-        [uu,ss,vv] = spm_svd(d0);
-        d0 = uu(:,1:aopt.svd)*ss(1:aopt.svd,1:aopt.svd)*vv(:,1:aopt.svd)';
-    end
+%     %----------------------------------------------------------------------
+%     s   = -df0';    
+%     d0  = -s'*s;                             % trace
+%         
+%     if aopt.svd
+%         [uu,ss,vv] = spm_svd(d0);
+%         d0 = uu(:,1:aopt.svd)*ss(1:aopt.svd,1:aopt.svd)*vv(:,1:aopt.svd)';
+%     end
+%     
+%     x3  = V*red(ip)./(1-d0);                 % initial step 
+
+
+    % non linear least squares - singular value approximation
+    df0 = repmat(red,[1 size(df0,2)])./df0;
+    df0 = full(df0);
+    df0(isnan(df0))=0;
+    df0(isinf(df0))=0;
+    [uu,ss,vv] = spm_svd(df0');
     
-    x3  = V*red(ip)./(1-d0);                 % initial step 
+    x3 = ( pinv(full(vv*ss))'*(uu'*y{1}) );
+    
     
     % make copies of error and param set
     x1  = x0;
@@ -193,13 +194,14 @@ while iterate
         
         % descend while we can
         nfun = nfun + 1;
-                                
-        % continue the ascent / descent
-        if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
-        else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
-        end
         
-        %dx    = (V*x1(ip) + (x3/s.^2) );
+        % continue the ascent / descent                        
+        dx    = (V*x1(ip)+x3);
+        
+%         % continue the ascent / descent
+%         if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
+%         else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
+%         end
         
         % assess each new parameter individually, then find the best mix
         for nip = 1:length(dx)
@@ -654,3 +656,4 @@ end
 
 
 end
+

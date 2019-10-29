@@ -25,7 +25,7 @@ fun = function handle.
 x0  = parameter start points - i.e. fun(x). Can be a vector if fun is a system.
 V   = A step size/variance for each element of x0. If unsure, try 1/8ths.
 y   = the real data to fit, when model fitting. If fun returns the error to be minimised, set to 0.
-<br/>
+
 maxit = (optional) max number of iterations, default 128.
 inner_loop = (optional) max num iterations descending using same strategy.
 Q = (optional) output precision matrix for MIMO systems, i.e. SSE = Q*(ey*ey')*Q';

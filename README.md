@@ -1,10 +1,15 @@
 # aoptim
 A curvature descent based optimisation routine for system identification. 
+
 Designed for highly parameterised non-linear MIMO/MISO dynamical models.
+
 
 Fit differentiable models of the forms:
 
+
 (1.)    Y0 = f(x0) + e   // model fitting, where truth, Y0, is known 
+
+
 (2.)    e  = f(x0)       // generic function minimisation
 
 

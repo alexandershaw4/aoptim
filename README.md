@@ -1,6 +1,5 @@
 # aoptim
 A curvature descent based optimisation routine for system identification. 
-
 Designed for highly parameterised non-linear MIMO/MISO dynamical models.
 
 

@@ -515,7 +515,9 @@ global aopt
 IS = aopt.fun;
 P  = x(:)';
 
-y  = IS(P); 
+try    y  = IS(P); 
+catch; y  = spm_vec(aopt.y)*0;
+end
 Y  = aopt.y;
 
 end
@@ -530,7 +532,9 @@ global aopt
 IS = aopt.fun;
 P  = x0(:)';
 
-y   = IS(P); 
+try    y  = IS(P); 
+catch; y  = spm_vec(aopt.y)*0;
+end
 Y   = aopt.y;
 Q   = aopt.Q;
 ns  = size(y,1);

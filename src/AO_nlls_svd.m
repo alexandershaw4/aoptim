@@ -168,7 +168,7 @@ while iterate
 %     end
 %     
 %     x3  = V*red(ip)./(1-d0);                 % initial step 
-
+%     x3  = V*(1./red(ip))./(1-d0); 
 
     % non linear least squares - singular value approximation
     df0 = repmat(red,[1 size(df0,2)])./df0;
@@ -177,8 +177,13 @@ while iterate
     df0(isinf(df0))=0;
     [uu,ss,vv] = spm_svd(df0');
     
-    x3 = ( pinv(full(vv*ss))'*(uu'*y{1}) );
+    [YY,yy] = GetStates(x0);
     
+    % eq. 10.8 from https://neuronaldynamics.epfl.ch/online/Ch10.S1.html
+    x3 = ( pinv(full(vv*ss))'*(uu'*( spm_vec(yy) - spm_vec(YY) ) ) );
+    
+    % x3 is essentially an estimate of parameter-error, given the
+    % prediction of the (linear-like) system based on the derivatives
     
     % make copies of error and param set
     x1  = x0;
@@ -196,7 +201,7 @@ while iterate
         nfun = nfun + 1;
         
         % continue the ascent / descent                        
-        dx    = (V*x1(ip)+x3);
+        dx    = (V*x1(ip) + (x3/nfun) );
         
 %         % continue the ascent / descent
 %         if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
@@ -336,7 +341,7 @@ while iterate
                     if doplot; makeplot(V*x0,x1); end
 
                     % update step size for these params
-                    red = red+V'*((V*red).*thisgood');       % CHANGE
+                    %red = red+V'*((V*red).*thisgood');       % CHANGE
                     
                     % reset rejection counter
                     n_reject_consec = 0;
@@ -591,7 +596,10 @@ global aopt
 IS = aopt.fun;
 P  = x0(:)';
 
-y  = IS(P); 
+try    y  = IS(P); 
+catch; y  = spm_vec(aopt.y)*0;
+end
+
 Y  = aopt.y;
 Q  = aopt.Q;
 

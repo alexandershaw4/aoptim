@@ -1,4 +1,4 @@
-function [j,ip] = jaco(fun,x0,V,verbose,order)
+function [j,ip,j1] = jaco(fun,x0,V,verbose,order)
 % Compute the 1st or 2nd order partial (numerical) derivates of a function
 % - parameter version: i.e. dp/dx - using symmetric finite difference
 %
@@ -51,7 +51,7 @@ if nargin >= 3; ip = ~~(V(:));
 else;           ip = 1:length(x0);
 end
 
-j  = jacf(IS,P,ip,verbose,V,order);
+[j,j1]  = jacf(IS,P,ip,verbose,V,order);
 
 j(isnan(j)) = 0;
 %j(isinf(j)) = 0;
@@ -60,11 +60,12 @@ end
 
 
 
-function j = jacf(IS,P,ip,verbose,V,order)
+function [j,j1] = jacf(IS,P,ip,verbose,V,order)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
-warning off ;
+j1 = [];
+%warning off ;
 
 if verbose
     switch order
@@ -77,7 +78,7 @@ end
 f0    = spm_cat( feval(IS,P) );
 fx    = f0(:);
 j     = zeros(length(P),length(f0(:))); % n param x n output
-if ismember(order,[1 2])
+if ismember(order,[1 2 3 4])
     for i = 1:length(P)
         if ip(i)
 
@@ -104,12 +105,25 @@ if ismember(order,[1 2])
             f0     = spm_vec(spm_cat(feval(IS,P0)));
             f1     = spm_vec(spm_cat(feval(IS,P1)));
             j(i,:) = (f0 - f1) / (2 * d);
-
-            if order == 2
+            
+            if order == 3 || order == 4
+                j(i,:) = ( ( (f0 - fx) / (2*d) ) + ...
+                           ( (fx - f1) / (2*d) ) ) ./2;
+            end
+            
+            if order == 2 
+                j1(i,:) = j(i,:); % keep first order
                 % Alternatively, include curvature
                 deriv1 = (f0 - f1) / 2 / d;
                 deriv2 = (f0 - 2 * fx + f1) / d ^ 2;
                 j(i,:) = deriv1 ./ deriv2;
+            elseif order == 4
+                % curvature using the 3-point routine
+                deriv1a = (f0 - fx) / (2*d);
+                deriv1b = (fx - f1) / (2*d);
+                deriv2a = (f0 - 2 * fx + f1) / d ^ 2;
+                j(i,:)  = ( (deriv1a + deriv1b)./2 ) ./ deriv2a;
+                
             end
         end
     end
@@ -154,13 +168,14 @@ elseif ismember(order,5)
             fc     = spm_vec(spm_cat(feval(IS,Pc)));
             
             % full formula
-            j(i,:) = ( (-f0 + 8*f1 - 8*f2 + f3 ) ./ 12*d ) + ...
-                        ( ((d.^4)/30)*fc );
+            j(i,:) = ( (-f0 + (8*f1) - (8*f2) + f3 ) ./ 12*d ) ;%+ ...
+                       % ( ((d.^4)/30)*fc );
 
 
         end
     end
     
+
 elseif ismember(order,0)
     
     % 0 order diff, i.e. f(x+d) - f(x) / d
@@ -260,7 +275,7 @@ elseif ismember(order,007)
     
 end
 
-warning on;
+%warning on;
 if verbose
     fprintf('\n');
 end

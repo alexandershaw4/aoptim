@@ -41,7 +41,7 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 % min_df     = minimum change in function value (Error) to continue
 %              (set to -1 to switch off)
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
-% order      = [-1, 0, 1, or 2] - see jaco.m
+% order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------

@@ -520,6 +520,11 @@ global aopt
 
 [Y,y] = GetStates(x);
 
+% Restrict plots to real values only - just for clarity really
+% (this doesn't mean the actual model output is not complex)
+Y = spm_unvec( real(spm_vec(Y)), Y);
+y = spm_unvec( real(spm_vec(y)), y);
+
 if ~isfield(aopt,'oerror')
     aopt.oerror = spm_vec(Y) - spm_vec(y);
 end

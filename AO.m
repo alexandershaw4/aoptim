@@ -136,18 +136,6 @@ localminflag = 0;
 % print updates at n_print intervals along the inner loop
 n_print    = 0;
 
-% now: x0 = V*p(ip) 
-% --> this check was only valid for purely deterministic systems
-%--------------------------------------------------------------------------
-% if obj( V*p(ip) ) ~= e0
-%     fprintf('Something went wrong during svd parameter reduction\n');
-% else
-%     % backup start points
-%     X0 = x0;
-%     % overwrite x0
-%     x0 = p;
-% end
-
 % print start point
 refdate();
 pupdate(n,0,e0,e0,'start:');
@@ -169,13 +157,16 @@ while iterate
     if mimo && ismatrix(Q)
         df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
-            
+    
+    % print end of gradient computation (just so we know it's finished)
+    pupdate(n,0,e0,e0,'-fini-',toc); 
+    
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
     s   = -df0';    
     d0  = -s'*s;                          
     
-    % optional decomposition of derivative matrix 
+    % optional decomposition of derivative matrix (for mimos)
     if any(aopt.svd) && mimo
         d0(isnan(d0))=0;
         d0(isinf(d0))=0;
@@ -189,6 +180,7 @@ while iterate
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
+    Hist.J{n} = df0;
     
     % make copies of error and param set
     x1  = x0;
@@ -205,31 +197,65 @@ while iterate
         % descend while we can
         nfun = nfun + 1;
                                 
-        % continue the ascent / descent
-        if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
-        else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
+        StepMethod  = 1;
+        
+        if StepMethod == 1
+            % continue the ascent / descent (AO.m as per Hinton)
+            if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
+            else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
+            end
+            %dx    = (V*x1(ip) + (x3/s.^2) );
+            
+        elseif StepMethod == 2
+            % continue the ascent / descent (as per spm_nlsi_GN.m)
+            if ~mimo
+                J = df0'; e = e0;
+                dFdp  = -real(J'*e) - ipC*x0;
+                dFdpp = -real(J'*J) - ipC;
+                dp    = spm_dx(dFdpp,dFdp,{-6});
+                dx    = x0 + dp;                   % prediction
+            end
         end
         
-        %dx    = (V*x1(ip) + (x3/s.^2) );
-                
-        % assess each new parameter individually, then find the best mix
-        for nip = 1:length(dx)
-            XX       = V*x0;
-            XX(nip)  = dx(nip);
-            DFE(nip) = obj(real(XX));
-        end
+        % Check the new parameter estimates?
+        Check = 1;
         
-        % compute improver-parameters
-        gp  = double(DFE < e0); % e0
-        gpi = find(gp);
+        if Check == 1
+            
+            % Assess each new parameters individually, update only improvers
+            for nip = 1:length(dx)
+                XX       = V*x0;
+                XX(nip)  = dx(nip);
+                DFE(nip) = obj(real(XX));
+            end
 
-        % only update select parameters
-        ddx        = V*x0;
-        ddx(gpi)   = dx(gpi);
-        dx         = ddx;
-        de         = obj(dx);
-                
-        if de  < e1
+            % compute improver-parameters
+            gp  = double(DFE < e0); % e0
+            gpi = find(gp);
+
+            % only update select parameters
+            ddx        = V*x0;
+            ddx(gpi)   = dx(gpi);
+            dx         = ddx;
+            de         = obj(dx);
+            
+        elseif Check == 0
+            
+            % Don't perform checks, assume all f(dx[i]) <= e1
+            gp  = ones(1,length(x0));
+            gpi = 1:length(x0);
+            de  = obj(dx);
+            DFE = ones(1,length(x0))*de; 
+            
+        end
+        
+        % Tolerance on update error as function of iteration number
+        %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
+        etol = 0; % none
+        
+        if de  < ( e1 + etol )
+            
+            if nfun == 1; pupdate(n,0,de,e1,'improv',toc); end
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -666,6 +692,8 @@ if nargout == 2
     V    = aopt.pC;
     Ord  = aopt.order; 
     mimo = aopt.mimo;
+    
+    V = (~~V)*1e-3;
     
     if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]

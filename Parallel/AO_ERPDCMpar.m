@@ -1,4 +1,4 @@
-function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter)
+function [EP,F,CP] = AO_ERPDCMpar(P,G,DCM,niter)
 % A wrapper for fitting DCMs with AO.m curvature optimisation routine.
 % This version for ERP models. 
 %
@@ -8,8 +8,8 @@ function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter)
 %
 % Prior to system identification, this function reformulates the problem as 
 % a generalised model of the form
-%   y = f(x,Pß)
-% where AO.m calculates the coefficients, ß. These are then multipled back
+%   y = f(x,Pï¿½)
+% where AO.m calculates the coefficients, ï¿½. These are then multipled back
 % out to the actual parameter values.
 %
 % Returns posterior parameters [EP], squared error [F] and approximate
@@ -17,7 +17,7 @@ function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter)
 %
 % Dependencies: SPM
 % AS
-global DD
+%global DD
 
 if nargin < 4 || isempty(niter)
     niter = 128;
@@ -42,7 +42,7 @@ for i = 1:length(ip)
     cm(ip(i),i) = 1;
 end
 
-% to pass to f(ßx)
+% to pass to f(ï¿½x)
 DD.P  = P;
 DD.V  = V;
 DD.cm = cm;
@@ -52,7 +52,7 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
-[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,[]   ,0   ,2);
+[X,F,CP]  = AOpar(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,[]   ,0   ,2,DD);
 %[X,F,CP]  = AOf(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf);
 [~,EP]    = fakeDM(X);
 
@@ -60,7 +60,11 @@ c = V(ip);
 end
 
 function [e,PP] = fakeDM(Px,varargin)
-global DD
+%global DD
+
+if nargin > 1
+    DD = varargin{1};
+end
 
 cm  = DD.cm;
 P   = DD.P;                    % real world parameter vector
@@ -95,21 +99,6 @@ L   = feval(DD.M.G , PP , DD.M);
 
 % R
 %--------------------------------------------------------------
-R  = DD.xY.R;
-M  = DD.M;
-xY = DD.xY;
-NNs = size(xY.y{1},1);
-x0  = ones(NNs,1)*spm_vec(M.x)';         % expansion point for states
-
-% FS(x-x0)
-% FS(dxdp{i}*G',M)
-
-for i = 1:length(x)
-    y{i} = feval(DD.M.FS,(x{i}-x0)*L',DD.M);
-end
-
-% R
-%--------------------------------------------------------------
 R   = DD.xY.R;
 M   = DD.M;
 xY  = DD.xY;
@@ -121,7 +110,7 @@ NNs = size(xY.y{1},1);
 x0  = ones(NNs,1)*spm_vec(M.x)';         % expansion point for states
 for i = 1:Nt
     K{i} = x{i} - x0;                   % centre on expansion point
-    %y{i} = M.R*K{i}*L'*M.U;             % prediction (sensor space)
+    y{i} = M.R*K{i}*L'*M.U;             % prediction (sensor space)
     %r{i} = M.R*xY.y{i}*M.U - y{i};      % residuals  (sensor space)
     %K{i} = K{i}(:,j);                   % Depolarization in sources
 end

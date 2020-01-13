@@ -1,15 +1,8 @@
-function [j,ip,j1] = jaco(fun,x0,V,verbose,order,params)
+function [j,ip,j1] = jacopar(fun,x0,V,verbose,order,params)
 % Compute the 1st or 2nd order partial numerical derivates of a function
 % - parameter version: i.e. dp/dx - using symmetric finite difference methods
 %
-% usage: [j,ip] = jaco(fun,x0,V,verbose,order,{params})
-%
-%  fun = function
-%  x0  = params, e.g. fun(x0)
-%  V   = step for each param (e.g. 1/8 ... ) [can be vector: 1 for each x0]
-%  verbose = print progress
-%  order = method/derivate order, see below
-%  params = any req. additional function inputs in cell, e.g. fun(x0,params{:})
+% usage: [j,ip] = jaco(fun,x0,V,verbose,order)
 %
 % Order/options flags:
 % ----------------------------------------------------------------------
@@ -50,24 +43,19 @@ function [j,ip,j1] = jaco(fun,x0,V,verbose,order,params)
 % 
 % AS2019
 
-if nargin < 6 || isempty(params) ; params  = []; end
+if nargin < 6 || isempty(params);  params = []; end
 if nargin < 5 || isempty(order)  ; order   = 1; end
 if nargin < 4 || isempty(verbose); verbose = 0; end
 
-if isempty(params)
-    IS = fun;
-    P  = x0(:);
-else
-    IS = @(P) fun(P,params{:});
-    P  = x0(:) ;
-end
+IS = fun;
+P  = x0(:);
 
 if nargin >= 3; ip = ~~(V(:));
 else;           ip = 1:length(x0);
 end
 
 % The subfunction -
-[j,j1]  = jacf(IS,P,ip,verbose,V,order);
+[j,j1]  = jacf(IS,P,ip,verbose,V,order,params);
 
 j(isnan(j)) = 0;
 %j(isinf(j)) = 0;
@@ -76,7 +64,7 @@ end
 
 
 
-function [j,j1] = jacf(IS,P,ip,verbose,V,order)
+function [j,j1] = jacf(IS,P,ip,verbose,V,order,params)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
@@ -91,24 +79,26 @@ if verbose
 end
 
 %f0    = feval(IS,P);
-f0    = spm_cat( feval(IS,P) );
+f0    = spm_cat( feval(IS,P,params) );
 fx    = f0(:);
 j     = zeros(length(P),length(f0(:))); % n param x n output
+%j     = gpuArray(full(j));
+
 if ismember(order,[1 2 3 4])
-    for i = 1:length(P)
+    parfor i = 1:length(P)
         if ip(i)
 
             % Print progress
-            n = n + 1;
-            if verbose
-                if n > 1; fprintf(repmat('\b',[1,length(str)])); end
-                str  = sprintf('Computing Gradients [ip %d / %d]',n,length(find(ip)));
-                fprintf(str);
-            end
+            %n = n + 1;
+            %if verbose
+            %    if n > 1; fprintf(repmat('\b',[1,length(str)])); end
+            %    str  = sprintf('Computing Gradients [ip %d / %d]',n,length(find(ip)));
+            %    fprintf(str);
+            %end
 
             % Compute Jacobi: A(j,:) = ( f(x+h) - f(x-h) ) / (2 * h)
-            P0     = P;
-            P1     = P;
+            P0     = full(P);
+            P1     = full(P);
             d      = P0(i) * V(i);
 
             if d == 0
@@ -118,9 +108,9 @@ if ismember(order,[1 2 3 4])
             P0(i)  = P0(i) + d  ;
             P1(i)  = P1(i) - d  ;
 
-            f0     = spm_vec(spm_cat(feval(IS,P0)));
-            f1     = spm_vec(spm_cat(feval(IS,P1)));
-            j(i,:) = (f0 - f1) / (2 * d);
+            f0     = full( spm_vec(spm_cat(feval(IS,P0,params))) );
+            f1     = full( spm_vec(spm_cat(feval(IS,P1,params))) );
+            j(i,:) = ( (f0 - f1) / (2 * d) );
             
             if order == 3 || order == 4
                 j(i,:) = ( ( (f0 - fx) / (2*d) ) + ...
@@ -128,11 +118,11 @@ if ismember(order,[1 2 3 4])
             end
             
             if order == 2 
-                j1(i,:) = j(i,:); % keep first order
+                %j1(i,:) = j(i,:); % keep first order
                 % Alternatively, include curvature
                 deriv1 = (f0 - f1) / 2 / d;
                 deriv2 = (f0 - 2 * fx + f1) / d ^ 2;
-                j(i,:) = deriv1 ./ deriv2;
+                j(i,:) = ( full( deriv1 ./ deriv2 ) );
             elseif order == 4
                 % curvature using the 3-point routine
                 deriv1a = (f0 - fx) / (2*d);
@@ -143,6 +133,7 @@ if ismember(order,[1 2 3 4])
             end
         end
     end
+    %j = gather(j);
     
 elseif ismember(order,5)
     

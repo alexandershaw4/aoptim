@@ -52,7 +52,9 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
-[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,[]   ,0   ,2);
+writelog = 1;
+
+[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,[]   ,0   ,2 ,writelog);
 %[X,F,CP]  = AOf(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf);
 [~,EP]    = fakeDM(X);
 

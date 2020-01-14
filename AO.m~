@@ -25,7 +25,7 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 %   e = sum(Y0 - y).^2
 %
 % the usage is:
-%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog)
+%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
@@ -42,7 +42,6 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 %              (set to -1 to switch off)
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
 % order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
-% writelog   = flag to write progress to command window (0) or a txt log (1)
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -403,7 +402,7 @@ while iterate
             end
         else
             
-            pupdate(loc,n,nfun,e0,e0,'reject',toc);
+            pupdate(n,nfun,e0,e0,'reject',toc);
             
             % reduce step and go back to main loop
             red = red*.8;
@@ -442,7 +441,7 @@ while iterate
     end
         
     if localminflag == 3
-        fprintf(loc,'I think we''re stuck...stopping\n');
+        fprintf('I think we''re stuck...stopping\n');
         
         % return current best
         X = V*real(x0(ip));
@@ -454,13 +453,13 @@ while iterate
         Pp      = V'*Pp*V;
         Cp      = spm_inv(Pp + ipC);
         
-        if writelog;fclose(loc);end
+        closelog(loc)
         return;
     end
     
     % if 3 fails, reset the reduction term (based on the specified variance)
     if n_reject_consec == 3
-        pupdate(loc,n,nfun,e1,e0,'resetv');
+        pupdate(n,nfun,e1,e0,'resetv');
         %red = red ./ max(red(:));
         red     = diag(pC);
         aopt.pC = V*red;
@@ -468,7 +467,7 @@ while iterate
     
     % stop at max iterations
     if n == maxit
-        fprintf(loc,'Reached max iterations: stopping\n');
+        fprintf('Reached max iterations: stopping\n');
         
         % return current best
         X = V*real(x0(ip));
@@ -480,13 +479,13 @@ while iterate
         Pp      = V'*Pp*V;
         Cp      = spm_inv(Pp + ipC);
         
-        if writelog;fclose(loc);end
+        closelog(loc)
         return;
     end
     
     % check for convergence
     if e0 <= criterion
-        fprintf(loc,'Convergence.\n');
+        fprintf('Convergence.\n');
         
         % return current best
         X = V*real(x0(ip));
@@ -498,13 +497,13 @@ while iterate
         Pp      = V'*Pp*V;
         Cp      = spm_inv(Pp + ipC);
 
-        if writelog;fclose(loc);end
+        closelog(loc)
         return;
     end
     
     % give up after 10 failed iterations
     if n_reject_consec == 5
-        fprintf(loc,'Failed to converge... \nReturning best estimates.\n');
+        fprintf('Failed to converge... \nReturning best estimates.\n');
         
         % return current best
         X = V*real(x0(ip));
@@ -516,13 +515,21 @@ while iterate
         Pp      = V'*Pp*V;
         Cp      = spm_inv(Pp + ipC);
         
-        if writelog;fclose(loc);end
+        closelog(loc)
         return;
     end
     
 end
 
 
+
+end
+
+function closelog(loc)
+
+if loc ~= 0
+    fclose(loc);
+end
 
 end
 
@@ -536,7 +543,7 @@ end
 
 function pupdate(loc,it,nfun,err,best,action,varargin)
 
-if nargin >= 7
+if nargin >= 6
     n = varargin{1};
     fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
 else

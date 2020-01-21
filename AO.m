@@ -97,7 +97,7 @@ aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
 aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
-aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
+aopt.fixedstepderiv = 0; % fixed or adjusted step for derivative calculation
 
 x0         = full(x0(:));
 V          = full(V(:));
@@ -201,6 +201,10 @@ while iterate
     % start counters
     improve = true;
     nfun    = 0;
+    
+    % - Initialise moment estimates
+    m = zeros(length(x0), 1);
+    v = zeros(length(x0), 1);
 
     % iterative descent on this slope
     %======================================================================
@@ -217,6 +221,7 @@ while iterate
             else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
             end
             %dx    = (V*x1(ip) + (x3/s.^2) );
+            %dx = (sign(df0).*(red./x0));
             
         elseif StepMethod == 2
             % continue the ascent / descent (as per spm_nlsi_GN.m)
@@ -225,8 +230,32 @@ while iterate
                 dFdp  = -real(J'*e) - ipC*x0;
                 dFdpp = -real(J'*J) - ipC;
                 dp    = spm_dx(dFdpp,dFdp,{-6});
-                dx    = x0 + dp;                   % prediction
+                dx    = x1 + dp;                   % prediction
             end
+            
+        elseif StepMethod == 3
+            %stepSize = 0.001;
+            %stepSize = 0.00001;
+            stepSize = red;
+            
+            beta1 = 0.9;
+            beta2 = 0.999;
+            epsilon = sqrt(eps);
+            
+            % - Update biased 1st moment estimate
+            m = beta1.*m + (1 - beta1) .* df0(:);
+            % - Update biased 2nd raw moment estimate
+            v = beta2.*v + (1 - beta2) .* (df0(:).^2);
+            
+            % - Compute bias-corrected 1st moment estimate
+            mHat = m./(1 - beta1^nfun);
+            % - Compute bias-corrected 2nd raw moment estimate
+            vHat = v./(1 - beta2^nfun);
+            
+            % - Determine step to take at this iteration
+            vfStep = stepSize.*mHat./(sqrt(vHat) + epsilon);
+            
+            dx = x1(:) - vfStep(:);
         end
         
         % Check the new parameter estimates?
@@ -234,18 +263,18 @@ while iterate
         
         if Check == 1
             
-            % Assess each new parameters individually, update only improvers
+            % Assess each new parameter estimate individually, update only improvers
             for nip = 1:length(dx)
                 XX       = V*x0;
                 XX(nip)  = dx(nip);
                 DFE(nip) = obj(real(XX));
             end
 
-            % compute improver-parameters
+            % Identify improver-parameters
             gp  = double(DFE < e0); % e0
             gpi = find(gp);
 
-            % only update select parameters
+            % Only update select parameters
             ddx        = V*x0;
             ddx(gpi)   = dx(gpi);
             dx         = ddx;
@@ -262,6 +291,8 @@ while iterate
         end
         
         % Tolerance on update error as function of iteration number
+        % this can be helpful in functions with lots of local minima
+        % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
         etol = 0; % none
         
@@ -663,13 +694,17 @@ if all(size(Q)>1)
     
     % if square precision matrix was supplied, use this objective
     ey  = spm_vec(Y) - spm_vec(y);
-    qh  = Q*(ey*ey') ;%*Q';    % i don't think the second Q term is needed
+    qh  = Q*(ey*ey')*Q';    % i don't think the second Q term is needed
     e   = sum(qh(:).^2);    
     
 else
     
     % sse: sum of error squared
-    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
+    e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); e = abs(e);
+    
+    % or
+    %e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
+    %e  = real(e) + imag(e);
     
     % mse: mean squared error
     %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));

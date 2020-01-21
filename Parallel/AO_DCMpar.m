@@ -1,14 +1,14 @@
-function [EP,F,CP,History] = AO_DCM(P,DCM,niter,mimo)
+function [EP,F,CP] = AO_DCMpar(P,DCM,niter,mimo)
 % A wrapper for fitting DCMs with AO.m curvature optimisation routine.
-% 
+%
 % Input parameter structure, P and a fully specified DCM structure:
 %
 %    [EP,F,CP] = AO_DCM(P,DCM)
 %
-% Prior to system identification, this function reformulates the problem as 
+% Prior to system identification, this function reformulates the problem as
 % a generalised model of the form
-%   y = f(x,Pß)
-% where AO.m calculates the coefficients, ß. These are then multipled back
+%   y = f(x,P?)
+% where AO.m calculates the coefficients, ?. These are then multipled back
 % out to the actual parameter values.
 %
 % Returns posterior parameters [EP], squared error [F] and approximate
@@ -37,7 +37,7 @@ for i = 1:length(ip)
     cm(ip(i),i) = 1;
 end
 
-% to pass to f(ßx)
+% to pass to f(?x)
 DD.P  = P;
 DD.V  = V;
 DD.cm = cm;
@@ -52,13 +52,13 @@ c = V(ip);
 %[X,F,CP]  = AO_nlls_svd(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,2,2);
 
 % use this:
-[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
+[X,F,CP]  = AOpar(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2,DD);
 %[X,F,CP]  = AOt(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,0,4);
 
 %[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);
 
-%if ~mimo; [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);   % MISO, curvature 
-%else;     [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,1,1);   % MIMO, gradients 
+%if ~mimo; [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);   % MISO, curvature
+%else;     [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,1,1);   % MIMO, gradients
 %end
 
 %[X,F,CP]  = AOf(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf);
@@ -68,7 +68,11 @@ c = V(ip);
 end
 
 function [y,PP] = fakeDM(Px,varargin)
-global DD
+%global DD
+
+if nargin > 1
+    DD = varargin{1};
+end
 
 P    = DD.P;
 cm   = DD.cm;

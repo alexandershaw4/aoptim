@@ -1,9 +1,31 @@
-function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog)
+function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
-% The same AOf.m, but this version minimises sq-error, not free energy.
+% This is a variant of AO.m that using Bayes rule for parameter updates.
 %
+% for: p(t|d) = p(d|t)p(t) ./ p(d)
+%
+%             = pdt   * pt ./ pde
+%
+% where d (data) is the objective function error
+%      
+% the probability functions are normal distributions where the mean
+% is defined by the current best parameter estimate (at beginning
+% of loop) and standard deviation is sqrt of the parameter variance term. 
+% This is where pdt [ p(d|t) ] is calculated.
+%
+% The probability of each new parameter in the set resulting from 
+% the gradient descent (dx) is evaluated against the distribution
+% for each parameter, giving pt [ p(t) ].
+%
+% The denominator / probability of the data (aka objective error), pde [ p(d) ] 
+% is hard to calculate because we can't compute p(d) using the 
+% complements [ p(d|t)p(t) + p(d|~t)p(~t) ] so instead, for the ~t part, I
+% use the probability of last set of priors.
+%
+% General usage:
+%--------------------------------------------------------------------------
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
 %   e  = f(x)
@@ -87,6 +109,7 @@ else
     loc = 1;
 end
 
+
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
@@ -133,6 +156,17 @@ pC    = V'*pC*V;
 ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
+% % detect parameters with outlier variance/step sizes
+% if any( var(red*red') > mean( 3*var(red*red') ) )
+%     fprintf('Detecting and reducing potentially unstable parameter variances\n');
+%     this = find( var(red*red') > mean( 3*var(red*red') ) );
+%     for i = 1:length(this)
+%         vr = red;
+%         vr(this(i)) = [];
+%         red(this(i)) = mean(vr);
+%     end
+% end
+
 aopt.pC  = V*red;      % store for derivative function access
 
 % parameters (reduced space)
@@ -162,6 +196,16 @@ while iterate
    
     pupdate(loc,n,0,e0,e0,'grdnts',toc);
     
+    % initialise parameter distributions - likelihood function p(d|t)
+    % in p(t|d) = p(d|t)p(t) ./ p(d)
+    %----------------------------------------------------------------------
+    for i = 1:length(x0)
+        pd(i) = makedist('normal',x0(i),sqrt( red(i) ));
+        pdt(i) = log( pdf(pd(i),x0(i)) );
+        %pdt(i) = ( 1-cdf(pd(i),x0(i)) );
+    end    
+    
+    
     % compute gradients & search directions
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
@@ -188,7 +232,7 @@ while iterate
     
     %x3  = V*(1./red(ip))./(1-d0);  
     x3  = V*red(ip)./(1-d0);                 % initial step 
-        
+    
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
@@ -197,14 +241,13 @@ while iterate
     % make copies of error and param set
     x1  = x0;
     e1  = e0;
-
+    
+    pcv = spm_inv( df0*df0' ).*~eye(length(x0)); % predicted covariance
+    pcv = rescale(pcv,0,1);
+    
     % start counters
     improve = true;
     nfun    = 0;
-    
-    % - Initialise moment estimates
-    m = zeros(length(x0), 1);
-    v = zeros(length(x0), 1);
 
     % iterative descent on this slope
     %======================================================================
@@ -212,16 +255,26 @@ while iterate
         
         % descend while we can
         nfun = nfun + 1;
-                                
+        
+        % initialise parameter distributions - likelihood function p(d|t)
+        % in p(t|d) = p(d|t)p(t) ./ p(d)
+        %----------------------------------------------------------------------
+        for i = 1:length(x1)
+            pd(i) = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
+            pdt(i) = log( pdf(pd(i),x1(i)) );
+            %pdt(i) = ( 1-cdf(pd(i),x1(i)) );
+        end
+                
         StepMethod  = 1;
         
         if StepMethod == 1
             % continue the ascent / descent (AO.m as per Hinton)
-            if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
-            else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
-            end
+%             if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
+%             else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
+%             end
             %dx    = (V*x1(ip) + (x3/s.^2) );
-            %dx = (sign(df0).*(red./x0));
+            
+            dx = (sign(df0).*(red./x0));
             
         elseif StepMethod == 2
             % continue the ascent / descent (as per spm_nlsi_GN.m)
@@ -230,51 +283,91 @@ while iterate
                 dFdp  = -real(J'*e) - ipC*x0;
                 dFdpp = -real(J'*J) - ipC;
                 dp    = spm_dx(dFdpp,dFdp,{-6});
-                dx    = x1 + dp;                   % prediction
+                dx    = x0 + dp;                   % prediction
             end
-            
-        elseif StepMethod == 3
-            %stepSize = 0.001;
-            %stepSize = 0.00001;
-            stepSize = red;
-            
-            beta1 = 0.9;
-            beta2 = 0.999;
-            epsilon = sqrt(eps);
-            
-            % - Update biased 1st moment estimate
-            m = beta1.*m + (1 - beta1) .* df0(:);
-            % - Update biased 2nd raw moment estimate
-            v = beta2.*v + (1 - beta2) .* (df0(:).^2);
-            
-            % - Compute bias-corrected 1st moment estimate
-            mHat = m./(1 - beta1^nfun);
-            % - Compute bias-corrected 2nd raw moment estimate
-            vHat = v./(1 - beta2^nfun);
-            
-            % - Determine step to take at this iteration
-            vfStep = stepSize.*mHat./(sqrt(vHat) + epsilon);
-            
-            dx = x1(:) - vfStep(:);
         end
+        
+        % compute log likeihoods of new parameters and Bayesian update
+        %
+        % for: p(t|d) = p(d|t)p(t) ./ p(d)
+        %
+        %             = pp   * pdt ./ pde
+        %
+        % where d (data) is the objective function error
+        %      
+        % the probability functions are normal distributions where the mean
+        % is defined by the current best parameter estimate (at beginning
+        % of loop) and stard deviation is sqrt of the parameter variance term. 
+        % This is where pp [ p(d|t) ] is calculated.
+        %
+        % The probability of each new parameter in the set resulting from 
+        % the gradient descent (dx) is evaluated against the distribution
+        % for each parameter, giving pdt [ p(t) ].
+        % The probability of the data (aka objective error), pde [ p(d) ] 
+        % is hard to calculate because we can;t compute p(d) using the 
+        % complement [ p(d|t)p(t) + p(d|~t)p(~t) ] so instead, for the ~t I
+        % use the prob of last set of priors
+                
+        % p(t) - prior probability
+        %------------------------------------------------------------------
+        for i = 1:length(dx)
+            pt(i) = log( pdf( pd(i) , dx(i) ) );
+            %pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
+        end
+        
+        
+        % also compute denominator: p(d) == p(d|t)p(t) + p(d|~t)p(~t) 
+        % since we cant compute the complement parameter values, use the
+        % priors? that means p(d) == p(d|t) + p(t)
+        %dpe = pt + pdt;
+        
+        % p(d) - data (error) - marginal likelihood
+        %------------------------------------------------------------------
+        for nip = 1:length(dx)
+            XX       = V*x0;
+            XX(nip)  = dx(nip);
+            DFE(nip) = obj(real(XX));
+        end    
+        
+        for i = 1:length(DFE)
+            dpp(i) =  makedist('normal',e0 ,sqrt( red(i) ));
+            dpe(i) = ( pdf(dpp(i), DFE(i)) );
+            %dpe(i) = ( 1-cdf(dpp(i), DFE(i)) );
+        end
+        
+        % for each suggested new parameter value, we have 
+        
+        % p(d) - data (error) probability
+        %      - but: p(d) =  p(d|t)*dt
+        %dpe = pdt.*(x0-dx)';
+        
+        % Bayes rule to get the new posterior parameters
+        % p(t|d) = p(d|t)p(t) ./ p(d)
+        dx       = ((pdt.*pt)./(exp(dpe)) )';
+        
+        %numerator = (pdt.*pt);
+        %numerator(isinf(numerator))=0;
+        %px       = (numerator./( exp(dpe)) )';
+        
+        %dx = dx./exp(px);
         
         % Check the new parameter estimates?
         Check = 1;
         
         if Check == 1
             
-            % Assess each new parameter estimate individually, update only improvers
+            % Assess each new parameters individually, update only improvers
             for nip = 1:length(dx)
                 XX       = V*x0;
                 XX(nip)  = dx(nip);
                 DFE(nip) = obj(real(XX));
             end
 
-            % Identify improver-parameters
+            % compute improver-parameters
             gp  = double(DFE < e0); % e0
             gpi = find(gp);
 
-            % Only update select parameters
+            % only update select parameters
             ddx        = V*x0;
             ddx(gpi)   = dx(gpi);
             dx         = ddx;
@@ -286,7 +379,7 @@ while iterate
             gp  = ones(1,length(x0));
             gpi = 1:length(x0);
             de  = obj(dx);
-            DFE = ones(1,length(x0))*de; 
+            %DFE = ones(1,length(x0))*de; 
             
         end
         
@@ -412,13 +505,16 @@ while iterate
                     if doplot; makeplot(V*x0,x1); end
 
                     % update step size for these params
-                    red = red+V'*((V*red).*thisgood');       % CHANGE
+                    % red = red+V'*((V*red).*thisgood');       % CHANGE
                     
                     % reset rejection counter
                     n_reject_consec = 0;
                 else
+                    
+                    pupdate(loc,n,nfun,enew,e0,'reject',toc);
+                    
                     % reduce step and go back to main loop
-                    red = red*.8;
+                    red = red*1.2;
                     
                     % halt this while loop
                     improve1 = 0;
@@ -679,9 +775,11 @@ global aopt
 IS = aopt.fun;
 P  = x0(:)';
 
+warning off;
 try    y  = IS(P); 
 catch; y  = spm_vec(aopt.y)*0;
 end
+warning on;
 
 Y  = aopt.y;
 Q  = aopt.Q;
@@ -698,7 +796,11 @@ if all(size(Q)>1)
 else
     
     % sse: sum of error squared
-    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
+    YY = spm_vec(Y);
+    yy = spm_vec(y);
+    e  = sum(sum( (YY-yy').^2 ));
+    
+    %e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
     
     % mse: mean squared error
     %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));

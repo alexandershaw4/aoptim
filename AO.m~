@@ -97,7 +97,7 @@ aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
 aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
-aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
+aopt.fixedstepderiv = 0; % fixed or adjusted step for derivative calculation
 
 x0         = full(x0(:));
 V          = full(V(:));
@@ -170,6 +170,12 @@ while iterate
         df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
     
+    % derivatives covariance adjustment
+    %pcv = ( cov(df0*df0') );
+    %df0 = pcv*df0;
+    
+    %df0 = (df0' * real(inv(df0 * df0')^(1/2)) )';
+
     % print end of gradient computation (just so we know it's finished)
     pupdate(loc,n,0,e0,e0,'-fini-',toc); 
     
@@ -179,10 +185,11 @@ while iterate
     d0  = -s'*s;                          
     
     % optional decomposition of derivative matrix (for mimos)
-    if any(aopt.svd) && mimo
+    if any(aopt.svd) ;% && mimo
         d0(isnan(d0))=0;
         d0(isinf(d0))=0;
         [uu,ss,vv] = spm_svd(d0);
+        aopt.svd = max([aopt.svd length(ss)]);
         d0 = uu(:,aopt.svd)*ss(aopt.svd,aopt.svd)*vv(:,aopt.svd)';
     end
     
@@ -197,7 +204,7 @@ while iterate
     % make copies of error and param set
     x1  = x0;
     e1  = e0;
-
+        
     % start counters
     improve = true;
     nfun    = 0;
@@ -291,6 +298,8 @@ while iterate
         end
         
         % Tolerance on update error as function of iteration number
+        % this can be helpful in functions with lots of local minima
+        % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
         etol = 0; % none
         
@@ -692,13 +701,17 @@ if all(size(Q)>1)
     
     % if square precision matrix was supplied, use this objective
     ey  = spm_vec(Y) - spm_vec(y);
-    qh  = Q*(ey*ey') ;%*Q';    % i don't think the second Q term is needed
+    qh  = Q*(ey*ey')*Q';    % i don't think the second Q term is needed
     e   = sum(qh(:).^2);    
     
 else
     
     % sse: sum of error squared
-    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
+    e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); e = abs(e);
+    
+    % or
+    %e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
+    %e  = real(e) + imag(e);
     
     % mse: mean squared error
     %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));

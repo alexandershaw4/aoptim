@@ -183,12 +183,16 @@ while iterate
         d0(isnan(d0))=0;
         d0(isinf(d0))=0;
         [uu,ss,vv] = spm_svd(d0);
+        aopt.svd = max([aopt.svd length(ss)]);
         d0 = uu(:,aopt.svd)*ss(aopt.svd,aopt.svd)*vv(:,aopt.svd)';
     end
     
     %x3  = V*(1./red(ip))./(1-d0);  
     x3  = V*red(ip)./(1-d0);                 % initial step 
         
+    [uu,ss,vv] = spm_svd(x3);
+    x3 = full(uu(:,1)*ss(1,1)*vv(:,1)');
+    
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
@@ -197,7 +201,7 @@ while iterate
     % make copies of error and param set
     x1  = x0;
     e1  = e0;
-
+        
     % start counters
     improve = true;
     nfun    = 0;

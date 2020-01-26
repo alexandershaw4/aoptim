@@ -233,6 +233,9 @@ while iterate
     %x3  = V*(1./red(ip))./(1-d0);  
     x3  = V*red(ip)./(1-d0);                 % initial step 
     
+    [uu,ss,vv] = spm_svd(x3);
+    x3 = full(uu(:,1)*ss(1,1)*vv(:,1)');
+    
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
@@ -269,12 +272,11 @@ while iterate
         
         if StepMethod == 1
             % continue the ascent / descent (AO.m as per Hinton)
-%             if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
-%             else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
-%             end
+            if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
+            else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
+            end
             %dx    = (V*x1(ip) + (x3/s.^2) );
-            
-            dx = (sign(df0).*(red./x0));
+            %dx = (sign(df0).*(red./x0));
             
         elseif StepMethod == 2
             % continue the ascent / descent (as per spm_nlsi_GN.m)
@@ -343,7 +345,9 @@ while iterate
         
         % Bayes rule to get the new posterior parameters
         % p(t|d) = p(d|t)p(t) ./ p(d)
-        dx       = ((pdt.*pt)./(exp(dpe)) )';
+        %dx       = ((pdt.*pt)./(exp(dpe)) )';
+        
+        dx = dx.*((exp(pdt').*exp(pt'))./exp(dpe)');
         
         %numerator = (pdt.*pt);
         %numerator(isinf(numerator))=0;
@@ -796,11 +800,11 @@ if all(size(Q)>1)
 else
     
     % sse: sum of error squared
-    YY = spm_vec(Y);
-    yy = spm_vec(y);
-    e  = sum(sum( (YY-yy').^2 ));
+    %YY = spm_vec(Y);
+    %yy = spm_vec(y);
+    %e  = sum(sum( (YY-yy').^2 ));
     
-    %e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
+    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
     
     % mse: mean squared error
     %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));

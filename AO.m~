@@ -99,6 +99,12 @@ aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 0; % fixed or adjusted step for derivative calculation
 
+
+if nargin < 3 || isempty(V)
+    V = FindOptimumStep(x0);
+end
+
+
 x0         = full(x0(:));
 V          = full(V(:));
 [e0]       = obj(x0);
@@ -170,12 +176,6 @@ while iterate
         df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
     
-    % derivatives covariance adjustment
-    %pcv = ( cov(df0*df0') );
-    %df0 = pcv*df0;
-    
-    %df0 = (df0' * real(inv(df0 * df0')^(1/2)) )';
-
     % print end of gradient computation (just so we know it's finished)
     pupdate(loc,n,0,e0,e0,'-fini-',toc); 
     
@@ -185,7 +185,7 @@ while iterate
     d0  = -s'*s;                          
     
     % optional decomposition of derivative matrix (for mimos)
-    if any(aopt.svd) ;% && mimo
+    if any(aopt.svd) && mimo
         d0(isnan(d0))=0;
         d0(isinf(d0))=0;
         [uu,ss,vv] = spm_svd(d0);
@@ -196,6 +196,9 @@ while iterate
     %x3  = V*(1./red(ip))./(1-d0);  
     x3  = V*red(ip)./(1-d0);                 % initial step 
         
+    [uu,ss,vv] = spm_svd(x3);
+    x3 = full(uu(:,1)*ss(1,1)*vv(:,1)');
+    
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
@@ -773,5 +776,36 @@ if nargout == 2
     %J = repmat(V,[1 size(J,2)])./J;
 end
 
+
+end
+
+function V = FindOptimumStep(x0)
+global aopt
+
+fprintf('Auto-computing parameter step sizes...\n');tic;
+
+% initialise at 1/8 - arbitrary
+% this is equivalent to:
+% dx[i] = x[i] + ( x[i]*1/8 )
+%
+% using the n-th order numerical derivatives as a measure of parameter
+% effect size, find starting step sizes whereby all parameters are
+% effective / equally balanced
+v = ones( size(x0) )/8;
+n = 0;
+
+
+[J,ip] = jaco(@obj,x0,v,0,aopt.order);
+n = 0;
+
+while var(J) > 0.15
+    v = pinv( v./abs(J) )' ;
+    [J,ip] = jaco(@obj,x0,v,0,aopt.order);
+    n = n + 1;
+end
+
+V = v;
+
+fprintf('Finished computing step sizes in %d iteratsions %d s\n',toc);
 
 end

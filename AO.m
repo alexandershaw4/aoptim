@@ -99,6 +99,12 @@ aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 0; % fixed or adjusted step for derivative calculation
 
+
+if nargin < 3 || isempty(V)
+    V = FindOptimumStep(x0);
+end
+
+
 x0         = full(x0(:));
 V          = full(V(:));
 [e0]       = obj(x0);
@@ -770,5 +776,38 @@ if nargout == 2
     %J = repmat(V,[1 size(J,2)])./J;
 end
 
+
+end
+
+function V = FindOptimumStep(x0)
+global aopt
+
+fprintf('Auto computing parameter step sizes...(wait)\n');tic;
+
+% initialise at 1/8 - arbitrary
+% this is equivalent to:
+% dx[i] = x[i] + ( x[i]*1/8 )
+%
+% using the n-th order numerical derivatives as a measure of parameter
+% effect size, find starting step sizes whereby all parameters are
+% effective / equally balanced
+v = ones( size(x0) )/8;
+n = 0;
+
+
+[J,ip] = jaco(@obj,x0,v,0,aopt.order);
+n = 0;
+
+while var(J) > 0.15
+    vj = v./abs(J);
+    vj(isinf(vj))=0;
+    v = pinv( vj )' ;
+    [J,ip] = jaco(@obj,x0,v,0,aopt.order);
+    n = n + 1;
+end
+
+V = v;
+
+fprintf('Finished computing step sizes in %d iterations (%d s)\n',n,round(toc));
 
 end

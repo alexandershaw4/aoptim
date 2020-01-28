@@ -156,17 +156,6 @@ pC    = V'*pC*V;
 ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
-% % detect parameters with outlier variance/step sizes
-% if any( var(red*red') > mean( 3*var(red*red') ) )
-%     fprintf('Detecting and reducing potentially unstable parameter variances\n');
-%     this = find( var(red*red') > mean( 3*var(red*red') ) );
-%     for i = 1:length(this)
-%         vr = red;
-%         vr(this(i)) = [];
-%         red(this(i)) = mean(vr);
-%     end
-% end
-
 aopt.pC  = V*red;      % store for derivative function access
 
 % parameters (reduced space)
@@ -201,7 +190,7 @@ while iterate
     %----------------------------------------------------------------------
     for i = 1:length(x0)
         pd(i) = makedist('normal',x0(i),sqrt( red(i) ));
-        pdt(i) = log( pdf(pd(i),x0(i)) );
+        pdt(i) = ( pdf(pd(i),x0(i)) );
         %pdt(i) = ( 1-cdf(pd(i),x0(i)) );
     end    
     
@@ -261,11 +250,11 @@ while iterate
         
         % initialise parameter distributions 
         %----------------------------------------------------------------------
-        for i = 1:length(x1)
-            pd(i) = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
-            pdt(i) = log( pdf(pd(i),x1(i)) );
-            %pdt(i) = ( 1-cdf(pd(i),x1(i)) );
-        end
+%         for i = 1:length(x1)
+%             pd(i) = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
+%             pdt(i) = ( pdf(pd(i),x1(i)) );
+%             %pdt(i) = ( 1-cdf(pd(i),x1(i)) );
+%         end
                 
         StepMethod  = 1;
         
@@ -292,8 +281,8 @@ while iterate
         %------------------------------------------------------------------
         for i = 1:length(dx)
             %pt(i) = log( pdf( pd(i) , dx(i) ) );
-            pt(i) = ( pdf( pd(i) , dx(i) ) );
-            %pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
+            %pt(i) = ( pdf( pd(i) , dx(i) ) );
+            pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
         end
         
         % new parameters: prior * likelihood

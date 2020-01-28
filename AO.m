@@ -97,7 +97,7 @@ aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
 aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
-aopt.fixedstepderiv = 0; % fixed or adjusted step for derivative calculation
+aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 
 
 if nargin < 3 || isempty(V)
@@ -801,6 +801,7 @@ n = 0;
 while var(J) > 0.15
     vj = v./abs(J);
     vj(isinf(vj))=0;
+    vj(isnan(vj))=0;
     v = pinv( vj )' ;
     [J,ip] = jaco(@obj,x0,v,0,aopt.order);
     n = n + 1;

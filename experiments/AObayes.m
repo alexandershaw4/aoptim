@@ -259,8 +259,7 @@ while iterate
         % descend while we can
         nfun = nfun + 1;
         
-        % initialise parameter distributions - likelihood function p(d|t)
-        % in p(t|d) = p(d|t)p(t) ./ p(d)
+        % initialise parameter distributions 
         %----------------------------------------------------------------------
         for i = 1:length(x1)
             pd(i) = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
@@ -275,8 +274,6 @@ while iterate
             if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
             else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
             end
-            %dx    = (V*x1(ip) + (x3/s.^2) );
-            %dx = (sign(df0).*(red./x0));
             
         elseif StepMethod == 2
             % continue the ascent / descent (as per spm_nlsi_GN.m)
@@ -289,72 +286,19 @@ while iterate
             end
         end
         
-        % compute log likeihoods of new parameters and Bayesian update
-        %
-        % for: p(t|d) = p(d|t)p(t) ./ p(d)
-        %
-        %             = pp   * pdt ./ pde
-        %
-        % where d (data) is the objective function error
-        %      
-        % the probability functions are normal distributions where the mean
-        % is defined by the current best parameter estimate (at beginning
-        % of loop) and stard deviation is sqrt of the parameter variance term. 
-        % This is where pp [ p(d|t) ] is calculated.
-        %
-        % The probability of each new parameter in the set resulting from 
-        % the gradient descent (dx) is evaluated against the distribution
-        % for each parameter, giving pdt [ p(t) ].
-        % The probability of the data (aka objective error), pde [ p(d) ] 
-        % is hard to calculate because we can;t compute p(d) using the 
-        % complement [ p(d|t)p(t) + p(d|~t)p(~t) ] so instead, for the ~t I
-        % use the prob of last set of priors
                 
-        % p(t) - prior probability
+        % p(t) - probability of the new parameter belonging to the
+        % posterior distribution
         %------------------------------------------------------------------
         for i = 1:length(dx)
-            pt(i) = log( pdf( pd(i) , dx(i) ) );
+            %pt(i) = log( pdf( pd(i) , dx(i) ) );
+            pt(i) = ( pdf( pd(i) , dx(i) ) );
             %pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
         end
         
-        
-        % also compute denominator: p(d) == p(d|t)p(t) + p(d|~t)p(~t) 
-        % since we cant compute the complement parameter values, use the
-        % priors? that means p(d) == p(d|t) + p(t)
-        %dpe = pt + pdt;
-        
-        % p(d) - data (error) - marginal likelihood
-        %------------------------------------------------------------------
-        for nip = 1:length(dx)
-            XX       = V*x0;
-            XX(nip)  = dx(nip);
-            DFE(nip) = obj(real(XX));
-        end    
-        
-        for i = 1:length(DFE)
-            dpp(i) =  makedist('normal',e0 ,sqrt( red(i) ));
-            dpe(i) = ( pdf(dpp(i), DFE(i)) );
-            %dpe(i) = ( 1-cdf(dpp(i), DFE(i)) );
-        end
-        
-        % for each suggested new parameter value, we have 
-        
-        % p(d) - data (error) probability
-        %      - but: p(d) =  p(d|t)*dt
-        %dpe = pdt.*(x0-dx)';
-        
-        % Bayes rule to get the new posterior parameters
-        % p(t|d) = p(d|t)p(t) ./ p(d)
-        %dx       = ((pdt.*pt)./(exp(dpe)) )';
-        
-        dx = dx.*((exp(pdt').*exp(pt'))./exp(dpe)');
-        
-        %numerator = (pdt.*pt);
-        %numerator(isinf(numerator))=0;
-        %px       = (numerator./( exp(dpe)) )';
-        
-        %dx = dx./exp(px);
-        
+        % new parameters: prior * likelihood
+        dx = dx.*pt(:);
+                
         % Check the new parameter estimates?
         Check = 1;
         
@@ -868,3 +812,57 @@ end
 
 
 end
+
+
+% stuff
+
+        % compute log likeihoods of new parameters and Bayesian update
+        %
+        % for: p(t|d) = p(d|t)p(t) ./ p(d)
+        %
+        %             = pp   * pdt ./ pde
+        %
+        % where d (data) is the objective function error
+        %      
+        % the probability functions are normal distributions where the mean
+        % is defined by the current best parameter estimate (at beginning
+        % of loop) and stard deviation is sqrt of the parameter variance term. 
+        % This is where pp [ p(d|t) ] is calculated.
+        %
+        % The probability of each new parameter in the set resulting from 
+        % the gradient descent (dx) is evaluated against the distribution
+        % for each parameter, giving pdt [ p(t) ].
+        % The probability of the data (aka objective error), pde [ p(d) ] 
+        % is hard to calculate because we can;t compute p(d) using the 
+        % complement [ p(d|t)p(t) + p(d|~t)p(~t) ] so instead, for the ~t I
+        % use the prob of last set of priors
+
+
+        % also compute denominator: p(d) == p(d|t)p(t) + p(d|~t)p(~t) 
+        % since we cant compute the complement parameter values, use the
+        % priors? that means p(d) == p(d|t) + p(t)
+        %dpe = pt + pdt;
+        
+%         % p(d) - data (error) - marginal likelihood
+%         %------------------------------------------------------------------
+%         for nip = 1:length(dx)
+%             XX       = V*x0;
+%             XX(nip)  = dx(nip);
+%             DFE(nip) = obj(real(XX));
+%         end    
+%         
+%         for i = 1:length(DFE)
+%             dpp(i) =  makedist('normal',e0 ,sqrt( red(i) ));
+%             dpe(i) = ( pdf(dpp(i), DFE(i)) );
+%             %dpe(i) = ( 1-cdf(dpp(i), DFE(i)) );
+%         end
+        
+        % for each suggested new parameter value, we have 
+        
+        % p(d) - data (error) probability
+        %      - but: p(d) =  p(d|t)*dt
+        %dpe = pdt.*(x0-dx)';
+        
+        % Bayes rule to get the new posterior parameters
+        % p(t|d) = p(d|t)p(t) ./ p(d)
+        %dx       = ((pdt.*pt)./(exp(dpe)) )';

@@ -51,7 +51,7 @@ c = V(ip);
 %[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
 
 % to ignore the variances/step sizes and allow AO to compute them:
-[X,F,CP,History]  = AO(@fakeDM,p(:),[],DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
+%[X,F,CP,History]  = AO(@fakeDM,p(:),[],DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
 
 % to use the flavour that uses a taylor-like expansion for parameter steps
 % over iterations:
@@ -59,6 +59,10 @@ c = V(ip);
 
 % to use normal AO.m but include an output precision operator (Q):
 %[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);
+
+
+% to use the experimental bayesian updater
+[X,F,CP,History]  = AObayes(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
 
 
 %if ~mimo; [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);   % MISO, curvature 

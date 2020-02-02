@@ -67,9 +67,7 @@ else;           ip = 1:length(x0);
 end
 
 % The subfunction -
-warning off; % suppress matrix singularity warnings in unstable systems
 [j,j1]  = jacf(IS,P,ip,verbose,V,order);
-warning on;
 
 j(isnan(j)) = 0;
 %j(isinf(j)) = 0;

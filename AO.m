@@ -103,12 +103,12 @@ aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
-% if no prior guess for parameters step sizes (variances) find step sizes
-% whereby each parameter has similar effect size w.r.t. error
-if nargin < 3 || isempty(V)
-    % iterates: v = v./abs(J)
-    V = FindOptimumStep(x0,V);
-end
+% % if no prior guess for parameters step sizes (variances) find step sizes
+% % whereby each parameter has similar effect size w.r.t. error
+% if nargin < 3 || isempty(V)
+%     % iterates: v = v./abs(J)
+%     V = FindOptimumStep(x0,V);
+% end
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -699,7 +699,7 @@ else
             % Free Energy Objective Function: F(p) = log evidence - divergence
             %----------------------------------------------------------------------
             Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
-            h  = sparse(length(Q),1) - log(var(spm_vec(y))) + 4;
+            h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
             iS = sparse(0);
 
             for i  = 1:length(Q)
@@ -710,9 +710,15 @@ else
             nq  = ny ./ length(Q);
             e   = spm_vec(Y) - spm_vec(y);
             ipC = aopt.ipC;
+            warning off; % don't warn abour singularity
             Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+            warning on
             p   = ( x0(:) - aopt.pp(:) );
 
+            if any(isnan(Cp(:))) 
+                Cp = Cp;
+            end
+            
             L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
            %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
@@ -819,6 +825,7 @@ if nargin < 2 || isempty(v)
 end
 n = 0;
 
+aopt.ipC   = inv(spm_cat(spm_diag({diag(v)})));
 
 [J,ip] = jaco(@obj,x0,v,0,aopt.order);
 n = 0;

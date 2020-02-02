@@ -255,8 +255,10 @@ while iterate
             pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
         end
         
-        % Bayesian(esque) update: prior * likelihood
-        dx =  dx.*pt(:);
+        % Bayesian(esque) parameter update
+        ddx = dx(:) - x1(:);
+        dx  = x1 + ddx.*pt(:);
+        
         
         % Check the new parameter estimates (dx)?
         Check = 1;

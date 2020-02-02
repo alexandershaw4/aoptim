@@ -51,7 +51,7 @@ c = V(ip);
 %[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2,0,'sse');
 
 % minimise free energy:
-[X,F,CP,History]  = AObay(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');
+[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');
 
 % to ignore the variances/step sizes and allow AO to compute them:
 %[X,F,CP,History]  = AO(@fakeDM,p(:),[],DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);

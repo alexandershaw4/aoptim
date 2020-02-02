@@ -14,11 +14,11 @@ Usages:
 
 Model fitting:
 
-[X,F] = AO(fun,x0,V,[y],[maxit],[inner_loop],[Q],[crit],[min_df],[is_mimo],[ordr])
+[X,F] = AO(fun,x0,V,[y],[maxit],[inner_loop],[Q],[crit],[min_df],[is_mimo],[ordr],[log],[obj])
 
 Generic function minimisation:
 
-[X,F] = AO(fun,x0,V,[0],[maxit],[inner_loop],[Q],[crit],[min_df],[is_mimo],[ordr])
+[X,F] = AO(fun,x0,V,[0],[maxit],[inner_loop],[Q],[crit],[min_df],[is_mimo],[ordr],[log],[obj])
 
 
 fun = function handle.
@@ -33,11 +33,16 @@ crit = (optional) convergence crierion, default 1e-2.
 min_df = (optional) minimum change in function value to continue, default 0.
 is_mimo = (optional) system type flag: 0 = MISO (default), 1 = MIMO^. 
 order = (optional) order of derivatives (see jaco.m), default 2 (curvature).
+writelog = (optional) write steps to log (==1) instead of console (==0, def)
+objective = (optional) error function: 'sse' 'mse' 'rmse' or 'fe' (free energy) 
 
 ^MIMO = in Y0 = fun(x0), both x0 and Y0 are vectors. In this case, the derivative matrix is num-inputs-by-num-outputs, w.r.t error along Y0. 
 
 Notes:
 
 How well it works can be highly dependent on the step size / variances (V).
+In my testing minimising SSE seems to produce the best overall fits but free energy (log evidence - divergence) converges much faster, so maybe start with that.
+
+Here's a video of the the optimiser solving a system of nonlinear differential equations that describe a mean-field neural mass model - fitting it's spectral output to some real data:
 ```
-![screenshot](AO_ModelOptimisation.gif)
+![screenshot](OptimisationGIF.gif)

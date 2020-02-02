@@ -135,7 +135,7 @@ Vb         = V;
 %--------------------------------------------------------------------------
 if doplot
     setfig();
-    makeplot(x0,x0);
+    makeplot(x0,x0,x0-x0);
 end
 
 % initialise counters
@@ -175,6 +175,7 @@ n_print    = 0;
 refdate(loc);
 pupdate(loc,n,0,e0,e0,'start:');
 
+
 % start loop
 %==========================================================================
 while iterate
@@ -186,12 +187,11 @@ while iterate
     pupdate(loc,n,0,e0,e0,'grdnts',toc);
     
     % initialise parameter distributions - likelihood function p(d|t)
-    % in p(t|d) = p(d|t)p(t) ./ p(d)
     %----------------------------------------------------------------------
     for i = 1:length(x0)
-        pd(i) = makedist('normal',x0(i),sqrt( red(i) ));
-        pdt(i) = ( pdf(pd(i),x0(i)) );
-        %pdt(i) = ( 1-cdf(pd(i),x0(i)) );
+        pd(i) = makedist('normal','mu',x0(i),'sigma',sqrt( red(i) ));
+        %pdt(i) = ( pdf(pd(i),x0(i)) );
+        pdt(i) = ( 1-cdf(pd(i),x0(i)) );
     end    
     
     
@@ -250,11 +250,11 @@ while iterate
         
         % initialise parameter distributions 
         %----------------------------------------------------------------------
-%         for i = 1:length(x1)
-%             pd(i) = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
-%             pdt(i) = ( pdf(pd(i),x1(i)) );
-%             %pdt(i) = ( 1-cdf(pd(i),x1(i)) );
-%         end
+        %for i = 1:length(x1)
+            %pd(i) = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
+            %pdt(i) = ( pdf(pd(i),x1(i)) );
+            %pdt(i) = ( 1-cdf(pd(i),x1(i)) );
+        %end
                 
         StepMethod  = 1;
         
@@ -285,9 +285,13 @@ while iterate
             pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
         end
         
-        % new parameters: prior * likelihood
-        dx = dx.*pt(:);
+        % Bayesian(esque) update: prior * likelihood
+        dx =  dx.*pt(:);
                 
+        %ddx = dx - x1;
+        %dx  = x1 + (ddx.*pt');
+        
+                        
         % Check the new parameter estimates?
         Check = 1;
         
@@ -321,7 +325,8 @@ while iterate
         end
         
         % Tolerance on update error as function of iteration number
-        %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
+        % AND mean probability of new parameters
+        %etol = mean(pt) * ( e1 * ( ( 0.5./n ) ./(nfun.^2) ) );
         etol = 0; % none
         
         if de  < ( e1 + etol )
@@ -396,7 +401,7 @@ while iterate
         % print & plots success
         %------------------------------------------------------------------
         pupdate(loc,n,nfun,e1,e0,'accept',toc);
-        if doplot; makeplot(V*x0(ip),x1); end
+        if doplot; makeplot(V*x0(ip),x1,pdt-pt); end
         n_reject_consec = 0;
         dff = [dff df];
     else
@@ -439,7 +444,7 @@ while iterate
 
                     % print & plot update
                     pupdate(loc,n,nfun,e0,e0,'accept',toc);
-                    if doplot; makeplot(V*x0,x1); end
+                    if doplot; makeplot(V*x0,x1,pdt-pt); end
 
                     % update step size for these params
                     % red = red+V'*((V*red).*thisgood');       % CHANGE
@@ -616,7 +621,7 @@ drawnow;
     
 end
 
-function makeplot(x,ox)
+function makeplot(x,ox,dp)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
 %
@@ -670,8 +675,9 @@ else
     
     
     s(3) = subplot(313);
-    bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
-    title('Parameter Change','color','w','fontsize',18);
+    %bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
+    bar(dp,'FaceColor',[1 .7 .7],'EdgeColor','w');
+    title('Change in likelihood (prior - post)','color','w','fontsize',18);
     ax = gca;
     ax.XGrid = 'off';
     ax.YGrid = 'on';

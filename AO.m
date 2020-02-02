@@ -1,8 +1,6 @@
-function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog)
+function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
-%
-% The same AOf.m, but this version minimises sq-error, not free energy.
 %
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
@@ -13,11 +11,9 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 % x  = model parameters/inputs to be optimised
 %
 % The output of fun(x) can be either a single value or a vector. The
-% derivatives can be returned w.r.t the objective (SSE, e.g. a MISO), or 
-% w.r.t the error at each point along the output (e.g. when model 
-% fitting, a MIMO). To invoke the latter, use the 10th input [0/1] to flag.
-% When using this option, flag order == -1, which will use the complex
-% conjugate method for the derivatives, otherwise probably use 2.
+% derivatives can be returned w.r.t the objective (SSE, MSE, FE etc, e.g. a MISO), or 
+% w.r.t the error at each point along the output (e.g. a MIMO). To invoke 
+% the latter, use the 10th input [0/1] to flag.
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
@@ -25,11 +21,12 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 %   e = sum(Y0 - y).^2
 %
 % the usage is:
-%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog)
+%   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
 %
+% INPUTS:
 % fun        = function handle / anonymous function
 % x0         = starting points (vector input to fun)
 % V          = variances controlling each element of x0
@@ -43,6 +40,10 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 % mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
 % order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
 % writelog   = flag to write progress to command window (0) or a txt log (1)
+% obj        = 'sse' 'free_energy' 'mse' or 'rmse'
+%
+% Notes: in my testing minimising SSE seems to produce the best overall fits but
+% free energy (log evidence - divergence) converges much faster. 
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -60,13 +61,14 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 %
 %     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/128,0,[],[],[],1e-13,0,0,2)
 %
-% See also ao_glm AO_dcm AOf jaco AOls
+% See also ao_glm AO_DCM jaco AO
 %
 % AS2019
 % alexandershaw4@gmail.com
 %
 global aopt
 
+if nargin < 13 || isempty(objective);  objective = 'sse'; end
 if nargin < 12 || isempty(writelog);   writelog = 0;      end   
 if nargin < 11 || isempty(order);      order = 2;         end
 if nargin < 10 || isempty(mimo);       mimo = 0;          end
@@ -89,49 +91,32 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
+aopt         = [];       % reset
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
-aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')*Q'
+aopt.pp      = x0(:);    % starting parameters
+aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
 aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
-aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
+aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
-
+% if no prior guess for parameters step sizes (variances) find step sizes
+% whereby each parameter has similar effect size w.r.t. error
 if nargin < 3 || isempty(V)
-    V = FindOptimumStep(x0);
+    % iterates: v = v./abs(J)
+    V = FindOptimumStep(x0,V);
 end
 
+% parameter and step vectors
+x0  = full(x0(:));
+V   = full(V(:));
+v   = V;
+pC  = diag(V);
 
-x0         = full(x0(:));
-V          = full(V(:));
-[e0]       = obj(x0);
-
-n          = 0;
-iterate    = true;
-doplot     = 1;
-Vb         = V;
-
-% initial point plot
-%--------------------------------------------------------------------------
-if doplot
-    setfig();
-    makeplot(x0,x0);
-end
-
-% initialise counters
-%--------------------------------------------------------------------------
-n_reject_consec = 0;
-search          = 0;
-
-% initialise step size
-%--------------------------------------------------------------------------
-v     = V;
-pC    = diag(V);
-
-% variance (reduced space)
+% variance (in reduced space)
 %--------------------------------------------------------------------------
 %V     = spm_svd(pC);
 V     = eye(length(x0));    %turn off svd 
@@ -139,22 +124,38 @@ pC    = V'*pC*V;
 ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
-aopt.pC  = V*red;      % store for derivative function access
+aopt.pC  = V*red;      % store for derivative & objective function access
+aopt.ipC = ipC; 
 
-% parameters (reduced space)
+% initial objective value
+[e0]       = obj(x0);
+n          = 0;
+iterate    = true;
+doplot     = 1;
+Vb         = V;
+
+% initial error plot(s)
+%--------------------------------------------------------------------------
+if doplot
+    setfig(); makeplot(x0,x0);
+end
+
+% initialise counters
+%--------------------------------------------------------------------------
+n_reject_consec = 0;
+search          = 0;
+
+% parameters (in reduced space)
 %--------------------------------------------------------------------------
 np    = size(V,2); 
 p     = [V'*x0];
 ip    = (1:np)';
 Ep    = V*p(ip);
 
-dff          = [];
-localminflag = 0;
+dff          = []; % tracks changes in error over iterations
+localminflag = 0;  % triggers when stuck in local minima
 
-% print updates at n_print intervals along the inner loop
-n_print    = 0;
-
-% print start point
+% print start point - to console or logbook (loc)
 refdate(loc);
 pupdate(loc,n,0,e0,e0,'start:');
 
@@ -167,6 +168,8 @@ while iterate
     n = n + 1;    tic;
    
     pupdate(loc,n,0,e0,e0,'grdnts',toc);
+    
+    aopt.pp = x0;
     
     % compute gradients & search directions
     %----------------------------------------------------------------------
@@ -183,28 +186,22 @@ while iterate
     %----------------------------------------------------------------------
     s   = -df0';    
     d0  = -s'*s;                          
-    
-    % optional decomposition of derivative matrix (for mimos)
-    if any(aopt.svd) && mimo
-        d0(isnan(d0))=0;
-        d0(isinf(d0))=0;
-        [uu,ss,vv] = spm_svd(d0);
-        aopt.svd = max([aopt.svd length(ss)]);
-        d0 = uu(:,aopt.svd)*ss(aopt.svd,aopt.svd)*vv(:,aopt.svd)';
-    end
-    
-    %x3  = V*(1./red(ip))./(1-d0);  
-    x3  = V*red(ip)./(1-d0);                 % initial step 
         
+    % Initial step
+    x3  = V*red(ip)./(1-d0);                  
+            
+    % Leading components
     [uu,ss,vv] = spm_svd(x3);
-    x3 = full(uu(:,1)*ss(1,1)*vv(:,1)');
+    nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+    x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+    %prinfo(loc,n,0,nc,length(s));
     
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
     Hist.J{n} = df0;
     
-    % make copies of error and param set
+    % make copies of error and param set for inner while loops
     x1  = x0;
     e1  = e0;
         
@@ -212,26 +209,20 @@ while iterate
     improve = true;
     nfun    = 0;
     
-    % - Initialise moment estimates
-    m = zeros(length(x0), 1);
-    v = zeros(length(x0), 1);
-
     % iterative descent on this slope
     %======================================================================
     while improve
         
-        % descend while we can
+        % descend while de < e1
         nfun = nfun + 1;
                                 
         StepMethod  = 1;
-        
+                
         if StepMethod == 1
             % continue the ascent / descent (AO.m as per Hinton)
             if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
             else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
             end
-            %dx    = (V*x1(ip) + (x3/s.^2) );
-            %dx = (sign(df0).*(red./x0));
             
         elseif StepMethod == 2
             % continue the ascent / descent (as per spm_nlsi_GN.m)
@@ -242,33 +233,9 @@ while iterate
                 dp    = spm_dx(dFdpp,dFdp,{-6});
                 dx    = x1 + dp;                   % prediction
             end
-            
-        elseif StepMethod == 3
-            %stepSize = 0.001;
-            %stepSize = 0.00001;
-            stepSize = red;
-            
-            beta1 = 0.9;
-            beta2 = 0.999;
-            epsilon = sqrt(eps);
-            
-            % - Update biased 1st moment estimate
-            m = beta1.*m + (1 - beta1) .* df0(:);
-            % - Update biased 2nd raw moment estimate
-            v = beta2.*v + (1 - beta2) .* (df0(:).^2);
-            
-            % - Compute bias-corrected 1st moment estimate
-            mHat = m./(1 - beta1^nfun);
-            % - Compute bias-corrected 2nd raw moment estimate
-            vHat = v./(1 - beta2^nfun);
-            
-            % - Determine step to take at this iteration
-            vfStep = stepSize.*mHat./(sqrt(vHat) + epsilon);
-            
-            dx = x1(:) - vfStep(:);
         end
         
-        % Check the new parameter estimates?
+        % Check the new parameter estimates (dx)?
         Check = 1;
         
         if Check == 1
@@ -301,7 +268,7 @@ while iterate
         end
         
         % Tolerance on update error as function of iteration number
-        % this can be helpful in functions with lots of local minima
+        % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
         etol = 0; % none
@@ -323,7 +290,7 @@ while iterate
             improve = false;            
         end
         
-        % upper limit on the length of this loop
+        % upper limit on the length of this loop (force recompute dfdx)
         if nfun >= inner_loop
             improve = false;
         end
@@ -345,12 +312,11 @@ while iterate
         x0 = -dp + x0;
         e0 =  e1;
                 
-        % M-step (line search)
+        % M-step (like a line search?)
         %==================================================================
         
         %if the system is (locally?) linear, and we know what dp caused de
-        %we can quickly exploit this to estimate the minimum on this descent
-        %dp./de using an expansion
+        %we can use this
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
@@ -371,10 +337,11 @@ while iterate
                 exploit = false;
             end
         end
+        
+        % Update best-so-far estimates
         e0 = e1;
         x0 = x1;
             
-        
         % print & plots success
         %------------------------------------------------------------------
         pupdate(loc,n,nfun,e1,e0,'accept',toc);
@@ -454,9 +421,7 @@ while iterate
             n_reject_consec = n_reject_consec + 1;
         end
                             
-        
     end
-    
     
     % stopping criteria, rules etc.
     %======================================================================
@@ -575,6 +540,12 @@ fprintf(loc,'|---------------|----------|-------------------|-------------------
 
 end
 
+function prinfo(loc,it,nfun,nc,ncs)
+
+fprintf(loc,'| Main It: %04i | nf: %04i | Selecting components: %01i of %01i\n',it,nfun,nc,ncs);
+
+end
+
 function pupdate(loc,it,nfun,err,best,action,varargin)
 
 if nargin >= 7
@@ -688,6 +659,8 @@ function [e,J,er] = obj(x0)
 
 global aopt
 
+method = aopt.ObjectiveMethod;
+
 IS = aopt.fun;
 P  = x0(:)';
 
@@ -700,40 +673,86 @@ Q  = aopt.Q;
 
 %e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
 
-if all(size(Q)>1)
+if all(size(Q)>1) && ~strcmp(lower(method),'fe')
     
     % if square precision matrix was supplied, use this objective
     ey  = spm_vec(Y) - spm_vec(y);
-    qh  = Q*(ey*ey')*Q';    % i don't think the second Q term is needed
-    e   = sum(qh(:).^2);    
-    
+    Q   = spm_unvec( rescale(spm_vec(Q),0,1), Q);
+    eh  = (ey*ey').^2;
+    qh  = full(Q+1).*eh;
+    e   = sum(qh(:));
+    %qh  = Q*(ey*ey') ;%*Q';    % i don't think the second Q term is needed
+    %e   = sum(qh(:).^2);    
+    e   = abs(e);
 else
+   
+    if ~isfield(aopt,'J')
+        aopt.J = ones(length(x0),length(spm_vec(y)));
+    end
+    if isfield(aopt,'J') && isvector(aopt.J)
+        aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
+    end
     
-    % sse: sum of error squared
-    e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); e = abs(e);
+    switch lower(method)
+        case {'free_energy','fe','freeenergy'};
     
-    % or
-    %e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
-    %e  = real(e) + imag(e);
+            % Free Energy Objective Function: F(p) = log evidence - divergence
+            %----------------------------------------------------------------------
+            Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
+            h  = sparse(length(Q),1) - log(var(spm_vec(y))) + 4;
+            iS = sparse(0);
+
+            for i  = 1:length(Q)
+                iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+            end
+
+            ny  = length(spm_vec(y));
+            nq  = ny ./ length(Q);
+            e   = spm_vec(Y) - spm_vec(y);
+            ipC = aopt.ipC;
+            Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+            p   = ( x0(:) - aopt.pp(:) );
+
+            L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+           %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
+            F    = sum(L);
+            e    = (-F);
     
-    % mse: mean squared error
-    %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));
+        % Other Objective Functions
+        %------------------------------------------------------------------ 
+        case 'sse'
+            % sse: sum of error squared
+            e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); e = abs(e);
+            
+        case 'sse2' % sse robust to complex systems
+            % or
+            e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
+            e  = real(e) + imag(e);
     
-    % rmse: root mean squaree error
-    %e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-    
-    % 1 - r^2 (bc. minimisation routine == maximisation)
-    %e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
-    
-    % combination:
-    %SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
-    %R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
-    %e   = SSE + R2;
-    
-    % complex output models
-    %ey  = spm_vec(Y) - spm_vec(y);
-    %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
-    %e   = sum(qh(:).^2);
+        case 'mse'
+            % mse: mean squared error
+            e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));
+
+        case 'rmse'
+            % rmse: root mean squaree error
+            e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+
+        case {'correlation','corr','cor','r2'}
+            % 1 - r^2 (bc. minimisation routine == maximisation)
+            e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
+
+        case 'combination'
+            % combination:
+            SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
+            R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
+            e   = SSE + R2;
+
+            % complex output models
+            %ey  = spm_vec(Y) - spm_vec(y);
+            %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
+            %e   = sum(qh(:).^2);
+    end
 end
 
 % error along output vector
@@ -756,11 +775,15 @@ if nargout == 2
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
+        %V = (~~V)*1e-4;
     end
     
     if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
     end
+
+    % store for objective function
+    aopt.J = J;
     
     % accumulate gradients / memory of gradients
     if aopt.memory
@@ -779,7 +802,7 @@ end
 
 end
 
-function V = FindOptimumStep(x0)
+function V = FindOptimumStep(x0,v)
 global aopt
 
 fprintf('Auto computing parameter step sizes...(wait)\n');tic;
@@ -791,7 +814,9 @@ fprintf('Auto computing parameter step sizes...(wait)\n');tic;
 % using the n-th order numerical derivatives as a measure of parameter
 % effect size, find starting step sizes whereby all parameters are
 % effective / equally balanced
-v = ones( size(x0) )/8;
+if nargin < 2 || isempty(v)
+    v = ones( size(x0) )/8;
+end
 n = 0;
 
 
@@ -802,7 +827,8 @@ while var(J) > 0.15
     vj = v./abs(J);
     vj(isinf(vj))=0;
     vj(isnan(vj))=0;
-    v = pinv( vj )' ;
+    vj = full(vj);
+    v  = pinv( vj )' ;
     [J,ip] = jaco(@obj,x0,v,0,aopt.order);
     n = n + 1;
 end

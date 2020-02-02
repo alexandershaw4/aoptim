@@ -47,8 +47,11 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
-% use this:
-%[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
+% use this to minimise SSE:
+%[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2,0,'sse');
+
+% minimise free energy:
+[X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');
 
 % to ignore the variances/step sizes and allow AO to compute them:
 %[X,F,CP,History]  = AO(@fakeDM,p(:),[],DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
@@ -58,11 +61,11 @@ c = V(ip);
 %[X,F,CP]  = AOt(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,0,4);
 
 % to use normal AO.m but include an output precision operator (Q):
-%[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);
+%[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,mimo,2);
 
 
 % to use the experimental bayesian updater
-[X,F,CP,History]  = AObayes(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
+%[X,F,CP,History]  = AObayes(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2);
 
 
 %if ~mimo; [X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,DCM.xY.Q,1e-6,1e-12,0,2);   % MISO, curvature 

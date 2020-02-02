@@ -10,6 +10,12 @@ function [X,F,Cp,Hist] = AObay(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
 %
+% [BAYES VERISON]
+% This is an attempt at an explicitly Bayesian version of AO.m whereby
+% gradient-predicted parameter updates are adjusted for the probability of
+% the new parameter lying within the posterior distribution - defined by a
+% Normal distribution around the last-best prior.
+
 % The output of fun(x) can be either a single value or a vector. The
 % derivatives can be returned w.r.t the objective (SSE, MSE, FE etc, e.g. a MISO), or 
 % w.r.t the error at each point along the output (e.g. a MIMO). To invoke 

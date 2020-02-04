@@ -694,7 +694,7 @@ else
     end
     
     switch lower(method)
-        case {'free_energy','fe','freeenergy'};
+        case {'free_energy','fe','freeenergy','logevidence'};
     
             % Free Energy Objective Function: F(p) = log evidence - divergence
             %----------------------------------------------------------------------
@@ -724,6 +724,12 @@ else
            %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
             F    = sum(L);
             e    = (-F);
+            
+            if strcmp(lower(method),'logevidence')
+                % for log evidence, ignore the parameter term
+                F = L(1);
+                e = -F;
+            end
     
         % Other Objective Functions
         %------------------------------------------------------------------ 

@@ -228,7 +228,14 @@ while iterate
         
         % descend while de < e1
         nfun = nfun + 1;
-                                
+        
+        % initialise parameter distributions - likelihood function p(d|t)
+        %----------------------------------------------------------------------
+        for i = 1:length(x0)
+            pd(i)  = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
+            pdt(i) = ( 1-cdf(pd(i),x1(i)) );
+        end
+        
         StepMethod  = 1;
                 
         if StepMethod == 1
@@ -255,10 +262,11 @@ while iterate
             pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
         end
         
-        % Bayesian(esque) parameter update
-        ddx = dx(:) - x1(:);
-        dx  = x1 + ddx.*pt(:);
+        pt  = pt + pdt;
         
+        % Bayesian(esque) parameter update
+        ddx = x1(:) - dx(:);
+        dx  = x1(:) + ddx.*pt(:);
         
         % Check the new parameter estimates (dx)?
         Check = 1;

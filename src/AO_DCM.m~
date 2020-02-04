@@ -45,7 +45,7 @@ DD.P  = P;
 DD.V  = V;
 DD.cm = cm;
 
-fprintf('Performing AO optimisation: ');
+fprintf('Performing AO optimisation\n');
 
 p = ones(length(ip),1);
 c = V(ip);
@@ -57,11 +57,8 @@ switch lower(method)
     [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2,0,'sse');
     case 'fe'
     % minimise free energy:
-    fprintf('Minimising Free-Energy\n');
+    fprintf('Minimising SSE\n');
     [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');
-    case 'logevidence'
-    fprintf('Minimising -[log evidence]\n');
-    [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'logevidence');
 end
 
 % to ignore the variances/step sizes and allow AO to compute them:

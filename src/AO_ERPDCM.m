@@ -1,4 +1,4 @@
-function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter)
+function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter,mimo,method)
 % A wrapper for fitting DCMs with AO.m curvature optimisation routine.
 % This version for ERP models. 
 %
@@ -19,6 +19,12 @@ function [EP,F,CP] = AO_ERPDCM(P,G,DCM,niter)
 % AS
 global DD
 
+if nargin < 5 || isempty(method)
+    method = 'fe';
+end
+if nargin < 4 || isempty(mimo)
+    mimo = 0;
+end
 if nargin < 4 || isempty(niter)
     niter = 128;
 end
@@ -52,10 +58,25 @@ fprintf('Performing AO optimisation\n');
 p = ones(length(ip),1);
 c = V(ip);
 
-writelog = 1;
+writelog = 0;
 
-[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,[]   ,0   ,2 ,writelog);
+%[X,F,CP]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,[]   ,0   ,2 ,writelog);
 %[X,F,CP]  = AOf(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf);
+
+switch lower(method)
+    case 'sse'
+    % use this to minimise SSE:
+    fprintf('Minimising SSE\n');
+    [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2,writelog,'sse');
+    case 'fe'
+    % minimise free energy:
+    fprintf('Minimising Free-Energy\n');
+    [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,writelog,'fe');
+    case 'logevidence'
+    fprintf('Minimising -[log evidence]\n');
+    [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,writelog,'logevidence');
+end
+
 [~,EP]    = fakeDM(X);
 
 

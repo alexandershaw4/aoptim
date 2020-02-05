@@ -727,6 +727,7 @@ else
             
             if strcmp(lower(method),'logevidence')
                 % for log evidence, ignore the parameter term
+                % its actually still an SSE measure really
                 F = L(1);
                 e = -F;
             end

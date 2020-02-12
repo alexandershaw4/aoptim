@@ -175,9 +175,9 @@ while iterate
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
     
-    if mimo && ismatrix(Q)
-       df0 = df0*HighResMeanFilt(full(Q),1,4) ;
-    end
+    %if mimo && ismatrix(Q)
+    %    df0 = df0*HighResMeanFilt(full(Q),1,4) ;
+    %end
     
     % print end of gradient computation (just so we know it's finished)
     pupdate(loc,n,0,e0,e0,'-fini-',toc); 
@@ -185,8 +185,8 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
     s   = -df0';    
-    d0  = -s'*s;     
-            
+    d0  = -s'*s;                          
+        
     % Initial step
     x3  = V*red(ip)./(1-d0);                  
         
@@ -725,8 +725,8 @@ else
             F    = sum(L);
             e    = (-F);
             
-            %aopt.Cp = Cp;
-            %aopt.Q  = iS;
+            aopt.Cp = Cp;
+            aopt.Q  = iS;
             
             if strcmp(lower(method),'logevidence')
                 % for log evidence, ignore the parameter term

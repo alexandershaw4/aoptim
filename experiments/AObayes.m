@@ -1,6 +1,6 @@
 function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
-% Gradient/curvature descent based optimisation, primarily for model fitting
-% [system identification & parameter estimation]
+% A variational gradient/curvature descent based optimisation, primarily for 
+% model fitting [system identification & parameter estimation]
 %
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
@@ -10,12 +10,14 @@ function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
 %
-% [BAYES VERISON]
+% [BAYES VERSION:]
 % This is an attempt at an explicitly Bayesian version of AO.m whereby
-% gradient-predicted parameter updates are adjusted for the probability of
-% the new parameter lying within the posterior distribution - defined by a
-% Normal distribution around the last-best prior. The 'penalisation' means
-% that the optimsation tries to find the solution closest to the priors.
+% gradient-predicted parameter updates are adjusted for the divergence in
+% probability of the new parameter (prob of lying within the posterior 
+% distribution - defined by a Normal distribution around the last-best
+% prior). This 'penalisation' means that the optimsation tries to find the 
+% solution closest to the parameters priors. It also means that the KL Div
+% is a bound on the parameter estimates. 
 %
 % The output of fun(x) can be either a single value or a vector. The
 % derivatives can be returned w.r.t the objective (SSE, MSE, FE etc, e.g. a MISO), or 
@@ -242,22 +244,20 @@ while iterate
             end
         end
         
-        % p(t) - probability of new param belonging to posterior distribution
+        % p(th) - probability new param belongs to posterior distribution
         %------------------------------------------------------------------
         for i = 1:length(dx)
             pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
         end        
         
+        % Divergence of the prob distribution 
+        PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
+        iPQ = 1./(1 - PQ);
+        
         % Bayesian(esque) parameter update
         ddx = dx(:) - x1(:);
-        %dx  = x1(:) + ddx.*pt(:);
-        
-        Cp   = spm_inv( (aopt.J*aopt.J') + aopt.ipC );
-        step = spm_dx(inv(Cp),ddx,{-6});
-        dx   = x1 + ( step.*pt(:) );
-        
-        %Cp  = spm_inv( (aopt.J*aopt.J') + aopt.ipC );
-        
+        dx  = x1(:) + ddx.*iPQ(:);
+                
         % Check the new parameter estimates (dx)?
         Check = 1;
         
@@ -838,6 +838,39 @@ if nargout == 2
     %J = repmat(V,[1 size(J,2)])./J;
 end
 
+
+end
+
+function [nme,marginal,mutual]= NME(A);
+B = A/sum(sum(A));
+Pi = sum(B,2); %row
+Pj = sum(B,1); %column
+Itest = 0; Htest = 0;
+
+% MARGINAL ENTROPY
+for k = 1:size(Pi,1)
+    if (Pi(k,1) ~= 0)
+        Htest = Htest + (Pi(k,1) * log2(Pi(k,1)));
+    end
+end
+Htest = -Htest;
+
+%MUTUAL ENTROPY
+for i= 1:size(B,1)
+    for j = 1:size(B,2)
+        if (B(i,j) ~= 0) & (Pi(i) ~= 0) & (Pj(j) ~= 0)
+            Itest = Itest + B(i,j) * log2(B(i,j)/(Pi(i)*Pj(j)));
+        end
+    end
+end
+
+%NME2D = (1 - Itest/Htest);
+
+nme = (1 - Itest/Htest);
+marginal = Htest;
+mutual = Itest;
+
+%NME2D = [(1 - Itest/Htest); Htest; Itest];
 
 end
 

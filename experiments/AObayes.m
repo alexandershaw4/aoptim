@@ -1,4 +1,4 @@
-function [X,F,Cp,Hist] = AObay(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
+function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
@@ -14,8 +14,9 @@ function [X,F,Cp,Hist] = AObay(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % This is an attempt at an explicitly Bayesian version of AO.m whereby
 % gradient-predicted parameter updates are adjusted for the probability of
 % the new parameter lying within the posterior distribution - defined by a
-% Normal distribution around the last-best prior.
-
+% Normal distribution around the last-best prior. The 'penalisation' means
+% that the optimsation tries to find the solution closest to the priors.
+%
 % The output of fun(x) can be either a single value or a vector. The
 % derivatives can be returned w.r.t the objective (SSE, MSE, FE etc, e.g. a MISO), or 
 % w.r.t the error at each point along the output (e.g. a MIMO). To invoke 
@@ -23,8 +24,10 @@ function [X,F,Cp,Hist] = AObay(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
-%   y = f(x)
-%   e = sum(Y0 - y).^2
+%   y    = f(x)
+%
+%   e    = sum(Y0 - y).^2        ... (SSE) or
+%   F(p) = log evidence - divergence (Free Energy)
 %
 % the usage is:
 %   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
@@ -58,15 +61,6 @@ function [X,F,Cp,Hist] = AObay(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop, ... ) 
 %
-%
-% Example: Minimise Ackley function:
-%--------------------------------------------------------------------------
-%     arg min: e = 20*(1 - exp(-0.2*sqrt(0.5*(x1.^2 + x2.^2)))) ...
-%                                - exp(0.5*(cos(2*pi*x1)...
-%                                         + cos(2*pi*x2))) + exp(1);
-%
-%     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/128,0,[],[],[],1e-13,0,0,2)
-%
 % See also ao_glm AO_DCM jaco AO
 %
 % AS2019
@@ -97,7 +91,7 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt         = [];       % reset
+%aopt         = [];       % reset
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
@@ -180,16 +174,16 @@ while iterate
     % initialise parameter distributions - likelihood function p(d|t)
     %----------------------------------------------------------------------
     for i = 1:length(x0)
-        pd(i)  = makedist('normal','mu',x0(i),'sigma',sqrt( red(i) ));
+        pd(i)  = makedist('normal','mu',x0(i),'sigma', ( red(i) ));
         pdt(i) = ( 1-cdf(pd(i),x0(i)) );
     end
-
+    
     % compute gradients & search directions
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
     
     if mimo && ismatrix(Q)
-        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
+       df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
     
     % print end of gradient computation (just so we know it's finished)
@@ -198,17 +192,17 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
     s   = -df0';    
-    d0  = -s'*s;                          
-        
+    d0  = -s'*s;  
+                    
     % Initial step
     x3  = V*red(ip)./(1-d0);                  
-            
+        
     % Leading components
     [uu,ss,vv] = spm_svd(x3);
     nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
     x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
     %prinfo(loc,n,0,nc,length(s));
-    
+        
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
@@ -228,14 +222,7 @@ while iterate
         
         % descend while de < e1
         nfun = nfun + 1;
-        
-        % initialise parameter distributions - likelihood function p(d|t)
-        %----------------------------------------------------------------------
-        for i = 1:length(x0)
-            pd(i)  = makedist('normal','mu',x1(i),'sigma',sqrt( red(i) ));
-            pdt(i) = ( 1-cdf(pd(i),x1(i)) );
-        end
-        
+                                
         StepMethod  = 1;
                 
         if StepMethod == 1
@@ -255,18 +242,21 @@ while iterate
             end
         end
         
-        % p(t) - probability of the new parameter belonging to the
-        % posterior distribution
+        % p(t) - probability of new param belonging to posterior distribution
         %------------------------------------------------------------------
         for i = 1:length(dx)
             pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
-        end
-        
-        pt  = pt + pdt;
+        end        
         
         % Bayesian(esque) parameter update
-        ddx = x1(:) - dx(:);
-        dx  = x1(:) + ddx.*pt(:);
+        ddx = dx(:) - x1(:);
+        %dx  = x1(:) + ddx.*pt(:);
+        
+        Cp   = spm_inv( (aopt.J*aopt.J') + aopt.ipC );
+        step = spm_dx(inv(Cp),ddx,{-6});
+        dx   = x1 + ( step.*pt(:) );
+        
+        %Cp  = spm_inv( (aopt.J*aopt.J') + aopt.ipC );
         
         % Check the new parameter estimates (dx)?
         Check = 1;
@@ -349,7 +339,6 @@ while iterate
         %==================================================================
         
         %if the system is (locally?) linear, and we know what dp caused de
-        %we can use this
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
@@ -394,7 +383,7 @@ while iterate
             
             % sort good params by improvement amount
             %--------------------------------------------------------------
-            [~,PO] = sort(DFE(gpi),'ascend');
+            [~,PO] = sort(DFE(gpi),'descend'); % or ascend? ..
             dx0    = real(dx);
             
             % loop the good params in effect-size order
@@ -592,7 +581,7 @@ end
 
 function setfig()
 
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1043 654 517 684]);
+figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -698,7 +687,7 @@ IS = aopt.fun;
 P  = x0(:)';
 
 try    y  = IS(P); 
-catch; y  = spm_vec(aopt.y)*0;
+catch; y  = spm_vec(aopt.y)*0+inf;
 end
 
 Y  = aopt.y;
@@ -727,7 +716,7 @@ else
     end
     
     switch lower(method)
-        case {'free_energy','fe','freeenergy'};
+        case {'free_energy','fe','freeenergy','logevidence'};
     
             % Free Energy Objective Function: F(p) = log evidence - divergence
             %----------------------------------------------------------------------
@@ -757,6 +746,17 @@ else
            %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
             F    = sum(L);
             e    = (-F);
+            
+            aopt.Cp = Cp;
+            aopt.iS = iS;
+            %aopt.Q  = iS;
+            
+            if strcmp(lower(method),'logevidence')
+                % for log evidence, ignore the parameter term
+                % its actually still an SSE measure really
+                F = L(1);
+                e = -F;
+            end
     
         % Other Objective Functions
         %------------------------------------------------------------------ 

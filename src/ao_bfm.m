@@ -18,7 +18,7 @@ global gm
 
 % % orthogonalise predictors
 % %----------------------------------------------------
-oy  = [y] * real(inv([y]' * [y])^(1/2));
+oy  = [y] * real(pinv([y]' * [y])^(1/2));
 id  = y'/oy';                       % i.e. oy*id ~ y
 
 
@@ -48,7 +48,7 @@ gm.y  = m;
 % initial (non-iterative) fit
 m0 = reshape(spm_vec(m),[n nb]);
 m0 = [ones(n,1) m0];
-bx = inv(m0'*m0)*m0'*x;
+bx = pinv(m0'*m0)*m0'*x;
 b(end-nb+1:end)= bx(2:end);
 b(ne+1:ne+ne)  = 1./bx(1)/3;
 b(1:ne)        = 0.1;

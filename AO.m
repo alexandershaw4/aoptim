@@ -17,8 +17,10 @@ function [X,F,Cp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
-%   y = f(x)
-%   e = sum(Y0 - y).^2
+%   y    = f(x)
+%
+%   e    = sum(Y0 - y).^2            ... (SSE) or
+%   F(p) = log evidence - divergence ... (Free Energy)
 %
 % the usage is:
 %   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
@@ -91,7 +93,7 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-aopt         = [];       % reset
+%aopt         = [];       % reset
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
@@ -185,8 +187,8 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
     s   = -df0';    
-    d0  = -s'*s;     
-            
+    d0  = -s'*s;  
+                    
     % Initial step
     x3  = V*red(ip)./(1-d0);                  
         
@@ -195,7 +197,7 @@ while iterate
     nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
     x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
     %prinfo(loc,n,0,nc,length(s));
-    
+        
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
@@ -316,7 +318,6 @@ while iterate
         %==================================================================
         
         %if the system is (locally?) linear, and we know what dp caused de
-        %we can use this
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
@@ -361,7 +362,7 @@ while iterate
             
             % sort good params by improvement amount
             %--------------------------------------------------------------
-            [~,PO] = sort(DFE(gpi),'ascend');
+            [~,PO] = sort(DFE(gpi),'descend'); % or ascend? ..
             dx0    = real(dx);
             
             % loop the good params in effect-size order
@@ -725,7 +726,7 @@ else
             F    = sum(L);
             e    = (-F);
             
-            %aopt.Cp = Cp;
+            aopt.Cp = Cp;
             %aopt.Q  = iS;
             
             if strcmp(lower(method),'logevidence')

@@ -1,5 +1,5 @@
 function [b,F,Cp,fit] = ao_glm_eig(x,y,nc)
-% use AO curvature optimiser to fit a GLM...
+% use AO curvature optimiser to fit a regression/GLM...
 %
 % usgae: [b,F,Cp,fit] = ao_glm_eig(group,observations)
 % - when nc == 3,

@@ -1,6 +1,6 @@
 function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
-% Gradient/curvature descent based optimisation, primarily for model fitting
-% [system identification & parameter estimation]
+% A variational gradient/curvature descent based optimisation, primarily for 
+% model fitting [system identification & parameter estimation]
 %
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
@@ -10,13 +10,14 @@ function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
 %
-% [BAYES VERSION]
+% [BAYES VERSION:]
 % This is an attempt at an explicitly Bayesian version of AO.m whereby
-% gradient-predicted parameter updates are adjusted for the probability of
-% the new parameter lying within the posterior distribution - defined by a
-% Normal distribution around the last-best prior. This 'penalisation' means
-% that the optimsation tries to find the solution closest to the parameters
-% priors.
+% gradient-predicted parameter updates are adjusted for the divergence in
+% probability of the new parameter (prob of lying within the posterior 
+% distribution - defined by a Normal distribution around the last-best
+% prior). This 'penalisation' means that the optimsation tries to find the 
+% solution closest to the parameters priors. It also means that the KL Div
+% is a bound on the parameter estimates. 
 %
 % The output of fun(x) can be either a single value or a vector. The
 % derivatives can be returned w.r.t the objective (SSE, MSE, FE etc, e.g. a MISO), or 
@@ -135,6 +136,8 @@ iterate    = true;
 doplot     = 1;
 Vb         = V;
 
+% check sto
+
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
@@ -198,11 +201,10 @@ while iterate
     % Initial step
     x3  = V*red(ip)./(1-d0);                  
         
-    % Leading components
+    % Leading (gradient) components
     [uu,ss,vv] = spm_svd(x3);
     nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
     x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
-    %prinfo(loc,n,0,nc,length(s));
         
     % Log start of iteration
     Hist.e(n) = e0;
@@ -251,13 +253,12 @@ while iterate
         
         % Divergence of the prob distribution 
         PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
-        iPQ = 1 - PQ;
+        iPQ = 1./(1 - PQ);
         
         % Bayesian(esque) parameter update
         ddx = dx(:) - x1(:);
         dx  = x1(:) + ddx.*iPQ(:);
                 
-        
         % Check the new parameter estimates (dx)?
         Check = 1;
         

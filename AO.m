@@ -192,11 +192,10 @@ while iterate
     % Initial step
     x3  = V*red(ip)./(1-d0);                  
         
-    % Leading components
+    % Leading (gradient) components
     [uu,ss,vv] = spm_svd(x3);
     nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
     x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
-    %prinfo(loc,n,0,nc,length(s));
         
     % Log start of iteration
     Hist.e(n) = e0;

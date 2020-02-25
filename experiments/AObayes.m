@@ -136,6 +136,18 @@ iterate    = true;
 doplot     = 1;
 Vb         = V;
 
+% check if it's a deterministic or stochastic model
+c(1) = obj(x0);
+c(2) = obj(x0);
+if c(1) == c(2)
+    IsDet = 1;
+else
+    IsDet = 0;
+    c(3)  = obj(x0);
+    stol  = var(c);
+    fprintf('System appears to be stochastic\n');
+end
+
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
@@ -199,11 +211,10 @@ while iterate
     % Initial step
     x3  = V*red(ip)./(1-d0);                  
         
-    % Leading components
+    % Leading (gradient) components
     [uu,ss,vv] = spm_svd(x3);
     nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
     x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
-    %prinfo(loc,n,0,nc,length(s));
         
     % Log start of iteration
     Hist.e(n) = e0;
@@ -295,6 +306,10 @@ while iterate
         % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
         etol = 0; % none
+        
+        if ~IsDet
+            etol = etol + stol;
+        end
         
         if de  < ( e1 + etol )
             

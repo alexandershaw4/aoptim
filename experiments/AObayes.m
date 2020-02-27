@@ -109,7 +109,7 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 % % whereby each parameter has similar effect size w.r.t. error
 % if nargin < 3 || isempty(V)
 %     % iterates: v = v./abs(J)
-%     V = FindOptimumStep(x0,V);
+%    V = FindOptimumStep(x0,V(:));
 % end
 
 % parameter and step vectors
@@ -135,18 +135,6 @@ n          = 0;
 iterate    = true;
 doplot     = 1;
 Vb         = V;
-
-% check if it's a deterministic or stochastic model
-c(1) = obj(x0);
-c(2) = obj(x0);
-if c(1) == c(2)
-    IsDet = 1;
-else
-    IsDet = 0;
-    c(3)  = obj(x0);
-    stol  = var(c);
-    fprintf('System appears to be stochastic\n');
-end
 
 % initial error plot(s)
 %--------------------------------------------------------------------------
@@ -306,11 +294,7 @@ while iterate
         % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
         etol = 0; % none
-        
-        if ~IsDet
-            etol = etol + stol;
-        end
-        
+                
         if de  < ( e1 + etol )
             
             if nfun == 1; pupdate(loc,n,0,de,e1,'improv',toc); end
@@ -829,7 +813,7 @@ if nargout == 2
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
-        %V = (~~V)*1e-4;
+        %V = (~~V)*1e-4;        
     end
     
     if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]

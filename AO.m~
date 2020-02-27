@@ -111,9 +111,6 @@ aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
-BayesAdjust = 0; % Bayesian adjustment of the GD-predicted parameters
-                 % (converges slower but might be more careful)
-
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
 % if nargin < 3 || isempty(V)
@@ -252,15 +249,9 @@ while iterate
             end
         end
         
-        if BayesAdjust
-            % Probabilities of these (predicted) values actually belonging to
-            % the prior distribution as a bound on parameter step
-            % (with arbitrary .5 threshold)
-            ppx = spm_Ncdf(x0,dx,sqrt(red)); ppx(ppx==0) = 0.5;
-
-            % apply this probability adjustment
-            dx = dx.*ppx;
-        end
+        % Probabilities of these (predicted) values actually belonging to
+        % the prior distribution as a bound on step
+        ppx = spm_Ncdf(x0,dx,sqrt(red)); ppx(ppx==0) = 0.5;
         
         % Check the new parameter estimates (dx)?
         Check = 1;

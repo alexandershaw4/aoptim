@@ -202,7 +202,8 @@ elseif ismember(order,0)
     for i = 1:length(P)
             if ip(i)
                 P0     = P;
-                d      = P0(i) * V(i);
+                %d      = P0(i) * V(i);
+                d = V(i);
 
                 if d == 0;d = 0.01;end
 

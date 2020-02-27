@@ -4,7 +4,7 @@ function [b,F,Cp,fit] = ao_glm_eig(x,y,nc)
 % usgae: [b,F,Cp,fit] = ao_glm_eig(group,observations)
 % - when nc == 3,
 % - fits the lm: d = W(1:nc,:)*y
-%                X = c + d(1)*ß(1) + d(2)*ß(2) + d(3)*ß(3)
+%                X = c + d(1)*ß(1) + d(2)*ß(2) + d(nc)*ß(nc)
 %
 % - performs similarly to glmfit
 % - no orthogonalisation version
@@ -19,8 +19,8 @@ function [b,F,Cp,fit] = ao_glm_eig(x,y,nc)
 % AS
 
 
-% model:  d = W(1:3,:)*y
-%         x = c + d(1)*b(1) + d(2)*b(2) + d(3)*b(3)
+% model:  d = W(1:nc,:)*y
+%         x = c + d(1)*b(1) + d(2)*b(2) + d(nc)*b(nc)
 %----------------------------------------------------
 nb = size(y,2);
 n  = size(y,1);

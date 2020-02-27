@@ -1,6 +1,6 @@
-function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
-% A variational gradient/curvature descent based optimisation, primarily for 
-% model fitting [system identification & parameter estimation]
+function [X,F] = AOsampler(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
+% Gradient/curvature descent based optimisation, primarily for model fitting
+% [system identification & parameter estimation]
 %
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
@@ -9,15 +9,6 @@ function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,
 % Y0 = empirical data (to fit)
 % f  = model (function)
 % x  = model parameters/inputs to be optimised
-%
-% [BAYES VERSION:]
-% This is an attempt at an explicitly Bayesian version of AO.m whereby
-% gradient-predicted parameter updates are adjusted for the divergence in
-% probability of the new parameter (prob of lying within the posterior 
-% distribution - defined by a Normal distribution around the last-best
-% prior). This 'penalisation' means that the optimsation tries to find the 
-% solution closest to the parameters priors. It also means that the KL Div
-% is a bound on the parameter estimates. 
 %
 % The output of fun(x) can be either a single value or a vector. The
 % derivatives can be returned w.r.t the objective (SSE, MSE, FE etc, e.g. a MISO), or 
@@ -28,8 +19,8 @@ function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,
 %--------------------------------------------------------------------------
 %   y    = f(x)
 %
-%   e    = sum(Y0 - y).^2        ... (SSE) or
-%   F(p) = log evidence - divergence (Free Energy)
+%   e    = sum(Y0 - y).^2            ... (SSE) or
+%   F(p) = log evidence - divergence ... (Free Energy)
 %
 % the usage is:
 %   [X,F] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
@@ -62,6 +53,15 @@ function [X,F,Cp,Hist] = AObayes(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,
 %
 % the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop, ... ) 
+%
+%
+% Example: Minimise Ackley function:
+%--------------------------------------------------------------------------
+%     arg min: e = 20*(1 - exp(-0.2*sqrt(0.5*(x1.^2 + x2.^2)))) ...
+%                                - exp(0.5*(cos(2*pi*x1)...
+%                                         + cos(2*pi*x2))) + exp(1);
+%
+%     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/128,0,[],[],[],1e-13,0,0,2)
 %
 % See also ao_glm AO_DCM jaco AO
 %
@@ -136,8 +136,6 @@ iterate    = true;
 doplot     = 1;
 Vb         = V;
 
-% check sto
-
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
@@ -171,330 +169,48 @@ while iterate
     %----------------------------------------------------------------------
     n = n + 1;    tic;
    
-    pupdate(loc,n,0,e0,e0,'grdnts',toc);
+    pupdate(loc,n,0,e0,e0,'sample',toc);
     
     aopt.pp = x0;
     
-    % initialise parameter distributions - likelihood function p(d|t)
-    %----------------------------------------------------------------------
-    for i = 1:length(x0)
-        pd(i)  = makedist('normal','mu',x0(i),'sigma', ( red(i) ));
-        pdt(i) = ( 1-cdf(pd(i),x0(i)) );
-    end
-    
     % compute gradients & search directions
     %----------------------------------------------------------------------
-    [e0,df0] = obj( V*x0(ip) );
+    %[e0,df0] = obj( V*x0(ip) );
     
-    if mimo && ismatrix(Q)
-       df0 = df0*HighResMeanFilt(full(Q),1,4) ;
+    rng default;
+    for is = 1:12
+        
+        % Sample
+        for i = 1:32
+            qS     = spm_sqrtm(red);
+            P(:,i) = x0 + qS*randn(length(x0),1);
+            R(:,i) = obj(P(:,i));
+            
+            if i > 1; fprintf(repmat('\b',[1 length(str)])); end
+            str = sprintf('Sampling(%d): %d/%d ',is,i,32);
+            fprintf(str);
+        end
+        fprintf('\n');
+        
+        % Assess
+        [e1,j] = min(R);
+        if e1  < e0
+            
+            % print / plot
+            pupdate(loc,n,is,R(:,j),e0,'accept',toc);
+            if doplot; makeplot(P(:,j),x0); end
+        
+            % Accept
+            x0 = P(:,j);
+            e0 = R(:,j);
+            
+        end
+        fprintf('\n');    
     end
     
-    % print end of gradient computation (just so we know it's finished)
-    pupdate(loc,n,0,e0,e0,'-fini-',toc); 
-    
-    % initial search direction (steepest) and slope
-    %----------------------------------------------------------------------
-    s   = -df0';    
-    d0  = -s'*s;  
-                    
-    % Initial step
-    x3  = V*red(ip)./(1-d0);                  
-        
-    % Leading (gradient) components
-    [uu,ss,vv] = spm_svd(x3);
-    nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-    x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
-        
-    % Log start of iteration
-    Hist.e(n) = e0;
-    Hist.p{n} = x0;
-    Hist.J{n} = df0;
-    
-    % make copies of error and param set for inner while loops
-    x1  = x0;
-    e1  = e0;
-        
-    % start counters
-    improve = true;
-    nfun    = 0;
-    
-    % iterative descent on this slope
-    %======================================================================
-    while improve
-        
-        % descend while de < e1
-        nfun = nfun + 1;
-                                
-        StepMethod  = 1;
-                
-        if StepMethod == 1
-            % continue the ascent / descent (AO.m as per Hinton)
-            if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
-            else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
-            end
-            
-        elseif StepMethod == 2
-            % continue the ascent / descent (as per spm_nlsi_GN.m)
-            if ~mimo
-                J = df0'; e = e0;
-                dFdp  = -real(J'*e) - ipC*x0;
-                dFdpp = -real(J'*J) - ipC;
-                dp    = spm_dx(dFdpp,dFdp,{-6});
-                dx    = x1 + dp;                   % prediction
-            end
-        end
-        
-        % p(th) - probability new param belongs to posterior distribution
-        %------------------------------------------------------------------
-        for i = 1:length(dx)
-            pt(i) = ( 1-cdf( pd(i) , dx(i) ) );
-        end        
-        
-        % Divergence of the prob distribution 
-        PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
-        iPQ = 1./(1 - PQ);
-        
-        % Bayesian(esque) parameter update
-        ddx = dx(:) - x1(:);
-        dx  = x1(:) + ddx.*iPQ(:);
-                
-        % Check the new parameter estimates (dx)?
-        Check = 1;
-        
-        if Check == 1
-            
-            % Assess each new parameter estimate individually, update only improvers
-            for nip = 1:length(dx)
-                XX       = V*x0;
-                XX(nip)  = dx(nip);
-                DFE(nip) = obj(real(XX));
-            end
-
-            % Identify improver-parameters
-            gp  = double(DFE < e0); % e0
-            gpi = find(gp);
-
-            % Only update select parameters
-            ddx        = V*x0;
-            ddx(gpi)   = dx(gpi);
-            dx         = ddx;
-            de         = obj(dx);
-            
-        elseif Check == 0
-            
-            % Don't perform checks, assume all f(dx[i]) <= e1
-            gp  = ones(1,length(x0));
-            gpi = 1:length(x0);
-            de  = obj(dx);
-            DFE = ones(1,length(x0))*de; 
-            
-        end
-        
-        % Tolerance on update error as function of iteration number
-        % - this can be helpful in functions with lots of local minima
-        % i.e. bad step required before improvement
-        %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
-        etol = 0; % none
-        
-        if de  < ( e1 + etol )
-            
-            if nfun == 1; pupdate(loc,n,0,de,e1,'improv',toc); end
-            
-            % update the error & the (reduced) parameter set
-            %--------------------------------------------------------------
-            df  = e1 - de;
-            e1  = de;
-            x1  = V'*dx;
-            dff = [dff df];
-        else
-            
-            % flag to stop this loop
-            %--------------------------------------------------------------
-            improve = false;            
-        end
-        
-        % upper limit on the length of this loop (force recompute dfdx)
-        if nfun >= inner_loop
-            improve = false;
-        end
-        
-    end  % end while improve...
-      
-    % ignore complex parameter values - for most functions, yes
-    %----------------------------------------------------------------------
-    x1 = real(x1);
-    
-    % evaluate - accept/reject - plot - adjust rate
-    %======================================================================
-    if e1 < e0
-        
-        % compute deltas & accept new parameters and error
-        %------------------------------------------------------------------
-        df =  e0 - e1;
-        dp =  x0 - x1;
-        x0 = -dp + x0;
-        e0 =  e1;
-                
-        % M-step (like a line search?)
-        %==================================================================
-        
-        %if the system is (locally?) linear, and we know what dp caused de
-        %------------------------------------------------------------------
-        exploit = true;
-        nexpl   = 0;
-        pupdate(loc,n,nexpl,e1,e0,'descnd',toc);
-        while exploit
-            if obj(V*(x1+(dp./df))) < e1
-                x1    = V*(x1+(dp./df));
-                e1    = obj(real(x1));
-                x1    = V'*real(x1);
-                nexpl = nexpl + 1;
-            else
-                exploit = false;
-                pupdate(loc,n,nexpl,e1,e0,'finish',toc);
-            end
-            
-            % upper limit on the length of this loop: no don't do this
-            if nexpl == (inner_loop)
-                exploit = false;
-            end
-        end
-        
-        % Update best-so-far estimates
-        e0 = e1;
-        x0 = x1;
-            
-        % print & plots success
-        %------------------------------------------------------------------
-        pupdate(loc,n,nfun,e1,e0,'accept',toc);
-        if doplot; makeplot(V*x0(ip),x1); end
-        n_reject_consec = 0;
-        dff = [dff df];
-    else
-        
-        % if didn't improve: what to do?
-        %------------------------------------------------------------------
-        pupdate(loc,n,nfun,e1,e0,'select',toc);             
-        
-        % sample from improvers params in dx
-        %------------------------------------------------------------------
-        thisgood = gp*0;
-        if any(gp)
-            
-            % sort good params by improvement amount
-            %--------------------------------------------------------------
-            [~,PO] = sort(DFE(gpi),'descend'); % or ascend? ..
-            dx0    = real(dx);
-            
-            % loop the good params in effect-size order
-            % accept on the fly (additive effects)
-            %--------------------------------------------------------------
-            improve1 = 1;
-            while improve1
-                thisgood = gp*0;
-                % evaluate the 'good' parameters
-                for i  = 1:length(gpi)
-                    xnew             = real(V*x0);
-                    xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
-                    xnew             = real(xnew);
-                    enew             = obj(xnew);
-                    % accept new error and parameters and continue
-                    if enew < e0
-                        dff = [dff (e0-enew)];
-                        x0  = V'*real(xnew);
-                        e0  = enew;
-                        thisgood(gpi(PO(i))) = 1;
-                    end
-                end
-                if any(thisgood)
-
-                    % print & plot update
-                    pupdate(loc,n,nfun,e0,e0,'accept',toc);
-                    if doplot; makeplot(V*x0,x1); end
-
-                    % update step size for these params
-                    red = red+V'*((V*red).*thisgood');       % CHANGE
-                    
-                    % reset rejection counter
-                    n_reject_consec = 0;
-                else
-                    % reduce step and go back to main loop
-                    red = red*.8;
-                    
-                    % halt this while loop
-                    improve1 = 0;
-                    
-                    % keep counting rejections
-                    n_reject_consec = n_reject_consec + 1;
-                end
-                
-                % update global store of V
-                aopt.pC = V*red;
-            end
-        else
-            
-            pupdate(loc,n,nfun,e0,e0,'reject',toc);
-            
-            % reduce step and go back to main loop
-            red = red*.8;
-            % update global store of V
-            aopt.pC = V*red;
-            % keep counting rejections
-            n_reject_consec = n_reject_consec + 1;
-        end
-                            
-    end
     
     % stopping criteria, rules etc.
-    %======================================================================
-    if min_df ~= 0
-        % user can define minimum DF
-        ldf = 100; dftol = min_df;
-    else
-        % otherwise invoke some defaults
-        if aopt.order == 1; ldf = 30; dftol = 0.002;  end
-        if aopt.order == 2; ldf = 800; dftol = 0.0001; end
-        if aopt.order == 0; ldf = 30; dftol = 0.002; end
-        if aopt.order <  0; ldf = 30; dftol = 0.002; end
-        if aopt.order >  2; ldf = 800; dftol = 0.0001; end
-        
-    end
-    
-    if length(dff) > ldf
-        if var( dff(end-ldf:end) ) < dftol
-            localminflag = 3;            
-        end
-    end
-    if length(dff) > 31
-        dff = dff(end-30:end);
-    end
-        
-    if localminflag == 3
-        fprintf(loc,'I think we''re stuck...stopping\n');
-        
-        % return current best
-        X = V*real(x0(ip));
-        F = e0;
-                
-        % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-        
-        if writelog;fclose(loc);end
-        return;
-    end
-    
-    % if 3 fails, reset the reduction term (based on the specified variance)
-    if n_reject_consec == 3
-        pupdate(loc,n,nfun,e1,e0,'resetv');
-        %red = red ./ max(red(:));
-        red     = diag(pC);
-        aopt.pC = V*red;
-    end
-    
+    %======================================================================    
     % stop at max iterations
     if n == maxit
         fprintf(loc,'Reached max iterations: stopping\n');
@@ -503,12 +219,6 @@ while iterate
         X = V*real(x0(ip));
         F = e0;
                 
-        % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-        
         if writelog;fclose(loc);end
         return;
     end
@@ -521,12 +231,6 @@ while iterate
         X = V*real(x0(ip));
         F = e0;
                 
-        % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-
         if writelog;fclose(loc);end
         return;
     end
@@ -538,13 +242,7 @@ while iterate
         % return current best
         X = V*real(x0(ip));
         F = e0;
-                
-        % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-        
+                        
         if writelog;fclose(loc);end
         return;
     end
@@ -622,6 +320,34 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     ylabel('Error^2');xlabel('Step'); 
     title('AO: System Identification: Error','color','w','fontsize',18);
     drawnow;
+elseif iscell(Y) && all( size(Y{1}) > 1)
+    % Matrix representation (imagesc)
+    py = spm_unvec( spm_vec(y), Y);
+    subplot(321);imagesc(Y{1});
+    subplot(322);imagesc(py{1});
+    title('AO: System Identification','color','w','fontsize',18);
+    
+    s(2) = subplot(3,2,[3 4]);
+    %bar([former_error new_error]);
+    plot(former_error,'w--','linewidth',3); hold on;
+    plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
+    grid on;grid minor;title('Error Change','color','w','fontsize',18);
+    s(2).YColor = [1 1 1];
+    s(2).XColor = [1 1 1];
+    s(2).Color  = [.3 .3 .3];
+    
+    
+    s(3) = subplot(3,2,[5 6]);
+    bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
+    title('Parameter Change','color','w','fontsize',18);
+    ax = gca;
+    ax.XGrid = 'off';
+    ax.YGrid = 'on';
+    s(3).YColor = [1 1 1];
+    s(3).XColor = [1 1 1];
+    s(3).Color  = [.3 .3 .3];
+    drawnow;
+    
 else
 %if iscell(Y)
     s(1) = subplot(311);
@@ -749,7 +475,6 @@ else
             e    = (-F);
             
             aopt.Cp = Cp;
-            aopt.iS = iS;
             %aopt.Q  = iS;
             
             if strcmp(lower(method),'logevidence')
@@ -839,39 +564,6 @@ if nargout == 2
     %J = repmat(V,[1 size(J,2)])./J;
 end
 
-
-end
-
-function [nme,marginal,mutual]= NME(A);
-B = A/sum(sum(A));
-Pi = sum(B,2); %row
-Pj = sum(B,1); %column
-Itest = 0; Htest = 0;
-
-% MARGINAL ENTROPY
-for k = 1:size(Pi,1)
-    if (Pi(k,1) ~= 0)
-        Htest = Htest + (Pi(k,1) * log2(Pi(k,1)));
-    end
-end
-Htest = -Htest;
-
-%MUTUAL ENTROPY
-for i= 1:size(B,1)
-    for j = 1:size(B,2)
-        if (B(i,j) ~= 0) & (Pi(i) ~= 0) & (Pj(j) ~= 0)
-            Itest = Itest + B(i,j) * log2(B(i,j)/(Pi(i)*Pj(j)));
-        end
-    end
-end
-
-%NME2D = (1 - Itest/Htest);
-
-nme = (1 - Itest/Htest);
-marginal = Htest;
-mutual = Itest;
-
-%NME2D = [(1 - Itest/Htest); Htest; Itest];
 
 end
 

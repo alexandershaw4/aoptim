@@ -166,6 +166,8 @@ Ep    = V*p(ip);
 dff          = []; % tracks changes in error over iterations
 localminflag = 0;  % triggers when stuck in local minima
 
+if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
+
 % print start point - to console or logbook (loc)
 refdate(loc);
 pupdate(loc,n,0,e0,e0,'start:');
@@ -256,10 +258,11 @@ while iterate
             % Probabilities of these (predicted) values actually belonging to
             % the prior distribution as a bound on parameter step
             % (with arbitrary .5 threshold)
+            ddx = dx - x0;
             ppx = spm_Ncdf(x0,dx,sqrt(red)); ppx(ppx<.5) = 0.5;
 
             % apply this probability adjustment
-            dx = dx.*ppx;
+            dx = x0 + (ddx.*ppx);
         end
         
         % Check the new parameter estimates (dx)?

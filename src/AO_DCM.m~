@@ -9,11 +9,7 @@ function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,mimo,method)
 %    [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,mimo,method)
 %
 %  Inputs:
-%  P = prior parameter struct
-%  DCM    = fully specified normal DCM struct
-%  niter  = number of iterations 
-%  mimo   = set to 0
-%  method = objective fun: 'fe' or 'sse' (free energy or squared error)
+%  P = prior parameter 
 %
 %  Outputs:
 %  EP = fitted parameters / posteriors
@@ -22,9 +18,17 @@ function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,mimo,method)
 %  Pp = posterior probabilities
 %  history = struct with optimisation steps history
 %
+% Prior to system identification, this function reformulates the problem as 
+% a generalised model of the form
+%   y = f(x,Pß)
+% where AO.m calculates the coefficients, ß. These are then multipled back
+% out to the actual parameter values.
+%
+% Returns posterior parameters [EP], squared error [F] and approximate
+% covariance [CP]
+%
 % Dependencies: SPM
 % AS
-
 global DD
 
 if nargin < 5 || isempty(method)

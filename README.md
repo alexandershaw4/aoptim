@@ -3,6 +3,7 @@
 A curvature descent based optimisation routine for system identification.
 Designed for highly parameterised non-linear MIMO/MISO dynamical models.
 
+*Also includes wrapper code for optimsing Dynamic Causal Models (DCMs) - see AO_DCM.m*
 
 Fit differentiable models of the forms:
 
@@ -10,7 +11,7 @@ Fit differentiable models of the forms:
 (2.)    e  = f(x0)       // generic function minimisation 
 
 
-Usages:
+Generic Usages:
 
 Model fitting:
 

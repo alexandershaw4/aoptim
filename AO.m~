@@ -111,6 +111,9 @@ aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
+BayesAdjust = 0; % Bayes-esque adjustment of the GD-predicted parameters
+                 % (converges slower but might be more careful)
+
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
 % if nargin < 3 || isempty(V)
@@ -163,6 +166,8 @@ Ep    = V*p(ip);
 dff          = []; % tracks changes in error over iterations
 localminflag = 0;  % triggers when stuck in local minima
 
+if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
+
 % print start point - to console or logbook (loc)
 refdate(loc);
 pupdate(loc,n,0,e0,e0,'start:');
@@ -182,7 +187,7 @@ while iterate
     % compute gradients & search directions
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
-        
+            
     if mimo && ismatrix(Q)
        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
@@ -192,7 +197,7 @@ while iterate
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
-    % basic: obj(x0-sign(df0).*red*1e-3) ... when using fixedstepderiv
+    % obj(x0-sign(df0).*red*1e-3) ... when using fixedstepderiv
     
     % df0 ~ f(p+ih) - f(p) / ih ... where f is the objective function
     %
@@ -230,7 +235,7 @@ while iterate
         % descend while de < e1
         nfun = nfun + 1;
                                 
-        StepMethod  = 1;
+        StepMethod  = 3;
                 
         if StepMethod == 1
             % continue the ascent / descent (as per CA Rasmussen)
@@ -247,11 +252,34 @@ while iterate
                 dp    = spm_dx(dFdpp,dFdp,{-6});
                 dx    = x1 + dp;                   % prediction
             end
+        elseif StepMethod == 3
+            % Lagrange solve?
+            % W(r) = C.^-1*L(r)*[L(r)'*C.^1*L(r)].^-1
+            % L(r) = df0(r,:);  ...derivs w.r.t outputs
+            % C    = cov(y*y'); ...covariance of the data
+            
+            [e0,~,erv] = obj( V*x0(ip) );
+            iC = pinv(cov(erv*erv'));
+            L  = df0';
+                        
+            W  = iC*L * pinv(L'*iC*L);
+            
+            [uw,sw,vw] = spm_svd(W);
+            
+            dx = x0 + full(vw) ;
+
         end
         
-        % Probabilities of these (predicted) values actually belonging to
-        % the prior distribution as a bound on step
-        ppx = spm_Ncdf(x0,dx,sqrt(red)); ppx(ppx==0) = 0.5;
+        if BayesAdjust
+            % Probabilities of these (predicted) values actually belonging to
+            % the prior distribution as a bound on parameter step
+            % (with arbitrary .5 threshold)
+            ddx = dx - x0;
+            ppx = spm_Ncdf(x0,dx,sqrt(red)); ppx(ppx<.5) = 0.5;
+
+            % apply this probability adjustment
+            dx = x0 + (ddx.*ppx);
+        end
         
         % Check the new parameter estimates (dx)?
         Check = 1;
@@ -474,7 +502,7 @@ while iterate
 
             % Sample
             for i = 1:32
-                qS     = spm_sqrtm(red);
+                qS     = spm_sqrtm(diag(red));
                 P(:,i) = x0 + qS*randn(length(x0),1);
                 R(:,i) = obj(P(:,i));
 
@@ -585,7 +613,7 @@ while iterate
 
             % Sample
             for i = 1:32
-                qS     = spm_sqrtm(red);
+                qS     = spm_sqrtm(diag(red));
                 P(:,i) = x0 + qS*randn(length(x0),1);
                 R(:,i) = obj(P(:,i));
 

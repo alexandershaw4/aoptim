@@ -187,7 +187,7 @@ while iterate
     % compute gradients & search directions
     %----------------------------------------------------------------------
     [e0,df0] = obj( V*x0(ip) );
-        
+            
     if mimo && ismatrix(Q)
        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
@@ -197,7 +197,7 @@ while iterate
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------
-    % basic: obj(x0-sign(df0).*red*1e-3) ... when using fixedstepderiv
+    % obj(x0-sign(df0).*red*1e-3) ... when using fixedstepderiv
     
     % df0 ~ f(p+ih) - f(p) / ih ... where f is the objective function
     %
@@ -486,7 +486,7 @@ while iterate
 
             % Sample
             for i = 1:32
-                qS     = spm_sqrtm(red);
+                qS     = spm_sqrtm(diag(red));
                 P(:,i) = x0 + qS*randn(length(x0),1);
                 R(:,i) = obj(P(:,i));
 
@@ -597,7 +597,7 @@ while iterate
 
             % Sample
             for i = 1:32
-                qS     = spm_sqrtm(red);
+                qS     = spm_sqrtm(diag(red));
                 P(:,i) = x0 + qS*randn(length(x0),1);
                 R(:,i) = obj(P(:,i));
 

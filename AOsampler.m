@@ -176,13 +176,15 @@ while iterate
     % compute gradients & search directions
     %----------------------------------------------------------------------
     %[e0,df0] = obj( V*x0(ip) );
+    retp = x0;
+    rete = e0;
     
     rng default;
-    for is = 1:12
+    for is = 1:4
         
         % Sample
         for i = 1:32
-            qS     = spm_sqrtm(red);
+            qS     = spm_sqrtm(diag(red));
             P(:,i) = x0 + qS*randn(length(x0),1);
             R(:,i) = obj(P(:,i));
             
@@ -201,13 +203,38 @@ while iterate
             if doplot; makeplot(P(:,j),x0); end
         
             % Accept
+            dx = P(:,j) - x0;
+            de = P(:,j) - e0;
             x0 = P(:,j);
             e0 = R(:,j);
             
-        end
+            % Retain Parameters and Error
+            retp = [retp x0];
+            rete = [rete e0];
+            
+            % Extrapolate
+            ext = true;
+            nex = 0;
+            while ext
+                nex = nex + 1;
+                ddx = x0  + (dx/nex);
+                dde = obj(ddx);
+                
+                if dde < e0
+                    pupdate(loc,n,is,dde,e0,'extrap',toc);
+                    x0 = ddx;
+                    e0 = dde;
+                else
+                    ext = false;
+                end
+            end % end extrap while
+            
+        end % end if improve
         fprintf('\n');    
     end
     
+    % Do something with the retained information: Estimate gradients?
+    retp;
     
     % stopping criteria, rules etc.
     %======================================================================    

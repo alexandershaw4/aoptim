@@ -18,7 +18,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %   F(p) = log evidence - divergence ... (Free Energy)
 %
 % the usage is:
-%   [X,FCp,Pp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
+%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
@@ -186,12 +186,13 @@ while iterate
     
     % compute gradients & search directions
     %----------------------------------------------------------------------
+    aopt.updatej = true;
     [e0,df0] = obj( V*x0(ip) );
             
     if mimo && ismatrix(Q)
        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
     end
-    
+        
     % print end of gradient computation (just so we know it's finished)
     pupdate(loc,n,0,e0,e0,'-fini-',toc); 
     
@@ -479,49 +480,6 @@ while iterate
     if localminflag == 3
         %fprintf(loc,'I think we''re stuck...stopping\n');
         
-        % Invoke (Laplacian) sampling
-        %-------------------------------------------------
-        rng default;
-        for is = 1:3
-
-            % Sample
-            for i = 1:32
-                qS     = spm_sqrtm(diag(red));
-                P(:,i) = x0 + qS*randn(length(x0),1);
-                R(:,i) = obj(P(:,i));
-
-                if i > 1; fprintf(repmat('\b',[1 length(str)])); end
-                str = sprintf('Sampling(%d): %d/%d ',is,i,32);
-                fprintf(str);
-            end
-            fprintf('\n');
-
-            % Assess
-            [e1,j] = min(R);
-            if e1  < e0
-
-                % print / plot
-                pupdate(loc,n,is,R(:,j),e0,'accept',toc);
-                if doplot; makeplot(P(:,j),x0); end
-
-                % Accept
-                x0 = P(:,j);
-                e0 = R(:,j);
-                
-                localminflag = 0;
-            end
-            fprintf('\n');    
-        end
-        
-        if localminflag == 3
-            % if sampling didn't help, quit
-            localminflag = 4;
-        end
-        
-    end
-       
-    if localminflag == 4
-        
         % return current best
         X = V*real(x0(ip));
         F = e0;
@@ -588,47 +546,8 @@ while iterate
     
     % give up after 10 failed iterations
     if n_reject_consec == 5
-        fprintf(loc,'Failed to converge: Trying sampling...\n');
+        fprintf(loc,'Failed to converge...\n');
         
-        % Invoke (Laplacian) sampling
-        %-------------------------------------------------
-        rng default;
-        for is = 1:3
-
-            % Sample
-            for i = 1:32
-                qS     = spm_sqrtm(diag(red));
-                P(:,i) = x0 + qS*randn(length(x0),1);
-                R(:,i) = obj(P(:,i));
-
-                if i > 1; fprintf(repmat('\b',[1 length(str)])); end
-                str = sprintf('Sampling(%d): %d/%d ',is,i,32);
-                fprintf(str);
-            end
-            fprintf('\n');
-
-            % Assess
-            [e1,j] = min(R);
-            if e1  < e0
-
-                % print / plot
-                pupdate(loc,n,is,R(:,j),e0,'accept',toc);
-                if doplot; makeplot(P(:,j),x0); end
-
-                % Accept
-                x0 = P(:,j);
-                e0 = R(:,j);
-                
-                improved(is)=1;
-            else
-                improved(is)=0;
-            end
-            fprintf('\n');    
-        end
-        
-        if any(improved)
-            %continue;
-        else
             % return current best
             X = V*real(x0(ip));
             F = e0;
@@ -646,10 +565,6 @@ while iterate
         end
     end
     
-end
-
-
-
 end
 
 function refdate(loc)
@@ -799,7 +714,7 @@ Y  = aopt.y;
 
 end
 
-function [e,J,er] = obj(x0)
+function [e,J,er,mp] = obj(x0)
 % - compute the objective function - i.e. the sqaured error to minimise
 % - also returns the parameter Jacobian
 %
@@ -839,6 +754,7 @@ else
     if isfield(aopt,'J') && isvector(aopt.J)
         aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
     end
+          
     
     switch lower(method)
         case {'free_energy','fe','freeenergy','logevidence'};
@@ -848,11 +764,11 @@ else
             Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
             h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
             iS = sparse(0);
-
+            
             for i  = 1:length(Q)
                 iS = iS + Q{i}*(exp(-32) + exp(h(i)));
             end
-
+            
             ny  = length(spm_vec(y));
             nq  = ny ./ length(Q);
             e   = spm_vec(Y) - spm_vec(y);
@@ -871,7 +787,7 @@ else
            %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
             F    = sum(L);
             e    = (-F);
-            
+                        
             aopt.Cp = Cp;
             %aopt.Q  = iS;
             
@@ -911,6 +827,11 @@ else
             R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
             e   = SSE + R2;
 
+        case {'logistic' 'lr'}
+            % logistic optimisation 
+            e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
+
+
             % complex output models
             %ey  = spm_vec(Y) - spm_vec(y);
             %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
@@ -920,6 +841,7 @@ end
 
 % error along output vector
 er = spm_vec(y) - spm_vec(Y);
+mp = spm_vec(y);
 
 % this wraps obj to return only the third output for MIMOs
 % when we want the derivatives w.r.t. each output 
@@ -946,7 +868,10 @@ if nargout == 2
     end
 
     % store for objective function
-    aopt.J = J;
+    if  aopt.updatej
+        aopt.J       = J;
+        aopt.updatej = false;
+    end
     
     % accumulate gradients / memory of gradients
     if aopt.memory

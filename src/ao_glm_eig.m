@@ -1,5 +1,5 @@
 function [b,F,Cp,fit] = ao_glm_eig(x,y,nc)
-% use AO curvature optimiser to fit a regression/GLM...
+% use AO curvature optimiser to fit a (logistic?) regression/GLM...
 %
 % usgae: [b,F,Cp,fit] = ao_glm_eig(group,observations)
 % - when nc == 3,
@@ -12,6 +12,8 @@ function [b,F,Cp,fit] = ao_glm_eig(x,y,nc)
 %
 % the betas are returned in fit.mb, such that the prediction is:
 %  pred = fit.mb{1}+fit.mb{2}*fit.mb{3}*observations'
+%
+% the reduced data vectors as returned in fit.W.
 %
 % Plot the output:
 % scatter3(fit.W(:,1),fit.W(:,2),fit.W(:,3),110,group,'filled')

@@ -112,7 +112,7 @@ aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
-BayesAdjust = ba; % Bayes-esque adjustment of the GD-predicted parameters
+BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                  % (converges slower but might be more careful)
                  
                  

@@ -1,4 +1,4 @@
-function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective)
+function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]
 %
@@ -76,6 +76,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %
 global aopt
 
+if nargin < 14 || isempty(ba);         ba = 0;            end
 if nargin < 13 || isempty(objective);  objective = 'sse'; end
 if nargin < 12 || isempty(writelog);   writelog = 0;      end   
 if nargin < 11 || isempty(order);      order = 2;         end
@@ -111,9 +112,10 @@ aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
-BayesAdjust = 0; % Bayes-esque adjustment of the GD-predicted parameters
+BayesAdjust = ba; % Bayes-esque adjustment of the GD-predicted parameters
                  % (converges slower but might be more careful)
-
+                 
+                 
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
 % if nargin < 3 || isempty(V)

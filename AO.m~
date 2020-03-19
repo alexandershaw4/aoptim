@@ -1,7 +1,6 @@
 function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
-% model fitting [system identification & parameter estimation]. Objective
-% function minimises free energy or the SSE.
+% model fitting [system identification & parameter estimation]
 %
 % Fit multivariate linear/nonlinear models of the forms:
 %   Y0 = f(x) + e   ..or
@@ -15,7 +14,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
 %   y    = f(x)
-%   e    = sum(Y0 - y).^2            ... (SSE) *OR*
+%   e    = sum(Y0 - y).^2            ... (SSE) or
 %   F(p) = log evidence - divergence ... (Free Energy)
 %
 % the usage is:
@@ -42,17 +41,13 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %
 % OUTPUTS:
 % X   = posterior parameters
-% F   = fit value (depending on objective function specified)
+% F   = fit value
 % CP  = parameter covariance
 % Pp  = posterior probabilites
 % H   = history
 %
-% Notes: (1) in my testing minimising SSE seems to produce the best overall fits but
+% Notes: in my testing minimising SSE seems to produce the best overall fits but
 % free energy (log evidence - divergence) converges much faster. 
-% (2) the free energy equation is
-%       L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;  ...
-%       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-%       F    = sum(L);
 %
 % Usage 2: to minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -62,7 +57,15 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop, ... ) 
 %
 %
-% Still to implement:
+% Example: Minimise Ackley function:
+%--------------------------------------------------------------------------
+%     arg min: e = 20*(1 - exp(-0.2*sqrt(0.5*(x1.^2 + x2.^2)))) ...
+%                                - exp(0.5*(cos(2*pi*x1)...
+%                                         + cos(2*pi*x2))) + exp(1);
+%
+%     [X,F] = AO(@ackley_fun,[3 .5],[1 1]/128,0,[],[],[],1e-13,0,0,2,0,'fe')
+%
+% To do:
 % - add momentum parameter
 % - add Nesterov accelerated descent
 %
@@ -70,6 +73,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %
 % AS2019
 % alexandershaw4@gmail.com
+%
 global aopt
 
 if nargin < 14 || isempty(ba);         ba = 0;            end
@@ -795,12 +799,6 @@ function [e,J,er,mp] = obj(x0)
 
 global aopt
 
-if ~isfield(aopt,'computeiCp')
-    % Compute inverse covariance - on first call trigger this, but it gets 
-    % switched off during objective calls during derivative calculation
-    aopt.computeiCp = 1;
-end
-
 method = aopt.ObjectiveMethod;
 
 IS = aopt.fun;
@@ -854,13 +852,8 @@ else
             e   = spm_vec(Y) - spm_vec(y);
             ipC = aopt.ipC;
             warning off; % don't warn abour singularity
-            
             if aopt.computeiCp
-                Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
-            else
-                Cp = aopt.Cp;
-            end
-            
+            Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
             warning on
             p   = ( x0(:) - aopt.pp(:) );
 
@@ -891,6 +884,7 @@ else
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); e = abs(e);
             
         case 'sse2' % sse robust to complex systems
+            % or
             e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
             e  = real(e) + imag(e);
     
@@ -945,9 +939,10 @@ if nargout == 2
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
+        %V = (~~V)*1e-4;
     end
     
-    aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
+    aopt.computeiCp = 0;
     
     if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]

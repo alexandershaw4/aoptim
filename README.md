@@ -22,9 +22,9 @@ Generic function minimisation:
 [X,F] = AO(fun,x0,V,[0],[maxit],[inner_loop],[Q],[crit],[min_df],[is_mimo],[ordr],[log],[obj])
 
 
-fun = function handle.
-x0  = parameter start points - i.e. fun(x). Can be a vector if fun is a system.
-V   = A step size/variance for each element of x0. If unsure, try 1/8ths.
+fun = function handle to system of equations
+x0  = parameter start points - i.e. fun(x0). Can be a vector if fun is a system.
+V   = width of the distirbution for each element of x0 (& also step size). If unsure, try 1/8ths.
 y   = the real data to fit, when model fitting. If fun returns the error to be minimised, set to 0.
 
 maxit = (optional) max number of iterations, default 128.
@@ -37,7 +37,7 @@ order = (optional) order of derivatives (see jaco.m), default 2 (curvature).
 writelog = (optional) write steps to log (==1) instead of console (==0, def)
 objective = (optional) error function: 'sse' 'mse' 'rmse' or 'fe' (free energy) 
 
-^MIMO = in Y0 = fun(x0), both x0 and Y0 are vectors. In this case, the derivative matrix is num-inputs-by-num-outputs, w.r.t error along Y0. 
+^MIMO = just set this to 0, I need to remove it.
 
 Notes:
 

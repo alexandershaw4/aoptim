@@ -1,4 +1,4 @@
-function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba)
+function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba,im,da)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]. Objective
 % function minimises free energy or the SSE.
@@ -72,6 +72,8 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % alexandershaw4@gmail.com
 global aopt
 
+if nargin < 16 || isempty(da);         da = 0;            end
+if nargin < 15 || isempty(im);         im = 0;            end
 if nargin < 14 || isempty(ba);         ba = 0;            end
 if nargin < 13 || isempty(objective);  objective = 'sse'; end
 if nargin < 12 || isempty(writelog);   writelog = 0;      end   
@@ -111,8 +113,8 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
 
-IncMomentum = false; % Observe and use momentum data            
-DivAdjust   = false; % Divergence adjustment
+IncMomentum = im; % Observe and use momentum data            
+DivAdjust   = da; % Divergence adjustment
 
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
@@ -795,11 +797,11 @@ function [e,J,er,mp] = obj(x0)
 
 global aopt
 
-if ~isfield(aopt,'computeiCp')
-    % Compute inverse covariance - on first call trigger this, but it gets 
-    % switched off during objective calls during derivative calculation
-    aopt.computeiCp = 1;
-end
+% if ~isfield(aopt,'computeiCp')
+%     % Compute inverse covariance - on first call trigger this, but it gets 
+%     % switched off during objective calls during derivative calculation
+%     aopt.computeiCp = 1;
+% end
 
 method = aopt.ObjectiveMethod;
 
@@ -855,11 +857,11 @@ else
             ipC = aopt.ipC;
             warning off; % don't warn abour singularity
             
-            if aopt.computeiCp
+            %if aopt.computeiCp
                 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
-            else
-                Cp = aopt.Cp;
-            end
+            %else
+            %    Cp = aopt.Cp;
+            %end
             
             warning on
             p   = ( x0(:) - aopt.pp(:) );
@@ -947,13 +949,13 @@ if nargout == 2
         V = (~~V)*1e-3;
     end
     
-    aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
+    %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     
     if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
     end
     
-    aopt.computeiCp = 1;
+    %aopt.computeiCp = 1;
     
     % store for objective function
     if  aopt.updatej

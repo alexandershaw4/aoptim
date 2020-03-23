@@ -1,4 +1,4 @@
-function [X,F,Cp,Hist] = AOpar(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,params)
+function [X,F,Cp,Hist] = AOpar(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba,im,da,params)
 % Gradient/curvature descent based optimisation, primarily for model fitting
 % [system identification & parameter estimation]
 %
@@ -66,7 +66,12 @@ function [X,F,Cp,Hist] = AOpar(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %
 global aopt
 
-if nargin < 12 || isempty(params);     params = [];       end
+if nargin < 17 || isempty(params);     params = [];       end
+if nargin < 16 || isempty(da);         da = 0;            end
+if nargin < 15 || isempty(im);         im = 0;            end
+if nargin < 14 || isempty(ba);         ba = 0;            end
+if nargin < 13 || isempty(objective);  objective = 'sse'; end
+if nargin < 12 || isempty(writelog);   writelog = 0;      end   
 if nargin < 11 || isempty(order);      order = 2;         end
 if nargin < 10 || isempty(mimo);       mimo = 0;          end
 if nargin < 9  || isempty(min_df);     min_df = 0;        end
@@ -82,11 +87,19 @@ if nargin < 4  || isempty(y);          y = 0;             end
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
-aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')*Q'
+aopt.pp      = x0(:);    % starting parameters
+aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
 aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
-aopt.svd     = 0;        % use PCA on the gradient matrix (mimo only)
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
+aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
+aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
+
+BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
+                  % (converges slower but might be more careful)
+
+IncMomentum = im; % Observe and use momentum data            
+DivAdjust   = da; % Divergence adjustment
 
 params.aopt = aopt;
 
@@ -139,17 +152,9 @@ localminflag = 0;
 % print updates at n_print intervals along the inner loop
 n_print    = 0;
 
-% now: x0 = V*p(ip) 
-% --> this check was only valid for purely deterministic systems
-%--------------------------------------------------------------------------
-% if obj( V*p(ip) ) ~= e0
-%     fprintf('Something went wrong during svd parameter reduction\n');
-% else
-%     % backup start points
-%     X0 = x0;
-%     % overwrite x0
-%     x0 = p;
-% end
+if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
+if IncMomentum; fprintf('Using Momentum option\n');    end
+if DivAdjust  ; fprintf('Using Divergence option\n');  end
 
 % print start point
 refdate();
@@ -165,42 +170,62 @@ while iterate
     %----------------------------------------------------------------------
     n = n + 1;    tic;
    
-    pupdate(n,0,e0,e0,'grdnts',toc); tic;
+    pupdate(loc,n,0,e0,e0,'grdnts',toc);
+    
+    aopt.pp = x0;
     
     % compute gradients & search directions
     %----------------------------------------------------------------------
+    aopt.updatej = true;
     [e0,df0] = obj( V*x0(ip) , params );
-    
-    if mimo && ismatrix(Q)
-        df0 = df0*HighResMeanFilt(full(Q),1,4) ;
-    end
+    e0       = obj( V*x0(ip) , params );
     
     pupdate(n,0,e0,e0,'-fini-',toc);
             
     % initial search direction (steepest) and slope
-    %----------------------------------------------------------------------
-    s   = -df0';    
-    d0  = -s'*s;                          
+    %----------------------------------------------------------------------  
+    search_method = 3;
     
-    % optional decomposition of derivative matrix 
-    if any(aopt.svd) && mimo
-        d0(isnan(d0))=0;
-        d0(isinf(d0))=0;
-        [uu,ss,vv] = spm_svd(d0);
-        d0 = uu(:,aopt.svd)*ss(aopt.svd,aopt.svd)*vv(:,aopt.svd)';
+    switch search_method
+        case 1
+            
+            J      = -df0';
+            dFdpp  = -(J'*J);
+            
+            % Initial step
+            x3  = V*red(ip)./(1-dFdpp);
+            
+            % Leading (gradient) components
+            [uu,ss,vv] = spm_svd(x3);
+            nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+            x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        
+        case 2
+            
+            J     = -df0;
+            dFdp  = -real(J'*e0);
+            dFdpp = -real(J'*J);
+            
+        case 3
+            
+            J      = -df0;
+            dFdpp  = -(J'*J);
+            %dFdpp  = dFdpp * (e0.^2);
+            
+            % Initial step (Rasmussen method)
+            x3  = V*red(ip)./(1-dFdpp);
+
     end
     
-    %x3  = V*(1./red(ip))./(1-d0);  
-    x3  = V*red(ip)./(1-d0);                 % initial step 
-        
     % Log start of iteration
     Hist.e(n) = e0;
     Hist.p{n} = x0;
+    Hist.J{n} = df0;
     
-    % make copies of error and param set
+    % make copies of error and param set for inner while loops
     x1  = x0;
     e1  = e0;
-
+        
     % start counters
     improve = true;
     nfun    = 0;
@@ -212,31 +237,117 @@ while iterate
         % descend while we can
         nfun = nfun + 1;
                                 
-        % continue the ascent / descent
-        if ~mimo; dx    = (V*x1(ip)+x3*s');        % MISO
-        else;     dx    = (V*x1(ip)+x3*sum(s)');   % MIMO
+        % descend while de < e1
+        nfun = nfun + 1;
+                                        
+        % Parameter Step
+        %------------------------------------------------------------------
+        if search_method == 1
+            dx    = (V*x1(ip)+x3*J');      
+        elseif search_method == 2 
+            ddx   = spm_dx(dFdpp,dFdp,{red})';
+            dx    = x1 - ddx;
+        elseif search_method == 3
+            dx    = ( V*x1(ip) + (x3.*J) ); % (Rasmussen w/ diff p steps)  
         end
-        
-        %dx    = (V*x1(ip) + (x3/s.^2) );
                 
-        % assess each new parameter individually, then find the best mix
-        parfor nip = 1:length(dx)
-            XX       = V*x0;
-            XX(nip)  = dx(nip);
-            DFE(nip) = obj(real(XX),params);
+        % (option) Momentum inclusion
+        %------------------------------------------------------------------
+        if n > 2 && IncMomentum
+            % The idea here is that we can have more confidence in
+            % parameters that are repeatedly updated in the same direction,
+            % so we can take bigger steps for those parameters
+            imom = sum( diff(full(spm_cat(Hist.p))')' > 0 ,2);
+            dmom = sum( diff(full(spm_cat(Hist.p))')' < 0 ,2);
+            
+            timom = imom >= (2);
+            tdmom = dmom >= (2);
+            
+            moments = (timom .* imom) + (tdmom .* dmom);
+            
+            if any(moments)
+               %fprintf('Momentum-based improvement for %d params\n',length(find(moments)));
+               ddx = dx - x1;
+               dx  = dx + ( ddx .* (moments./n) );
+            end
         end
         
-        % compute improver-parameters
-        gp  = double(DFE < e0); % e0
-        gpi = find(gp);
+        % (option) Probability constraint
+        %------------------------------------------------------------------
+        if BayesAdjust
+            % Probabilities of these (predicted) values actually belonging to
+            % the prior distribution as a bound on parameter step
+            % (with arbitrary .5 threshold)
+            ddx = dx - x1;
+            ppx = spm_Ncdf(x0,dx,sqrt(red)); ppx(ppx<.5) = 0.5;
 
-        % only update select parameters
-        ddx        = V*x0;
-        ddx(gpi)   = dx(gpi);
-        dx         = ddx;
-        de         = obj(dx,params);
-                
-        if de  < e1
+            % apply this probability adjustment
+            dx = x1 + (ddx.*ppx);
+            
+            % mock some distributions to visualise changes
+            for i = 1:length(x1)
+                pd(i)   = makedist('normal','mu',x1(i),'sigma', ( red(i) ));
+                pr(i,:) = pdf(pd(i),x1(i)-10:x1(i)+10);
+                po(i,:) = pdf(pd(i),dx(i)-10:dx(i)+10);
+            end
+            BayesPlot(-10:10,pr,po);
+            
+        end
+        
+        % (option) Divergence adjustment
+        %------------------------------------------------------------------
+        for i = 1:length(x1)
+            pd(i)  = makedist('normal','mu',x1(i),'sigma', ( red(i) ));
+            pdt(i) = 1-cdf( pd(i),x1(i));
+            pt(i)  = 1-cdf( pd(i),dx(i));
+        end
+        if DivAdjust
+            
+            % Divergence of the prob distribution 
+            PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
+            iPQ = 1./(1 - PQ);
+
+            % parameter update
+            ddx = dx(:) - x1(:);
+            dx  = x1(:) + ddx.*iPQ(:);
+        end
+
+        
+        % Evaluate parameter(s) step (ascent)
+        %------------------------------------------------------------------
+        if obj(dx,params) < obj(x1,params)
+            % Don't perform checks, assume all f(dx[i]) <= e1
+            gp  = ones(1,length(x0));
+            gpi = 1:length(x0);
+            de  = obj(dx,params);
+            DFE = ones(1,length(x0))*de; 
+
+        else
+            % Assess each new (extrapolated) parameter estimate individually, 
+            % update only improvers
+            for nip = 1:length(dx)
+                XX       = V*x0;
+                XX(nip)  = dx(nip);
+                DFE(nip) = obj(real(XX),params);
+            end
+
+            % Identify improver-parameters
+            gp  = double(DFE < e0); % e0
+            gpi = find(gp);
+
+            % Only update select parameters
+            ddx        = V*x0;
+            ddx(gpi)   = dx(gpi);
+            dx         = ddx;
+            de         = obj(dx,params);
+        end
+        
+        
+        
+        
+        etol = 0; % none
+        
+        if de  < ( obj(x1,params) + etol )
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -284,8 +395,8 @@ while iterate
         nexpl   = 0;
         pupdate(n,nexpl,e1,e0,'descnd',toc);
         while exploit
-            if obj(V*(x1+(dp./df)),params) < e1
-                x1    = V*(x1+(dp./df));
+            if obj(V*(x1+(-dp./-df)),params) < e1
+                x1    = V*(x1+(-dp./-df));
                 e1    = obj(real(x1),params);
                 x1    = V'*real(x1);
                 nexpl = nexpl + 1;
@@ -322,8 +433,12 @@ while iterate
             
             % sort good params by improvement amount
             %--------------------------------------------------------------
-            [~,PO] = sort(DFE(gpi),'ascend');
+            %[~,PO] = sort(DFE(gpi),'ascend');
+            %dx0    = real(dx);
+            % update p's causing biggest improvment in fe while maintaining highest P(p)
+            [~,PO] = sort(pt(gpi).*DFE(gpi),'ascend'); % DFE(gpi) = dp that cause imrpvoements
             dx0    = real(dx);
+            
             
             % loop the good params in effect-size order
             % accept on the fly (additive effects)
@@ -612,52 +727,118 @@ function [e,J,er] = obj(x0,params)
 aopt=params.aopt;
 %global aopt
 
+method = aopt.ObjectiveMethod;
+
 IS = aopt.fun;
 P  = x0(:)';
 
 try    y  = IS(P,params); 
-catch; y  = spm_vec(aopt.y)*0;
+catch; y  = spm_vec(aopt.y)*0+inf;
 end
 
 Y  = aopt.y;
 Q  = aopt.Q;
 
-%e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
+    if ~isfield(aopt,'J')
+        aopt.J = ones(length(x0),length(spm_vec(y)));
+    end
+    if isfield(aopt,'J') && isvector(aopt.J)
+        aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
+    end
 
-if all(size(Q)>1)
     
-    % if square precision matrix was supplied, use this objective
-    ey  = spm_vec(Y) - spm_vec(y);
-    qh  = Q*(ey*ey') ;%*Q';    % i don't think the second Q term is needed
-    e   = sum(qh(:).^2);    
     
-else
+     switch lower(method)
+        case {'free_energy','fe','freeenergy','logevidence'};
     
-    % sse: sum of error squared
-    e  = sum( (spm_vec(Y) - spm_vec(y)).^2 ); e = abs(e);
+            % Free Energy Objective Function: F(p) = log evidence - divergence
+            %----------------------------------------------------------------------
+            Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
+            h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
+            iS = sparse(0);
+            
+            for i  = 1:length(Q)
+                iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+            end
+            
+            ny  = length(spm_vec(y));
+            nq  = ny ./ length(Q);
+            e   = spm_vec(Y) - spm_vec(y);
+            ipC = aopt.ipC;
+            warning off; % don't warn abour singularity
+            
+            %if aopt.computeiCp
+                Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+            %else
+            %    Cp = aopt.Cp;
+            %end
+            
+            warning on
+            p   = ( x0(:) - aopt.pp(:) );
+
+            if any(isnan(Cp(:))) 
+                Cp = Cp;
+            end
+            
+            L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+           %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
+            F    = sum(L);
+            e    = (-F);
+                        
+            aopt.Cp = Cp;
+            %aopt.Q  = iS;
+            
+            if strcmp(lower(method),'logevidence')
+                % for log evidence, ignore the parameter term
+                % its actually still an SSE measure really
+                F = L(1);
+                e = -F;
+            end
     
-    % mse: mean squared error
-    %e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));
+        % Other Objective Functions
+        %------------------------------------------------------------------ 
+        case 'sse'
+            % sse: sum of error squared
+            e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); e = abs(e);
+            
+        case 'sse2' % sse robust to complex systems
+            e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
+            e  = real(e) + imag(e);
     
-    % rmse: root mean squaree error
-    %e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-    
-    % 1 - r^2 (bc. minimisation routine == maximisation)
-    %e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
-    
-    % combination:
-    %SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
-    %R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
-    %e   = SSE + R2;
-    
-    % complex output models
-    %ey  = spm_vec(Y) - spm_vec(y);
-    %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
-    %e   = sum(qh(:).^2);
-end
+        case 'mse'
+            % mse: mean squared error
+            e = (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y));
+
+        case 'rmse'
+            % rmse: root mean squaree error
+            e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+
+        case {'correlation','corr','cor','r2'}
+            % 1 - r^2 (bc. minimisation routine == maximisation)
+            e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
+
+        case 'combination'
+            % combination:
+            SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
+            R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
+            e   = SSE + R2;
+
+        case {'logistic' 'lr'}
+            % logistic optimisation 
+            e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
+
+
+            % complex output models
+            %ey  = spm_vec(Y) - spm_vec(y);
+            %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
+            %e   = sum(qh(:).^2);
+    end
+%end
 
 % error along output vector
 er = spm_vec(y) - spm_vec(Y);
+mp = spm_vec(y);
 
 % this wraps obj to return only the third output for MIMOs
 % when we want the derivatives w.r.t. each output 
@@ -667,6 +848,7 @@ end
 
 J = [];
 
+
 % this hands off to jaco, which computes the derivatives
 % - note this can be used differently for multi-output systems
 if nargout == 2
@@ -674,10 +856,21 @@ if nargout == 2
     Ord  = aopt.order; 
     mimo = aopt.mimo;
     
+    if aopt.fixedstepderiv == 1
+        V = (~~V)*1e-3;
+        %V = (~~V)*exp(-8);
+    end
+    
     if ~mimo; [J,ip] = jacopar(@obj,x0,V,0,Ord,params);    ... df[e]   /dx [MISO]
     else;     [J,ip] = jacopar(@inter,x0,V,0,Ord,params);  ... df[e(k)]/dx [MIMO]
     end
     
+    % store for objective function
+    if  aopt.updatej
+        aopt.J       = J;
+        aopt.updatej = false;     % (when triggered always switch off)
+    end
+
     % accumulate gradients / memory of gradients
     if aopt.memory
         try

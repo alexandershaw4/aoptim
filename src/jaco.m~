@@ -71,15 +71,7 @@ warning off; % suppress matrix singularity warnings in unstable systems
 [j,j1]  = jacf(IS,P,ip,verbose,V,order);
 warning on;
 
-if isnumeric(j)
-    j(isnan(j)) = 0;
-end
-if iscell(j)
-    for i = 1:length(j)
-        j{i}(isnan(j{i})) = 0;
-    end
-end
-
+j(isnan(j)) = 0;
 %j(isinf(j)) = 0;
 
 end
@@ -142,9 +134,8 @@ if ismember(order,[1 2 3 4])
                 j1(i,:) = j(i,:); % keep first order
                 % Alternatively, include curvature
                 deriv1 = (f0 - f1) / 2 / d;
-                deriv2 = (f0 - 2 * fx + f1) / d ^ 2; % 2nd ORDER CENTRAL
+                deriv2 = (f0 - 2 * fx + f1) / d ^ 2;
                 j(i,:) = deriv1 ./ deriv2;
-                                
             elseif order == 4
                 % curvature using the 3-point routine
                 deriv1a = (f0 - fx) / (2*d);
@@ -156,18 +147,16 @@ if ismember(order,[1 2 3 4])
         end
     end
     
-
-    
 elseif ismember(order,-2)
     
+    fprintf('check\n');
     % 0 order diff, i.e. f(x+d) - f(x) / d
     % AND curvature
     for i = 1:length(P)
             if ip(i)
                 P0     = P;
-                P1     = P;
-               %d      = P0(i) * V(i);
-                d      =         V(i);
+                %d      = P0(i) * V(i);
+                d = V(i);
 
                 if d == 0;d = 0.01;end
 
@@ -177,7 +166,7 @@ elseif ismember(order,-2)
                 f0     = spm_vec(spm_cat(feval(IS,P0)));
                 f1     = spm_vec(spm_cat(feval(IS,P1)));
                 
-                j(i,:) = (f0 - fx) / P0(i);%(d);
+                j(i,:) = (f0 - fx) / (d);
                 
                 % curvs
                 deriv1 = (f0 - f1) / 2 / d;

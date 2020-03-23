@@ -230,7 +230,7 @@ while iterate
             %dFdpp  = dFdpp * (e0.^2);
             
             % Initial step (Rasmussen method)
-            x3  = V*red(ip)./(1-dFdpp);
+            x3  = V*(8*red(ip))./(1-dFdpp);
 
     end
     

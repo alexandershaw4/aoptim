@@ -836,12 +836,16 @@ Y  = aopt.y;
 
 end
 
-function [e,J,er,mp] = obj(x0)
+function [e,J,er,mp] = obj(x0,varargin)
 % - compute the objective function - i.e. the sqaured error to minimise
 % - also returns the parameter Jacobian
 %
 
-global aopt
+if nargin == 2 && ~isempty(varargin{1})
+    aopt = varargin{1}; % parallel jaco deployment
+else
+    global aopt
+end
 
 % if ~isfield(aopt,'computeiCp')
 %     % Compute inverse covariance - on first call trigger this, but it gets 
@@ -998,10 +1002,14 @@ if nargout == 2
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     
-    if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
-    else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
-    end
+    %if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
+    %else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
+    %end
     
+    % Compute derivatives in parallel
+    params = aopt;
+    [J,ip] = jacopar(@obj,x0,V,0,Ord,params); 
+
     %aopt.computeiCp = 1;
     
     % store for objective function

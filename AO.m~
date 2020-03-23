@@ -192,6 +192,7 @@ while iterate
     %----------------------------------------------------------------------
     aopt.updatej = true;
     [e0,df0] = obj( V*x0(ip) );
+    e0       = obj( V*x0(ip) );
     
     %[df0,e0] = spm_diff(@obj,x0,1);
          
@@ -208,9 +209,8 @@ while iterate
             J      = -df0';
             dFdpp  = -(J'*J);
             
-            % Initial step (Rasmussen method)
+            % Initial step
             x3  = V*red(ip)./(1-dFdpp);
-            %x3=x3/red';
             
             % Leading (gradient) components
             [uu,ss,vv] = spm_svd(x3);
@@ -227,10 +227,11 @@ while iterate
             
             J      = -df0;
             dFdpp  = -(J'*J);
+            %dFdpp  = dFdpp * (e0.^2);
             
             % Initial step (Rasmussen method)
             x3  = V*red(ip)./(1-dFdpp);
-            
+
     end
     
     % Log start of iteration
@@ -256,18 +257,15 @@ while iterate
         % Parameter Step
         %------------------------------------------------------------------
         if search_method == 1
-            % continue the ascent / descent (as per CA Rasmussen)
-            dx    = (V*x1(ip)+x3*J');    
-            
+            dx    = (V*x1(ip)+x3*J');      
         elseif search_method == 2 
             ddx   = spm_dx(dFdpp,dFdp,{red})';
             dx    = x1 - ddx;
-        
         elseif search_method == 3
-            dx    = (V*x1(ip) + (x3.*J) );    
+            dx    = ( V*x1(ip) + (x3.*J) ); % (Rasmussen w/ diff p steps)  
         end
                 
-        % Momentum inclusion
+        % (option) Momentum inclusion
         %------------------------------------------------------------------
         if n > 2 && IncMomentum
             % The idea here is that we can have more confidence in
@@ -288,7 +286,7 @@ while iterate
             end
         end
         
-        % Probability constraint
+        % (option) Probability constraint
         %------------------------------------------------------------------
         if BayesAdjust
             % Probabilities of these (predicted) values actually belonging to
@@ -310,7 +308,7 @@ while iterate
             
         end
         
-        % Divergence adjustment
+        % (option) Divergence adjustment
         %------------------------------------------------------------------
         for i = 1:length(x1)
             pd(i)  = makedist('normal','mu',x1(i),'sigma', ( red(i) ));
@@ -329,9 +327,9 @@ while iterate
         end
         
         
-        
-        
-        if obj(dx) < e1
+        % Evaluate parameter(s) step (ascent)
+        %------------------------------------------------------------------
+        if obj(dx) < obj(x1)
             % Don't perform checks, assume all f(dx[i]) <= e1
             gp  = ones(1,length(x0));
             gpi = 1:length(x0);
@@ -397,7 +395,7 @@ while iterate
         %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
         etol = 0; % none
         
-        if de  < ( e1 + etol )
+        if de  < ( obj(x1) + etol )
             
             if nfun == 1; pupdate(loc,n,0,de,e1,'improv',toc); end
             
@@ -838,11 +836,12 @@ Y  = aopt.y;
 
 end
 
-function [e,J,er,mp] = obj(x0)
+function [e,J,er,mp] = obj(x0,varargin)
 % - compute the objective function - i.e. the sqaured error to minimise
 % - also returns the parameter Jacobian
 %
 
+if nargin == 2 && ~isempty
 global aopt
 
 % if ~isfield(aopt,'computeiCp')
@@ -1000,10 +999,14 @@ if nargout == 2
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     
-    if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
-    else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
-    end
+    %if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
+    %else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
+    %end
     
+    % Compute derivatives in parallel
+    params = aopt;
+    [J,ip] = jacopar(@obj,x0,V,0,Ord,params); 
+
     %aopt.computeiCp = 1;
     
     % store for objective function

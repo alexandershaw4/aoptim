@@ -227,11 +227,9 @@ while iterate
             
             J      = -df0;
             dFdpp  = -(J'*J);
-            %dFdpp  = dFdpp * (e0.^2);
             
             % Initial step (Rasmussen method)
-            x3  = V*red(ip)./(1-dFdpp);
-
+            x3  = V*(4*red(ip))./(1-dFdpp);
     end
     
     % Log start of iteration
@@ -836,12 +834,11 @@ Y  = aopt.y;
 
 end
 
-function [e,J,er,mp] = obj(x0,varargin)
+function [e,J,er,mp] = obj(x0)
 % - compute the objective function - i.e. the sqaured error to minimise
 % - also returns the parameter Jacobian
 %
 
-if nargin == 2 && ~isempty
 global aopt
 
 % if ~isfield(aopt,'computeiCp')
@@ -917,10 +914,22 @@ Q  = aopt.Q;
                 Cp = Cp;
             end
             
+            % Add peak x-axis term
+            [pY,iY] = findpeaks( spm_vec(Y) ,'NPeaks' ,4 );
+            [py,iy] = findpeaks( spm_vec(y) ,'NPeaks' ,4 );
+            
+            for ipp = 1:length(iY)
+                tp  = findthenearest(iY(ipp),iy);
+                ie(ipp) = iY(ipp) - iy(tp(1));
+            end
+            
+            npp     = 1:min([ length(iY) length(iy)]);
+            ie      = -sum(iY(npp) - iy(npp))*8;
+            
             L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
            %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
-            F    = sum(L);
+            F    = sum(L + ie);
             e    = (-F);
                         
             aopt.Cp = Cp;
@@ -999,13 +1008,10 @@ if nargout == 2
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     
-    %if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
-    %else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
-    %end
+    if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
+    else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
+    end
     
-    % Compute derivatives in parallel
-    params = aopt;
-    [J,ip] = jacopar(@obj,x0,V,0,Ord,params); 
 
     %aopt.computeiCp = 1;
     

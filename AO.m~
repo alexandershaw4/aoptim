@@ -913,23 +913,12 @@ Q  = aopt.Q;
             if any(isnan(Cp(:))) 
                 Cp = Cp;
             end
-            
-            % Add peak x-axis term
-            [pY,iY] = findpeaks( spm_vec(Y) ,'NPeaks' ,4 );
-            [py,iy] = findpeaks( spm_vec(y) ,'NPeaks' ,4 );
-            
-            for ipp = 1:length(iY)
-                tp  = findthenearest(iY(ipp),iy);
-                ie(ipp) = iY(ipp) - iy(tp(1));
-            end
-            
-            npp     = 1:min([ length(iY) length(iy)]);
-            ie      = -sum(iY(npp) - iy(npp))*8;
-            
+                                    
             L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
            %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
-            F    = sum(L + ie);
+            L(3) = -spm_logdet(spm_logdet( cdist(spm_vec(Y), spm_vec(y)) ));
+            F    = sum(L);
             e    = (-F);
                         
             aopt.Cp = Cp;

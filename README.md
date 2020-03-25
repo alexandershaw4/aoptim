@@ -1,4 +1,34 @@
 # aoptim
+
+AO implements a gradient descent optimisation that incorporates 
+curvature information (like a GaussNewton). Each parameter of f() is 
+treated as a Gaussian distribution with variance v. Step sizes are controlled 
+by the variance term and calculated using standard method. 
+Additional constraint options can be included (e.g. Divergence based). 
+When the full gradient prediction doesnt improve the objective, the routine
+picks a subset of parameters that do. This selection is based on the probability
+of the (GD predicted) new parameter value coming from the prior distribution.
+
+In model fitting scenarios, the code is set up so that you pass the model
+function (fun), parameters and also the data you want to fit. The advantage of
+this is that the algo can compute the objective function. This is necessary
+if you want to minimising free energy (but also has SSE, MSE, RMSE etc).
+
+Outputs are the posteriors (means), objective value (F), (co)variance (CP),
+posterior probabilities (Pp) and a History structure (Hist) that contains the
+parameters, objective values and gradients from each iteration of the algorithm.
+
+The code makes use of the fabulous SPM toolbox functions for things like
+vectorising and un-vectorising - so SPM is a dependency. This means that
+the data you're fitting (y in AO(fun,p,v,y) ) and the output of fun(p)
+can be of whatever data type you like (vector, matrix, cell etc).
+
+If you want to speed up the algorithm, look around line 211 and change
+search_method from 3 to 1. This method extrapolates further and can fit data
+quite a bit faster (and with better fits). However, it is also prone to
+pushing parameters to extremes, which is often bad in model fitting when you
+plan to make some parameter inference.
+
 ```
 A curvature descent based optimisation routine for system identification.
 Designed for highly parameterised non-linear MIMO/MISO dynamical models.

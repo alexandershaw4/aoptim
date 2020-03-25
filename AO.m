@@ -4,8 +4,8 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % function minimises free energy or the SSE.
 %
 % Fit multivariate linear/nonlinear models of the forms:
-%   Y0 = f(x) + e   ..or
-%   e  = f(x)
+%   Y0 = f(x) + e   (e.g. state-space models) ..or
+%   e  = f(x)       (e.g. f() is the objective function)
 %
 % Y0 = empirical data (to fit)
 % f  = model (function)
@@ -14,12 +14,12 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
-%   y    = f(x)
-%   e    = sum(Y0 - y).^2            ... (SSE) *OR*
-%   F(p) = log evidence - divergence ... (Free Energy)
+%   y    = f(p)
+%   e    = (data - y)            ... 
+%   F(p) = log evidence(y) - divergence(p)   ... (Free Energy Objective Fun)
 %
 % the usage is:
-%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
+%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
@@ -28,17 +28,17 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % fun        = function handle / anonymous function
 % x0         = starting points (vector input to fun, mean of Gauss)
 % V          = variances controlling each element of x0 (var of Gauss)
-% y          = Y0 / the data to fit, for computing the objective: e = sum(Y0 - y).^2
+% data       = Y0 / the data to fit, for computing the objective function
 % maxit      = number of iterations (def=128) to restart descent
 % inner_loop = num iters to continue on a specific descent (def=9999)
-% Q          = optional precision matrix of size == (fun(x),fun(x))
-% crit       = convergence value @(e=crit)
+% Q          = optional precision matrix (*DONT USE, [])
+% crit       = objective convergence value 
 % min_df     = minimum change in function value (Error) to continue
 %              (set to -1 to switch off)
-% mimo       = flag for a MIMO system: i.e. Y-fun(x) returns an error VECTOR
+% mimo       = flag for a MIMO system (*DONT USE, NEED TO REMOVE, [])
 % order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
 % writelog   = flag to write progress to command window (0) or a txt log (1)
-% obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence'
+% obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
 %
 % OUTPUTS:
 % X   = posterior parameters
@@ -47,20 +47,23 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % Pp  = posterior probabilites
 % H   = history
 %
-% Notes: (1) in my testing minimising SSE seems to produce the best overall fits but
+% Notes: 
+% (1) in my testing minimising SSE seems to produce the best overall fits but
 % free energy (log evidence - divergence) converges much faster. 
 % (2) the free energy equation is
 %       L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;  ...
 %       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-%       F    = sum(L);
+%       F    = -sum(L);
 %
-% Usage 2: to minimise objective problems of the form:
+% Usage 2: minimise objective problems of the form:
 %--------------------------------------------------------------------------
 %   e = f(x)
 %
-% the usage is: [note: set y=0 if f(x) returns the error/objective to be minimised]
+% note: set y=0 if f(x) returns the error/objective to be minimised
+% usage:
 %   [X,F] = AO(fun,x0,V,0,maxit,inner_loop, ... ) 
 %
+% For overview of optimisation method, do AO('help')
 %
 % Still to implement:
 % - add momentum parameter
@@ -71,6 +74,10 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % AS2019
 % alexandershaw4@gmail.com
 global aopt
+
+if nargin == 1 && strcmp(lower(fun),'help')
+    PrintHelp(); return;
+end
 
 if nargin < 16 || isempty(da);         da = 0;            end
 if nargin < 15 || isempty(im);         im = 0;            end
@@ -1085,5 +1092,27 @@ end
 V = v;
 
 fprintf('Finished computing step sizes in %d iterations (%d s)\n',n,round(toc));
+
+end
+
+function PrintHelp()
+
+fprintf(['AO implements a gradient descent optimisation that incorporates \n' ...
+    'curvature information (like a GaussNewton). Each parameter of f() is \n' ...
+    'treated as a Gaussian distribution with variance v. Step sizes are controlled \n' ...
+    'by the variance term and calculated using standard method. \n' ...
+    'Additional constraint options can be included (e.g. Divergence based). \n'  ...
+    'When the full gradient prediction doesnt improve the objective, the routine\n' ...
+    'picks a subset of parameters that do. This selection is based on the probability\n' ...
+    'of the (GD predicted) new parameter value coming from the prior distribution.\n' ...
+    '\nOutputs are the posteriors (means), objective value (F), (co)variance (CP),\n' ...
+    'posterior probabilities (Pp) and a History structure (Hist) that contains the\n'...
+    'parameters, objective values and gradients from each iteration of the algorithm.\n' ...
+    '\nThe code makes use of the fabulous SPM toolbox functions for things like\n' ...
+    'vectorising and un-vectorising - so SPM is a dependency. This means that\n' ...
+    'the data you''re fitting (y in AO(fun,p,v,y) ) and the output of fun(p)\n'...
+    'can be of whatever data type you like (vector, matrix, cell etc).\n']);
+
+
 
 end

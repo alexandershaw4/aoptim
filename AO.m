@@ -200,7 +200,7 @@ while iterate
     aopt.updatej = true;
     [e0,df0] = obj( V*x0(ip) );
     e0       = obj( V*x0(ip) );
-    
+        
     %[df0,e0] = spm_diff(@obj,x0,1);
          
     % print end of gradient computation (just so we know it's finished)
@@ -218,7 +218,7 @@ while iterate
             
             % Initial step
             x3  = V*red(ip)./(1-dFdpp);
-            
+                        
             % Leading (gradient) components
             [uu,ss,vv] = spm_svd(x3);
             nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
@@ -226,7 +226,7 @@ while iterate
         
         case 2
             
-            J     = -df0;
+            J     = -df0';
             dFdp  = -real(J'*e0);
             dFdpp = -real(J'*J);
             
@@ -262,7 +262,8 @@ while iterate
         % Parameter Step
         %------------------------------------------------------------------
         if search_method == 1
-            dx    = (V*x1(ip)+x3*J');      
+            %dx    = (V*x1(ip)+x3*J');
+            dx    = (V*x1(ip)+ x3*J'); 
         elseif search_method == 2 
             ddx   = spm_dx(dFdpp,dFdp,{red})';
             dx    = x1 - ddx;
@@ -1007,7 +1008,6 @@ if nargout == 2
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
     end
     
-
     %aopt.computeiCp = 1;
     
     % store for objective function

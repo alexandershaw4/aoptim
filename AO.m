@@ -1,4 +1,5 @@
-function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba,im,da)
+function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
+                                mimo,order,writelog,objective,ba,im,da,step_method)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]. Objective
 % function minimises free energy or the SSE.
@@ -11,6 +12,8 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % f  = model (function)
 % x  = model parameters/inputs to be optimised (treated as Gaussian
 % distributions with variance V)
+%
+% ** Do >> AO('help') for an overview of the optimser.
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
@@ -39,6 +42,12 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
 % writelog   = flag to write progress to command window (0) or a txt log (1)
 % obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
+% ba         = BayesAdjust flag (def=0): curb parameter step by P(p) 
+% im         = Include momentum (def=0): multiple steps in same dir=bigger step
+% da         = DivergencAdjust (def=0): adjust step size based on divergence
+% step_meth  = 1, 2 or 3 (def=3): 1=large, variance-controlled steps,
+%                                 2=small GaussNewton steps
+%                                 3=smaller (vanilla) steps (still var controlled)
 %
 % OUTPUTS:
 % X   = posterior parameters
@@ -75,10 +84,15 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % alexandershaw4@gmail.com
 global aopt
 
+% Print the description of steps and exit
+%--------------------------------------------------------------------------
 if nargin == 1 && strcmp(lower(fun),'help')
     PrintHelp(); return;
 end
 
+% Inputs & Defaults...
+%--------------------------------------------------------------------------
+if nargin < 17 || isempty(step_method);step_method = 3;   end
 if nargin < 16 || isempty(da);         da = 0;            end
 if nargin < 15 || isempty(im);         im = 0;            end
 if nargin < 14 || isempty(ba);         ba = 0;            end
@@ -119,7 +133,6 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
-
 IncMomentum = im; % Observe and use momentum data            
 DivAdjust   = da; % Divergence adjustment
 
@@ -178,6 +191,7 @@ localminflag = 0;  % triggers when stuck in local minima
 if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
 if IncMomentum; fprintf('Using Momentum option\n');    end
 if DivAdjust  ; fprintf('Using Divergence option\n');  end
+fprintf('Using step-method %d\n',step_method);
 
 % print start point - to console or logbook (loc)
 refdate(loc);
@@ -208,7 +222,7 @@ while iterate
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------  
-    search_method = 3;
+    search_method = step_method;
     
     switch search_method
         case 1

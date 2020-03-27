@@ -1,4 +1,5 @@
-function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mimo,order,writelog,objective,ba,im,da)
+function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
+                                mimo,order,writelog,objective,ba,im,da,step_method)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]. Objective
 % function minimises free energy or the SSE.
@@ -11,6 +12,8 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % f  = model (function)
 % x  = model parameters/inputs to be optimised (treated as Gaussian
 % distributions with variance V)
+%
+% ** Do >> AO('help') for an overview of the optimser.
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
@@ -39,6 +42,9 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
 % writelog   = flag to write progress to command window (0) or a txt log (1)
 % obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
+% ba         = BayesAdjust flag (def=0): curb step size by P(p) 
+% im 
+% da
 %
 % OUTPUTS:
 % X   = posterior parameters
@@ -75,10 +81,15 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,mi
 % alexandershaw4@gmail.com
 global aopt
 
+% Print the description of steps and exit
+%--------------------------------------------------------------------------
 if nargin == 1 && strcmp(lower(fun),'help')
     PrintHelp(); return;
 end
 
+% Inputs & Defaults...
+%--------------------------------------------------------------------------
+if nargin < 17 || isempty(step_method);step_method = 3;   end
 if nargin < 16 || isempty(da);         da = 0;            end
 if nargin < 15 || isempty(im);         im = 0;            end
 if nargin < 14 || isempty(ba);         ba = 0;            end
@@ -119,7 +130,6 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
-
 IncMomentum = im; % Observe and use momentum data            
 DivAdjust   = da; % Divergence adjustment
 
@@ -178,6 +188,7 @@ localminflag = 0;  % triggers when stuck in local minima
 if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
 if IncMomentum; fprintf('Using Momentum option\n');    end
 if DivAdjust  ; fprintf('Using Divergence option\n');  end
+fprintf('Using step-method %d\n',step_method);
 
 % print start point - to console or logbook (loc)
 refdate(loc);
@@ -200,7 +211,7 @@ while iterate
     aopt.updatej = true;
     [e0,df0] = obj( V*x0(ip) );
     e0       = obj( V*x0(ip) );
-    
+        
     %[df0,e0] = spm_diff(@obj,x0,1);
          
     % print end of gradient computation (just so we know it's finished)
@@ -208,7 +219,7 @@ while iterate
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------  
-    search_method = 3;
+    search_method = step_method;
     
     switch search_method
         case 1
@@ -218,7 +229,7 @@ while iterate
             
             % Initial step
             x3  = V*red(ip)./(1-dFdpp);
-            
+                        
             % Leading (gradient) components
             [uu,ss,vv] = spm_svd(x3);
             nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
@@ -226,7 +237,7 @@ while iterate
         
         case 2
             
-            J     = -df0;
+            J     = -df0';
             dFdp  = -real(J'*e0);
             dFdpp = -real(J'*J);
             
@@ -262,7 +273,8 @@ while iterate
         % Parameter Step
         %------------------------------------------------------------------
         if search_method == 1
-            dx    = (V*x1(ip)+x3*J');      
+            %dx    = (V*x1(ip)+x3*J');
+            dx    = (V*x1(ip)+ x3*J'); 
         elseif search_method == 2 
             ddx   = spm_dx(dFdpp,dFdp,{red})';
             dx    = x1 - ddx;
@@ -1007,7 +1019,6 @@ if nargout == 2
     else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
     end
     
-
     %aopt.computeiCp = 1;
     
     % store for objective function
@@ -1101,8 +1112,26 @@ fprintf(['AO implements a gradient descent optimisation that incorporates \n' ..
     'curvature information (like a GaussNewton). Each parameter of f() is \n' ...
     'treated as a Gaussian distribution with variance v. Step sizes are controlled \n' ...
     'by the variance term and calculated using standard method. \n' ...
-    'Additional constraint options can be included (e.g. Divergence based). \n' 
-    'As can]);
+    'Additional constraint options can be included (e.g. Divergence based). \n'  ...
+    'When the full gradient prediction doesnt improve the objective, the routine\n' ...
+    'picks a subset of parameters that do. This selection is based on the probability\n' ...
+    'of the (GD predicted) new parameter value coming from the prior distribution.\n' ...
+    '\nIn model fitting scenarios, the code is set up so that you pass the model\n'...
+    'function (fun), parameters and also the data you want to fit. The advantage of\n'...
+    'this is that the algo can compute the objective function. This is necessary\n'...
+    'if you want to minimising free energy (but also has SSE, MSE, RMSE etc).\n' ...
+    '\nOutputs are the posteriors (means), objective value (F), (co)variance (CP),\n' ...
+    'posterior probabilities (Pp) and a History structure (Hist) that contains the\n'...
+    'parameters, objective values and gradients from each iteration of the algorithm.\n' ...
+    '\nThe code makes use of the fabulous SPM toolbox functions for things like\n' ...
+    'vectorising and un-vectorising - so SPM is a dependency. This means that\n' ...
+    'the data you''re fitting (y in AO(fun,p,v,y) ) and the output of fun(p)\n'...
+    'can be of whatever data type you like (vector, matrix, cell etc).\n' ...
+    '\nIf you want to speed up the algorithm, look around line 211 and change\n'...
+    'search_method from 3 to 1. This method extrapolates further and can fit data\n'...
+    'quite a bit faster (and with better fits). However, it is also prone to\n'...
+    'pushing parameters to extremes, which is often bad in model fitting when you\n'...
+    'plan to make some parameter inference.\n']);
 
 
 

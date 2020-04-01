@@ -308,18 +308,18 @@ while iterate
         if BayesAdjust
             % Probabilities of these (predicted) values actually belonging to
             % the prior distribution as a bound on parameter step
-            % (with arbitrary threshold)
+            % (with arbitrary .5 threshold)
             ddx = dx - x1;
-            ppx = spm_Ncdf(abs(x0),abs(dx),sqrt(red)); ppx(ppx<.2) = 0.2;
-                    
+            ppx = spm_Ncdf(abs(x0),abs(dx),sqrt(red)); ppx(ppx<.5) = 0.2;
+
             % parameter update
             dx = x1 + (ddx.*ppx);
             
             % mock some distributions to visualise changes
             for i = 1:length(x1)
-                pd(i)   = makedist('normal','mu',abs(x1(i)),'sigma', ( red(i) ));
-                pr(i,:) = pdf(pd(i),abs(x1(i))-10:abs(x1(i))+10);
-                po(i,:) = pdf(pd(i),abs(dx(i))-10:abs(dx(i))+10);
+                pd(i)   = makedist('normal','mu',x1(i),'sigma', ( red(i) ));
+                pr(i,:) = pdf(pd(i),x1(i)-10:x1(i)+10);
+                po(i,:) = pdf(pd(i),dx(i)-10:dx(i)+10);
             end
             BayesPlot(-10:10,pr,po);
             
@@ -328,9 +328,9 @@ while iterate
         % (option) Divergence adjustment
         %------------------------------------------------------------------
         for i = 1:length(x1)
-            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', ( red(i) ));
-            pdt(i) = 1-cdf( pd(i), (x1(i)));
-            pt(i)  = 1-cdf( pd(i), (dx(i)));
+            pd(i)  = makedist('normal','mu',absx1(i),'sigma', ( red(i) ));
+            pdt(i) = 1-cdf( pd(i),x1(i));
+            pt(i)  = 1-cdf( pd(i),dx(i));
         end
         if DivAdjust
             

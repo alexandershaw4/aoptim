@@ -1,4 +1,4 @@
-function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,mimo,method)
+function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,method,sm)
 % A wrapper for fitting DCMs with AO.m curvature optimisation routine.
 % 
 % Input parameter structure, P and a fully specified DCM structure:
@@ -27,11 +27,11 @@ function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,mimo,method)
 
 global DD
 
-if nargin < 5 || isempty(method)
-    method = 'fe';
+if nargin < 5 || isempty(sm) % search_method option (1,2 or 3)
+    sm = 3;
 end
-if nargin < 4 || isempty(mimo)
-    mimo = 0;
+if nargin < 4 || isempty(method)
+    method = 'fe';
 end
 if nargin < 3 || isempty(niter)
     niter = 128;
@@ -63,15 +63,15 @@ switch lower(method)
     case 'sse'
     % use this to minimise SSE:
     fprintf('Minimising SSE\n');
-    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,mimo,2,0,'sse');
+    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,2,0,'sse');
     case 'fe'
     % minimise free energy:
     fprintf('Minimising Free-Energy\n');
-    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe',0,1,[],1);
+    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'fe',0,1,[],sm);
     %[X,F,CP,History]  = AOm(@fakeDM,p(:),c,DCM.xY.y);
     case 'logevidence'
     fprintf('Minimising -[log evidence]\n');
-    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'logevidence');
+    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'logevidence');
     case {'sample_fe' 'sampler_fe' 'fe_sampler' 'fe_sample'}
     % sampling routine
     [X,F]  = AOsampler(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');

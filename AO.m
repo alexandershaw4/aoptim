@@ -1,5 +1,5 @@
 function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
-                                mimo,order,writelog,objective,ba,im,da,step_method)
+                                order,writelog,objective,ba,im,da,step_method)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]. Objective
 % function minimises free energy or the SSE.
@@ -22,7 +22,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %   F(p) = log evidence(y) - divergence(p)   ... (Free Energy Objective Fun)
 %
 % the usage is:
-%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,mimo,ordr,writelog,obj)
+%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,writelog,obj)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
@@ -38,7 +38,6 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % crit       = objective convergence value 
 % min_df     = minimum change in function value (Error) to continue
 %              (set to -1 to switch off)
-% mimo       = flag for a MIMO system (*DONT USE, NEED TO REMOVE, [])
 % order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
 % writelog   = flag to write progress to command window (0) or a txt log (1)
 % obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
@@ -92,14 +91,13 @@ end
 
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
-if nargin < 17 || isempty(step_method);step_method = 3;   end
-if nargin < 16 || isempty(da);         da = 0;            end
-if nargin < 15 || isempty(im);         im = 0;            end
-if nargin < 14 || isempty(ba);         ba = 0;            end
-if nargin < 13 || isempty(objective);  objective = 'sse'; end
-if nargin < 12 || isempty(writelog);   writelog = 0;      end   
-if nargin < 11 || isempty(order);      order = 2;         end
-if nargin < 10 || isempty(mimo);       mimo = 0;          end
+if nargin < 16 || isempty(step_method);step_method = 3;   end
+if nargin < 15 || isempty(da);         da = 0;            end
+if nargin < 14 || isempty(im);         im = 0;            end
+if nargin < 13 || isempty(ba);         ba = 0;            end
+if nargin < 12 || isempty(objective);  objective = 'sse'; end
+if nargin < 11 || isempty(writelog);   writelog = 0;      end   
+if nargin < 10 || isempty(order);      order = 2;         end
 if nargin < 9  || isempty(min_df);     min_df = 0;        end
 if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
 if nargin < 7  || isempty(Q);          Q = 1;             end
@@ -126,7 +124,6 @@ aopt.y       = y(:);     % truth / data to fit
 aopt.pp      = x0(:);    % starting parameters
 aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
 aopt.history = [];       % error history when y=e & arg min y = f(x)
-aopt.mimo    = mimo;     % flag compute derivs w.r.t multi-outputs
 aopt.memory  = 0;        % incorporate previous gradients when recomputing
 aopt.fixedstepderiv = 1; % fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
@@ -726,8 +723,6 @@ imagesc(po);
 %bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
 %title('Parameter Change','color','w','fontsize',18);
 
-
-
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -881,76 +876,62 @@ end
 Y  = aopt.y;
 Q  = aopt.Q;
 
-%e  = sum( (spm_vec(Y) - spm_vec(y)).^2 );
-
-% if all(size(Q)>1) && ~strcmp(lower(method),'fe')
-%     
-%     % if square precision matrix was supplied, use this objective
-%     ey  = spm_vec(Y) - spm_vec(y);
-%     Q   = spm_unvec( rescale(spm_vec(Q),0,1), Q);
-%     eh  = (ey*ey').^2;
-%     qh  = full(Q+1).*eh;
-%     e   = sum(qh(:));
-%     %qh  = Q*(ey*ey') ;%*Q';    % i don't think the second Q term is needed
-%     %e   = sum(qh(:).^2);    
-%     e   = abs(e);
-% else
    
-    if ~isfield(aopt,'J')
-        aopt.J = ones(length(x0),length(spm_vec(y)));
-    end
-    if isfield(aopt,'J') && isvector(aopt.J)
-        aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
-    end
-          
-    
-    switch lower(method)
-        case {'free_energy','fe','freeenergy','logevidence'};
-    
-            % Free Energy Objective Function: F(p) = log evidence - divergence
-            %----------------------------------------------------------------------
-            Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
-            h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
-            iS = sparse(0);
-            
-            for i  = 1:length(Q)
-                iS = iS + Q{i}*(exp(-32) + exp(h(i)));
-            end
-            
-            ny  = length(spm_vec(y));
-            nq  = ny ./ length(Q);
-            e   = spm_vec(Y) - spm_vec(y);
-            ipC = aopt.ipC;
-            warning off; % don't warn abour singularity
-            
-            %if aopt.computeiCp
-                Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
-            %else
-            %    Cp = aopt.Cp;
-            %end
-            
-            warning on
-            p   = ( x0(:) - aopt.pp(:) );
+if ~isfield(aopt,'J')
+    aopt.J = ones(length(x0),length(spm_vec(y)));
+end
+if isfield(aopt,'J') && isvector(aopt.J)
+    aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
+end
 
-            if any(isnan(Cp(:))) 
-                Cp = Cp;
-            end
-                                    
-            L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
-            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-           %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
-            F    = sum(L);
-            e    = (-F);
-                        
-            aopt.Cp = Cp;
-            %aopt.Q  = iS;
-            
-            if strcmp(lower(method),'logevidence')
-                % for log evidence, ignore the parameter term
-                % its actually still an SSE measure really
-                F = L(1);
-                e = -F;
-            end
+
+switch lower(method)
+    case {'free_energy','fe','freeenergy','logevidence'};
+
+        % Free Energy Objective Function: F(p) = log evidence - divergence
+        %----------------------------------------------------------------------
+        Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
+        h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
+        iS = sparse(0);
+
+        for i  = 1:length(Q)
+            iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+        end
+
+        ny  = length(spm_vec(y));
+        nq  = ny ./ length(Q);
+        e   = spm_vec(Y) - spm_vec(y);
+        ipC = aopt.ipC;
+        warning off; % don't warn abour singularity
+
+        %if aopt.computeiCp
+            Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+        %else
+        %    Cp = aopt.Cp;
+        %end
+
+        warning on
+        p   = ( x0(:) - aopt.pp(:) );
+
+        if any(isnan(Cp(:))) 
+            Cp = Cp;
+        end
+
+        L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+        L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+       %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
+        F    = sum(L);
+        e    = (-F);
+
+        aopt.Cp = Cp;
+        %aopt.Q  = iS;
+
+        if strcmp(lower(method),'logevidence')
+            % for log evidence, ignore the parameter term
+            % its actually still an SSE measure really
+            F = L(1);
+            e = -F;
+        end
     
         % Other Objective Functions
         %------------------------------------------------------------------ 
@@ -1009,7 +990,6 @@ J = [];
 if nargout == 2
     V    = aopt.pC;
     Ord  = aopt.order; 
-    mimo = aopt.mimo;
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
@@ -1018,10 +998,8 @@ if nargout == 2
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     
-    if ~mimo; [J,ip] = jaco(@obj,x0,V,0,Ord);    ... df[e]   /dx [MISO]
-    else;     [J,ip] = jaco(@inter,x0,V,0,Ord);  ... df[e(k)]/dx [MIMO]
-    end
-    
+    [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
+
     %aopt.computeiCp = 1;
     
     % store for objective function

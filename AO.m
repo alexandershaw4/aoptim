@@ -451,7 +451,7 @@ while iterate
         x0 = -dp + x0;
         e0 =  e1;
                 
-        % M-step (like a line search?)
+        % (like a line search?)
         %==================================================================
         
         %if the system is (locally?) linear, and we know what dp caused de

@@ -625,11 +625,7 @@ while iterate
         F = e0;
                 
         % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-        
+        Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
         
         if writelog;fclose(loc);end
@@ -645,11 +641,7 @@ while iterate
         F = e0;
                 
         % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-
+        Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
         
         if writelog;fclose(loc);end
@@ -665,11 +657,7 @@ while iterate
             F = e0;
 
             % covariance estimation
-            J       = df0;
-            Pp      = real(J*1*J');
-            Pp      = V'*Pp*V;
-            Cp      = spm_inv(Pp + ipC);
-
+            Cp = aopt.Cp;
             PP = BayesInf(x0,Ep,diag(red));
 
             if writelog;fclose(loc);end
@@ -733,9 +721,6 @@ s(4).YColor = [1 1 1];
 s(4).XColor = [1 1 1];
 s(4).Color  = [.3 .3 .3];
 drawnow;
-
-
-
 end
 
 function makeplot(x,ox)
@@ -851,9 +836,10 @@ Y  = aopt.y;
 
 end
 
-function [e,J,er,mp] = obj(x0)
+function [e,J,er,mp,Cp] = obj(x0)
 % - compute the objective function - i.e. the sqaured error to minimise
-% - also returns the parameter Jacobian
+% - also returns the parameter Jacobian,  error (vector), model prediction
+% (vector) and covariance
 %
 
 global aopt
@@ -885,8 +871,8 @@ if isfield(aopt,'J') && isvector(aopt.J)
 end
 
 
-switch lower(method)
-    case {'free_energy','fe','freeenergy','logevidence'};
+%switch lower(method)
+%    case {'free_energy','fe','freeenergy','logevidence'};
 
         % Free Energy Objective Function: F(p) = log evidence - divergence
         %----------------------------------------------------------------------
@@ -920,10 +906,15 @@ switch lower(method)
         L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
         L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
        %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
+       
+       aopt.Cp = Cp;
+       
+switch lower(method)
+    case {'free_energy','fe','freeenergy','logevidence'};
         F    = sum(L);
         e    = (-F);
 
-        aopt.Cp = Cp;
+        %aopt.Cp = Cp;
         %aopt.Q  = iS;
 
         if strcmp(lower(method),'logevidence')
@@ -970,7 +961,7 @@ switch lower(method)
             %ey  = spm_vec(Y) - spm_vec(y);
             %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
             %e   = sum(qh(:).^2);
-    end
+end
 %end
 
 % error along output vector

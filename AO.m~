@@ -590,7 +590,7 @@ while iterate
     end
         
     if localminflag == 3
-        fprintf(loc,'I think we''re stuck...stopping\n');
+        %fprintf(loc,'I think we''re stuck...stopping\n');
         
         % return current best
         X = V*real(x0(ip));
@@ -880,7 +880,6 @@ end
         h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
         
         if isinf(h)
-            % for objective functions (no data/y)
             h = 1/8;
         end
         

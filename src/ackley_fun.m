@@ -2,6 +2,9 @@ function e = ackley_fun(x)
 % Ackley function
 % f(x1, x2) = f(3, 0.5) = 0.
 
+x = x(:);
+x = x';
+
 x1 = x(:,1);
 x2 = x(:,2);
 

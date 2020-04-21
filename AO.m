@@ -270,7 +270,7 @@ while iterate
         % descend while de < e1
         nfun = nfun + 1;
                                         
-        % Parameter Step
+        % Compute The Parameter Step
         %------------------------------------------------------------------
         if search_method == 1
             %dx    = (V*x1(ip)+x3*J');
@@ -281,7 +281,14 @@ while iterate
         elseif search_method == 3
             dx    = ( V*x1(ip) + (x3.*J) ); % (Rasmussen w/ diff p steps)  
         end
+        
                 
+        % The following options are essentially 'E-steps' in an Expectation
+        % Maximisation routine - i.e. they estimate the missing variables
+        % (parameter values) that should be optimised in this iteration
+        %------------------------------------------------------------------
+        
+        
         % (option) Momentum inclusion
         %------------------------------------------------------------------
         if n > 2 && IncMomentum
@@ -341,6 +348,24 @@ while iterate
             % parameter update
             ddx = dx(:) - x1(:);
             dx  = x1(:) + ddx.*iPQ(:);
+        end
+        
+        % (option) Param selection using maximum joint-probability estimates
+        %------------------------------------------------------------------
+        JPD = 1;
+        if JPD
+            [~,o]  = sort(pt,'descend');
+            for ns = 1:length(pt)
+                pjpd(ns) = prod( pt(o(1:ns)) );    
+                %pjpd(ns) = prod( pt(o(1:ns)) .* dx(o(1:ns))' );
+            end
+
+            % Selection & update: p(P(1:n)) where the jpd(1:n) is tol
+            selpar       = o( find( pjpd > 1e-6 ));
+           %selpar       = o( find( (pjpd./x3') > 1e-6 ));
+            newp         = x1;
+            newp(selpar) = dx(selpar);
+            dx           = newp(:);
         end
         
         

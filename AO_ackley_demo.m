@@ -27,3 +27,11 @@ step_method = 1;    % param step: 1=aggressive or 3=carful
 [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
                                 order,writelog,objective,ba,im,step_method)
                             
+
+% Another way of calling it:
+opts = AO('options');       % get the options struct
+opts.fun = @ackley_fun;     % fill in what you want...
+opts.x0  = [3 .5];
+opts.V   = [1 1]/512;
+opts.step_method = 1;
+[X,F] = AO(opts);           % call the optimser, passing the struct

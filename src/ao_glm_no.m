@@ -21,7 +21,19 @@ b  = ones(1,nb+1);
 V  = [2 b(2:end)/8];
 
 fun = @(b) (b(1)+b(2:end)*y');
-[b,F,Cp] = AO(fun,b,V,x,inf);
+%[b,F,Cp] = AO(fun,b,V,x,inf);
+
+opts     = AO('options');      
+opts.fun = fun;
+opts.x0  = b;
+opts.V   = V;
+opts.y   = x;
+opts.maxit = inf;
+opts.step_method = 1;
+opts.im = 1;
+opts.ba = 1;
+[b,F,Cp] = AO(opts);
+
 
 % compute betas on the non-orthongal predictors
 %----------------------------------------------------

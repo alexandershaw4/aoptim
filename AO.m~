@@ -1,5 +1,5 @@
 function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
-                                order,writelog,objective,ba,im,da,step_method)
+                                order,writelog,objective,ba,im,step_method)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]. Objective
 % function minimises free energy or the SSE.
@@ -22,12 +22,17 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %   F(p) = log evidence(y) - divergence(p)   ... (Free Energy Objective Fun)
 %
 % the usage is:
-%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,writelog,obj)
+%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,...
+%                                writelog,obj,ba,im,step_meth)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
 %
 % INPUTS:
+%-------------------------------------------------------------------------
+% *Note: you can either specify inputs in this order (to ommit use []), or
+% you can pass an options structure (see below).
+%
 % fun        = function handle / anonymous function
 % x0         = starting points (vector input to fun, mean of Gauss)
 % V          = variances controlling each element of x0 (var of Gauss)
@@ -43,12 +48,21 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
 % ba         = BayesAdjust flag (def=0): curb parameter step by P(p) 
 % im         = Include momentum (def=0): multiple steps in same dir=bigger step
-% da         = DivergencAdjust (def=0): adjust step size based on divergence
 % step_meth  = 1, 2 or 3 (def=3): 1=large, variance-controlled steps,
 %                                 2=small GaussNewton steps
 %                                 3=smaller (vanilla) steps (still var controlled)
 %
+% To call using an options structure, do this:
+%------------------------------------------------
+% opts = AO('options');   % get the options struct
+% opts.fun = @myfun       % fill in what you want...
+% opts.x0  = [0 1];
+% opts.V   = [1 1]/8;
+% opts.step_meth = 1;
+% [X,F] = AO(opts);       % call the optimser, passing the struct
+%
 % OUTPUTS:
+%-------------------------------------------------------------------------
 % X   = posterior parameters
 % F   = fit value (depending on objective function specified)
 % CP  = parameter covariance
@@ -63,6 +77,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 %       F    = -sum(L);
 % *NOTE THAT THE F-VALUE IS SIGN FLIPPED!*
+%
 %
 % Usage 2: minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -89,22 +104,28 @@ global aopt
 if nargin == 1 && strcmp(lower(fun),'help')
     PrintHelp(); return;
 end
+if nargin == 1 && strcmp(lower(fun),'options');
+    X = DefOpts; return;
+end
 
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
-if nargin < 16 || isempty(step_method);step_method = 3;   end
-if nargin < 15 || isempty(da);         da = 0;            end
-if nargin < 14 || isempty(im);         im = 0;            end
-if nargin < 13 || isempty(ba);         ba = 0;            end
-if nargin < 12 || isempty(objective);  objective = 'sse'; end
-if nargin < 11 || isempty(writelog);   writelog = 0;      end   
-if nargin < 10 || isempty(order);      order = 2;         end
-if nargin < 9  || isempty(min_df);     min_df = 0;        end
-if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
-if nargin < 7  || isempty(Q);          Q = 1;             end
-if nargin < 6  || isempty(inner_loop); inner_loop = 9999; end
-if nargin < 5  || isempty(maxit);      maxit = 128;       end
-if nargin < 4  || isempty(y);          y = 0;             end
+if nargin == 1 && isstruct(fun)
+    parseinputstruct(fun);
+else
+    if nargin < 15 || isempty(step_method);step_method = 3;   end
+    if nargin < 14 || isempty(im);         im = 0;            end
+    if nargin < 13 || isempty(ba);         ba = 0;            end
+    if nargin < 12 || isempty(objective);  objective = 'sse'; end
+    if nargin < 11 || isempty(writelog);   writelog = 0;      end   
+    if nargin < 10 || isempty(order);      order = 2;         end
+    if nargin < 9  || isempty(min_df);     min_df = 0;        end
+    if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
+    if nargin < 7  || isempty(Q);          Q = 1;             end
+    if nargin < 6  || isempty(inner_loop); inner_loop = 9999; end
+    if nargin < 5  || isempty(maxit);      maxit = 128;       end
+    if nargin < 4  || isempty(y);          y = 0;             end
+end
 
 % Set up log if requested
 persistent loc ;
@@ -131,8 +152,7 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
-IncMomentum = im; % [remove] Observe and use momentum data            
-DivAdjust   = da; % [remove] Divergence adjustment
+IncMomentum = im; % Observe and use momentum data            
 
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
@@ -192,7 +212,6 @@ localminflag = 0;  % triggers when stuck in local minima
 
 if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
 if IncMomentum; fprintf('Using Momentum option\n');    end
-if DivAdjust  ; fprintf('Using Divergence option\n');  end
 fprintf('Using step-method %d\n',step_method);
 
 % print start point - to console or logbook (loc)
@@ -278,7 +297,6 @@ while iterate
         % Compute The Parameter Step
         %------------------------------------------------------------------
         if search_method == 1
-            %dx    = (V*x1(ip)+x3*J');
             dx    = (V*x1(ip)+ x3*J'); 
         elseif search_method == 2 
             ddx   = spm_dx(dFdpp,dFdp,{red})';
@@ -286,14 +304,11 @@ while iterate
         elseif search_method == 3
             dx    = ( V*x1(ip) + (x3.*J) ); % (Rasmussen w/ diff p steps)  
         end
-        
                 
         % The following options are essentially 'E-steps' in an Expectation
         % Maximisation routine - i.e. they estimate the missing variables
-        % (parameter values) that should be optimised in this iteration
-        %------------------------------------------------------------------
-        
-        
+        % (parameter's values) that should be optimised in this iteration
+        %==================================================================
         
         % (option) Momentum inclusion
         %------------------------------------------------------------------
@@ -316,32 +331,15 @@ while iterate
             end
         end
         
-
-        
-
         % This computes the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)
+        %------------------------------------------------------------------
         for i = 1:length(x1)
             pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
             pdt(i) = 1-cdf( pd(i), (x1(i)));
             pt(i)  = 1-cdf( pd(i), (dx(i)));
         end
         
-        
-        % (option) Divergence adjustment
-        %------------------------------------------------------------------
-%         if DivAdjust
-%             % This probably isn't a good idea actually
-%             % Divergence of the prob distribution 
-%             PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
-%             iPQ = 1./(1 - PQ);
-% 
-%             % Parameter update
-%             ddx = dx(:) - x1(:);
-%             dx  = x1(:) + ddx.*iPQ(:);
-%         end
-        
-
         % (option) Param selection using maximum joint-probability estimates
         %------------------------------------------------------------------
         JPD = BayesAdjust;
@@ -363,7 +361,6 @@ while iterate
             % (resulting from the GD), it asks, what is the effect of
             % also updating the parameter with the next highest probability
             % ... and so on until we hit a small threshold param, JPDtol.
-            
             selpar       = o( find( growth(:) > JPDtol ));            
             newp         = x1;
             newp(selpar) = dx(selpar);
@@ -884,7 +881,7 @@ Y  = aopt.y;
 Q  = aopt.Q;
 
 % Check / complete the derivative matrix
-%------------------------------------------------
+%--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
     aopt.J = ones(length(x0),length(spm_vec(y)));
 end
@@ -893,7 +890,7 @@ if isfield(aopt,'J') && isvector(aopt.J)
 end
 
 % Free Energy Objective Function: F(p) = log evidence - divergence
-%----------------------------------------------------------------------
+%--------------------------------------------------------------------------
 Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
 h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
 
@@ -1104,6 +1101,44 @@ fprintf('Finished computing step sizes in %d iterations (%d s)\n',n,round(toc));
 
 end
 
+function X = DefOpts()
+X.step_method = 3;
+X.im          = 1;
+X.ba          = 0;
+X.objective   = 'fe';
+X.writelog    = 0;
+X.order       = 2;
+X.min_df      = 0;
+X.criterion   = 1e-3;
+X.Q           = [];
+X.inner_loop  = 9999;
+X.maxit       = 128;
+X.y           = 0;
+X.V           = [];
+X.x0          = [];
+X.fun         = [];
+end
+
+function parseinputstruct(opts)
+fprintf('User supplied options s
+
+def = DefOpts();
+opt = fieldnames(def);
+
+% complete the options 
+for i = 1:length(opt)
+    if isfield(opts,opt{i})
+        def.(opt{i}) = opts.(opt{i});
+    end
+end
+
+% send it back to the caller (AO.m)
+for i = 1:length(opt)
+    assignin('caller',opt{i},def.(opt{i}));
+end
+
+end
+
 function PrintHelp()
 
 fprintf(['AO implements a gradient descent optimisation that incorporates \n' ...
@@ -1161,4 +1196,17 @@ end
 %             end
 %             BayesPlot(-10:10,pr,po);
 %             
+%         end
+
+        % (option) Divergence adjustment
+        %------------------------------------------------------------------
+%         if DivAdjust
+%             % This probably isn't a good idea actually
+%             % Divergence of the prob distribution 
+%             PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
+%             iPQ = 1./(1 - PQ);
+% 
+%             % Parameter update
+%             ddx = dx(:) - x1(:);
+%             dx  = x1(:) + ddx.*iPQ(:);
 %         end

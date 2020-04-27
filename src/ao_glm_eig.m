@@ -34,6 +34,7 @@ V  = [2 b(2:end)/nb*nc];
 fun = @(b) (b(1)+b(2:nc+1)*reshape(b(nc+2:end),[nc nb])*y');
 [b,F,Cp] = AO(fun,b,V,x,inf,[],[],1e-8);
 
+
 % compute betas on the non-orthongal predictors
 %----------------------------------------------------
 b = b';

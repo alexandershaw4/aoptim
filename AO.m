@@ -22,12 +22,17 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %   F(p) = log evidence(y) - divergence(p)   ... (Free Energy Objective Fun)
 %
 % the usage is:
-%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,writelog,obj)
+%   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,...
+%                                writelog,obj,ba,im,step_meth)
 %
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
 %
 % INPUTS:
+%-------------------------------------------------------------------------
+% *Note: you can either specify inputs in this order (to ommit use []), or
+% you can pass an options structure (see below).
+%
 % fun        = function handle / anonymous function
 % x0         = starting points (vector input to fun, mean of Gauss)
 % V          = variances controlling each element of x0 (var of Gauss)
@@ -47,7 +52,17 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %                                 2=small GaussNewton steps
 %                                 3=smaller (vanilla) steps (still var controlled)
 %
+% To call using an options structure, do this:
+%------------------------------------------------
+% opts = AO('options');   % get the options struct
+% opts.fun = @myfun       % fill in what you want...
+% opts.x0  = [0 1];
+% opts.V   = [1 1]/8;
+% opts.step_meth = 1;
+% [X,F] = AO(opts);       % call the optimser, passing the struct
+%
 % OUTPUTS:
+%-------------------------------------------------------------------------
 % X   = posterior parameters
 % F   = fit value (depending on objective function specified)
 % CP  = parameter covariance
@@ -62,6 +77,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 %       F    = -sum(L);
 % *NOTE THAT THE F-VALUE IS SIGN FLIPPED!*
+%
 %
 % Usage 2: minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -88,21 +104,28 @@ global aopt
 if nargin == 1 && strcmp(lower(fun),'help')
     PrintHelp(); return;
 end
+if nargin == 1 && strcmp(lower(fun),'options');
+    X = DefOpts; return;
+end
 
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
-if nargin < 15 || isempty(step_method);step_method = 3;   end
-if nargin < 14 || isempty(im);         im = 0;            end
-if nargin < 13 || isempty(ba);         ba = 0;            end
-if nargin < 12 || isempty(objective);  objective = 'sse'; end
-if nargin < 11 || isempty(writelog);   writelog = 0;      end   
-if nargin < 10 || isempty(order);      order = 2;         end
-if nargin < 9  || isempty(min_df);     min_df = 0;        end
-if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
-if nargin < 7  || isempty(Q);          Q = 1;             end
-if nargin < 6  || isempty(inner_loop); inner_loop = 9999; end
-if nargin < 5  || isempty(maxit);      maxit = 128;       end
-if nargin < 4  || isempty(y);          y = 0;             end
+if nargin == 1 && isstruct(fun)
+    parseinputstruct(fun);
+else
+    if nargin < 15 || isempty(step_method);step_method = 3;   end
+    if nargin < 14 || isempty(im);         im = 0;            end
+    if nargin < 13 || isempty(ba);         ba = 0;            end
+    if nargin < 12 || isempty(objective);  objective = 'sse'; end
+    if nargin < 11 || isempty(writelog);   writelog = 0;      end   
+    if nargin < 10 || isempty(order);      order = 2;         end
+    if nargin < 9  || isempty(min_df);     min_df = 0;        end
+    if nargin < 8  || isempty(criterion);  criterion = 1e-2;  end
+    if nargin < 7  || isempty(Q);          Q = 1;             end
+    if nargin < 6  || isempty(inner_loop); inner_loop = 9999; end
+    if nargin < 5  || isempty(maxit);      maxit = 128;       end
+    if nargin < 4  || isempty(y);          y = 0;             end
+end
 
 % Set up log if requested
 persistent loc ;
@@ -1075,6 +1098,44 @@ end
 V = v;
 
 fprintf('Finished computing step sizes in %d iterations (%d s)\n',n,round(toc));
+
+end
+
+function X = DefOpts()
+X.step_method = 3;
+X.im          = 1;
+X.ba          = 0;
+X.objective   = 'fe';
+X.writelog    = 0;
+X.order       = 2;
+X.min_df      = 0;
+X.criterion   = 1e-3;
+X.Q           = [];
+X.inner_loop  = 9999;
+X.maxit       = 128;
+X.y           = 0;
+X.V           = [];
+X.x0          = [];
+X.fun         = [];
+end
+
+function parseinputstruct(opts)
+fprintf('User supplied options /config structure...\n');
+
+def = DefOpts();
+opt = fieldnames(def);
+
+% complete the options 
+for i = 1:length(opt)
+    if isfield(opts,opt{i})
+        def.(opt{i}) = opts.(opt{i});
+    end
+end
+
+% send it back to the caller (AO.m)
+for i = 1:length(opt)
+    assignin('caller',opt{i},def.(opt{i}));
+end
 
 end
 

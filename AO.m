@@ -62,6 +62,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %       L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;  ...
 %       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 %       F    = -sum(L);
+% *NOTE THAT THE F-VALUE IS SIGN FLIPPED!*
 %
 % Usage 2: minimise objective problems of the form:
 %--------------------------------------------------------------------------
@@ -130,8 +131,8 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
-IncMomentum = im; % Observe and use momentum data            
-DivAdjust   = da; % Divergence adjustment
+IncMomentum = im; % [remove] Observe and use momentum data            
+DivAdjust   = da; % [remove] Divergence adjustment
 
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
@@ -174,6 +175,10 @@ end
 %--------------------------------------------------------------------------
 n_reject_consec = 0;
 search          = 0;
+
+% Initial JPD growth factor tolerance
+Initial_JPDtol = 1e-10;
+JPDtol = Initial_JPDtol;
 
 % parameters (in reduced space)
 %--------------------------------------------------------------------------
@@ -273,7 +278,6 @@ while iterate
         % Compute The Parameter Step
         %------------------------------------------------------------------
         if search_method == 1
-            %dx    = (V*x1(ip)+x3*J');
             dx    = (V*x1(ip)+ x3*J'); 
         elseif search_method == 2 
             ddx   = spm_dx(dFdpp,dFdp,{red})';
@@ -281,13 +285,11 @@ while iterate
         elseif search_method == 3
             dx    = ( V*x1(ip) + (x3.*J) ); % (Rasmussen w/ diff p steps)  
         end
-        
                 
         % The following options are essentially 'E-steps' in an Expectation
         % Maximisation routine - i.e. they estimate the missing variables
-        % (parameter values) that should be optimised in this iteration
-        %------------------------------------------------------------------
-        
+        % (parameter's values) that should be optimised in this iteration
+        %==================================================================
         
         % (option) Momentum inclusion
         %------------------------------------------------------------------
@@ -310,62 +312,43 @@ while iterate
             end
         end
         
-        % (option) Probability constraint
-        %------------------------------------------------------------------
-        if BayesAdjust
-            % Probabilities of these (predicted) values actually belonging to
-            % the prior distribution as a bound on parameter step
-            % (with arbitrary threshold)
-            ddx = dx - x1;
-            ppx = spm_Ncdf(abs(x0),abs(dx),sqrt(red)); ppx(ppx<.2) = 0.2;
-                    
-            % parameter update
-            dx = x1 + (ddx.*ppx);
-            
-            % mock some distributions to visualise changes
-            for i = 1:length(x1)
-                pd(i)   = makedist('normal','mu',abs(x1(i)),'sigma', ( red(i) ));
-                pr(i,:) = pdf(pd(i),abs(x1(i))-10:abs(x1(i))+10);
-                po(i,:) = pdf(pd(i),abs(dx(i))-10:abs(dx(i))+10);
-            end
-            BayesPlot(-10:10,pr,po);
-            
-        end
-        
-        % (option) Divergence adjustment
+        % This computes the probabilities of each (predicted) new parameter
+        % coming from the same distribution defined by the prior (last best)
         %------------------------------------------------------------------
         for i = 1:length(x1)
-            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', ( red(i) ));
+            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
             pdt(i) = 1-cdf( pd(i), (x1(i)));
             pt(i)  = 1-cdf( pd(i), (dx(i)));
-        end
-        if DivAdjust
-            
-            % Divergence of the prob distribution 
-            PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
-            iPQ = 1./(1 - PQ);
-
-            % parameter update
-            ddx = dx(:) - x1(:);
-            dx  = x1(:) + ddx.*iPQ(:);
         end
         
         % (option) Param selection using maximum joint-probability estimates
         %------------------------------------------------------------------
-        JPD = 1;
+        JPD = BayesAdjust;
         if JPD
-            [~,o]  = sort(pt,'descend');
+            % Compute JPs from rank sorted p(P)s            
+            [~,o]  = sort(pt(:),'descend');
             for ns = 1:length(pt)
-                pjpd(ns) = prod( pt(o(1:ns)) );    
-                %pjpd(ns) = prod( pt(o(1:ns)) .* dx(o(1:ns))' );
+                pjpd(ns) = prod( pt(o(1:ns)) ) * ns;    
             end
-
-            % Selection & update: p(P(1:n)) where the jpd(1:n) is tol
-            selpar       = o( find( pjpd > 1e-6 ));
-           %selpar       = o( find( (pjpd./x3') > 1e-6 ));
+            
+            % Compute 'growth rate' of (prob ranked) parameter inclusions
+            growth(1) = 1;
+            for i = 2:length(pjpd)
+                growth(i) = pjpd(i) ./ growth(i-1);
+            end
+            
+            % JPDtol is a hyperparameter             
+            % Starting with the highest probability parameter estimate
+            % (resulting from the GD), it asks, what is the effect of
+            % also updating the parameter with the next highest probability
+            % ... and so on until we hit a small threshold param, JPDtol.
+            selpar       = o( find( growth(:) > JPDtol ));            
             newp         = x1;
             newp(selpar) = dx(selpar);
             dx           = newp(:);
+            
+            probplot(pjpd,JPDtol);
+                                    
         end
         
         
@@ -398,38 +381,6 @@ while iterate
             de         = obj(dx);
         end
         
-%         % Check the new parameter estimates (dx)?
-%         Check = 1;
-%         
-%         if Check == 1
-%                         
-%             % Assess each new (extrapolated) parameter estimate individually, 
-%             % update only improvers
-%             for nip = 1:length(dx)
-%                 XX       = V*x0;
-%                 XX(nip)  = dx(nip);
-%                 DFE(nip) = obj(real(XX));
-%             end
-% 
-%             % Identify improver-parameters
-%             gp  = double(DFE < e0); % e0
-%             gpi = find(gp);
-% 
-%             % Only update select parameters
-%             ddx        = V*x0;
-%             ddx(gpi)   = dx(gpi);
-%             dx         = ddx;
-%             de         = obj(dx);
-%             
-%         elseif Check == 0
-%             
-%             % Don't perform checks, assume all f(dx[i]) <= e1
-%             gp  = ones(1,length(x0));
-%             gpi = 1:length(x0);
-%             de  = obj(dx);
-%             DFE = ones(1,length(x0))*de; 
-%             
-%         end
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
@@ -508,35 +459,36 @@ while iterate
         % print & plots success
         %------------------------------------------------------------------
         pupdate(loc,n,nfun,e1,e0,'accept',toc);
-        if doplot; makeplot(V*x0(ip),x1); end
+        if doplot; makeplot(V*x0(ip),aopt.pp); end
         n_reject_consec = 0;
         dff = [dff df];
+        JPDtol = Initial_JPDtol;
+
     else
         
-        % if didn't improve: what to do?
-        %------------------------------------------------------------------
+        % if didn't improve: perform much more selective parameter update
+        %==================================================================
         pupdate(loc,n,nfun,e1,e0,'select',toc);             
         
-        % sample from improvers params in dx
+        % improver params in dx
         %------------------------------------------------------------------
         thisgood = gp*0;
         if any(gp)
             
-            % sort good params by improvement amount *OR probability*
+            % sort good params by improvement amount * probability
             %--------------------------------------------------------------
-            %[~,PO] = sort(DFE(gpi),'descend'); % or ascend? ..
-            %[~,PO] = sort(pt(gpi),'descend');
-            
             % update p's causing biggest improvment in fe while maintaining highest P(p)
-            [~,PO] = sort(pt(gpi).*DFE(gpi),'ascend'); % DFE(gpi) = dp that cause imrpvoements
-            dx0    = real(dx);
+            %[~,PO] = sort(pt(gpi).*DFE(gpi),'ascend'); % DFE(gpi) = dp that cause imrpvoements
+            %[~,PO] = sort(pt(gpi),'descend');
+            [~,PO] = sort(pt(gpi).*rescale(-DFE(gpi)),'descend');
+            
+            dx0 = real(dx);
             
             % loop the good params in effect-size order
-            % accept on the fly (additive effects)
             %--------------------------------------------------------------
             improve1 = 1;
             while improve1
-                thisgood = gp*0;
+                thisgood = gp*0; % tracks which params are updated below
                 % evaluate the 'good' parameters
                 for i  = 1:length(gpi)
                     xnew             = real(V*x0);
@@ -562,6 +514,10 @@ while iterate
                     
                     % reset rejection counter
                     n_reject_consec = 0;
+                    
+                    % reset JPDtol
+                    JPDtol = Initial_JPDtol;
+
                 else
                     % reduce step and go back to main loop
                     red = red*.8;
@@ -586,6 +542,10 @@ while iterate
             aopt.pC = V*red;
             % keep counting rejections
             n_reject_consec = n_reject_consec + 1;
+            
+            % loosen JPDtol (temporarily)
+            JPDtol = JPDtol * 1e-10;
+            pupdate(loc,n,nfun,e0,e0,'TolAdj',toc);
         end
                             
     end
@@ -615,18 +575,14 @@ while iterate
     end
         
     if localminflag == 3
-        fprintf(loc,'I think we''re stuck...stopping\n');
+        fprintf(loc,'I think we''re stuck...stopping.\n');
         
         % return current best
         X = V*real(x0(ip));
         F = e0;
                 
         % covariance estimation
-        J       = df0;
-        Pp      = real(J*1*J');
-        Pp      = V'*Pp*V;
-        Cp      = spm_inv(Pp + ipC);
-        
+        Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
         
         if writelog;fclose(loc);end
@@ -643,7 +599,7 @@ while iterate
     
     % stop at max iterations
     if n == maxit
-        fprintf(loc,'Reached max iterations: stopping\n');
+        fprintf(loc,'Reached maximum iterations: stopping.\n');
         
         % return current best
         X = V*real(x0(ip));
@@ -748,6 +704,24 @@ s(4).Color  = [.3 .3 .3];
 drawnow;
 end
 
+function probplot(growth,thresh)
+
+growth(isnan(growth))=0;
+these = find(growth>thresh);
+s = subplot(414);
+plot(growth,'w','linewidth',3);hold on
+plot(growth(these),'linewidth',3,'Color',[1 .7 .7]);
+title('Param Joint Probability Landscape','color','w','fontsize',18);
+ax = gca;
+ax.XGrid = 'off';
+ax.YGrid = 'on';
+s.YColor = [1 1 1];
+s.XColor = [1 1 1];
+s.Color  = [.3 .3 .3];
+drawnow;hold off;
+
+end
+
 function makeplot(x,ox)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
@@ -810,7 +784,7 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
 %     drawnow;
 else
 %if iscell(Y)
-    s(1) = subplot(311);
+    s(1) = subplot(411);
     plot(spm_cat(Y),'w:','linewidth',3); hold on;
     plot(spm_cat(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
     grid on;grid minor;title('AO: System Identification','color','w','fontsize',18);
@@ -818,7 +792,7 @@ else
     s(1).XColor = [1 1 1];
     s(1).Color  = [.3 .3 .3];
 
-    s(2) = subplot(312);
+    s(2) = subplot(412);
     %bar([former_error new_error]);
     plot(former_error,'w--','linewidth',3); hold on;
     plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -828,7 +802,7 @@ else
     s(2).Color  = [.3 .3 .3];
     
     
-    s(3) = subplot(313);
+    s(3) = subplot(413);
     bar([ x(:)-ox(:) ],'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
     ax = gca;
@@ -887,7 +861,8 @@ end
 Y  = aopt.y;
 Q  = aopt.Q;
 
-   
+% Check / complete the derivative matrix
+%--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
     aopt.J = ones(length(x0),length(spm_vec(y)));
 end
@@ -895,50 +870,48 @@ if isfield(aopt,'J') && isvector(aopt.J)
     aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
 end
 
+% Free Energy Objective Function: F(p) = log evidence - divergence
+%--------------------------------------------------------------------------
+Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
+h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
 
-%switch lower(method)
-%    case {'free_energy','fe','freeenergy','logevidence'};
+if isinf(h)
+    % for objective functions (no data/y)
+    h = 1/8;
+end
 
-        % Free Energy Objective Function: F(p) = log evidence - divergence
-        %----------------------------------------------------------------------
-        Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
-        h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
-        
-        if isinf(h)
-            % for objective functions (no data/y)
-            h = 1/8;
-        end
-        
-        iS = sparse(0);
+iS = sparse(0);
 
-        for i  = 1:length(Q)
-            iS = iS + Q{i}*(exp(-32) + exp(h(i)));
-        end
+for i  = 1:length(Q)
+    iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+end
 
-        ny  = length(spm_vec(y));
-        nq  = ny ./ length(Q);
-        e   = spm_vec(Y) - spm_vec(y);
-        ipC = aopt.ipC;
-        warning off; % don't warn abour singularity
+ny  = length(spm_vec(y));
+nq  = ny ./ length(Q);
+e   = spm_vec(Y) - spm_vec(y);
 
-        %if aopt.computeiCp
-            Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
-        %else
-        %    Cp = aopt.Cp;
-        %end
+ipC = aopt.ipC;
+warning off; % don't warn abour singularity
 
-        warning on
-        p   = ( x0(:) - aopt.pp(:) );
+%if aopt.computeiCp
+    Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+%else
+%    Cp = aopt.Cp;
+%end
 
-        if any(isnan(Cp(:))) 
-            Cp = Cp;
-        end
+warning on
+p   = ( x0(:) - aopt.pp(:) );
 
-        L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
-        L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-       %L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
-       
-       aopt.Cp = Cp;
+if any(isnan(Cp(:))) 
+    Cp = Cp;
+end
+
+L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+%L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
+
+aopt.Cp = Cp;
+              
        
 switch lower(method)
     case {'free_energy','fe','freeenergy','logevidence'};
@@ -1139,3 +1112,44 @@ fprintf(['AO implements a gradient descent optimisation that incorporates \n' ..
 
 
 end
+
+% Other experiment stuff
+%---------------------------------------------
+
+
+
+        % (option) Probability constraint
+        %------------------------------------------------------------------
+%         if BayesAdjust
+%             % This probably isn't sensible, use the JPD method instead.
+%             % Probabilities of these (predicted) values actually belonging to
+%             % the prior distribution as a bound on parameter step
+%             % (with arbitrary threshold)
+%             ddx = dx - x1;
+%             ppx = spm_Ncdf(abs(x0),abs(dx),sqrt(red)); ppx(ppx<.2) = 0.2;
+%                     
+%             % Parameter update
+%             dx = x1 + (ddx.*ppx);
+%             
+%             % mock some distributions to visualise changes
+%             for i = 1:length(x1)
+%                 pd(i)   = makedist('normal','mu',abs(x1(i)),'sigma', ( red(i) ));
+%                 pr(i,:) = pdf(pd(i),abs(x1(i))-10:abs(x1(i))+10);
+%                 po(i,:) = pdf(pd(i),abs(dx(i))-10:abs(dx(i))+10);
+%             end
+%             BayesPlot(-10:10,pr,po);
+%             
+%         end
+
+        % (option) Divergence adjustment
+        %------------------------------------------------------------------
+%         if DivAdjust
+%             % This probably isn't a good idea actually
+%             % Divergence of the prob distribution 
+%             PQ  = pt(:).*log( pt(:)./pdt(:) );  PQ(isnan(PQ)) = 0;
+%             iPQ = 1./(1 - PQ);
+% 
+%             % Parameter update
+%             ddx = dx(:) - x1(:);
+%             dx  = x1(:) + ddx.*iPQ(:);
+%         end

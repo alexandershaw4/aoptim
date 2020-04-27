@@ -1,5 +1,5 @@
 function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
-                                order,writelog,objective,ba,im,da,step_method)
+                                order,writelog,objective,ba,im,step_method)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
 % model fitting [system identification & parameter estimation]. Objective
 % function minimises free energy or the SSE.
@@ -43,7 +43,6 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
 % ba         = BayesAdjust flag (def=0): curb parameter step by P(p) 
 % im         = Include momentum (def=0): multiple steps in same dir=bigger step
-% da         = DivergencAdjust (def=0): adjust step size based on divergence
 % step_meth  = 1, 2 or 3 (def=3): 1=large, variance-controlled steps,
 %                                 2=small GaussNewton steps
 %                                 3=smaller (vanilla) steps (still var controlled)
@@ -92,8 +91,7 @@ end
 
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
-if nargin < 16 || isempty(step_method);step_method = 3;   end
-if nargin < 15 || isempty(da);         da = 0;            end
+if nargin < 15 || isempty(step_method);step_method = 3;   end
 if nargin < 14 || isempty(im);         im = 0;            end
 if nargin < 13 || isempty(ba);         ba = 0;            end
 if nargin < 12 || isempty(objective);  objective = 'sse'; end
@@ -131,8 +129,7 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
-IncMomentum = im; % [remove] Observe and use momentum data            
-DivAdjust   = da; % [remove] Divergence adjustment
+IncMomentum = im; % Observe and use momentum data            
 
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
@@ -192,7 +189,6 @@ localminflag = 0;  % triggers when stuck in local minima
 
 if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
 if IncMomentum; fprintf('Using Momentum option\n');    end
-if DivAdjust  ; fprintf('Using Divergence option\n');  end
 fprintf('Using step-method %d\n',step_method);
 
 % print start point - to console or logbook (loc)

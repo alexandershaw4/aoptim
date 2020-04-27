@@ -350,11 +350,14 @@ while iterate
                 pjpd(ns) = prod( pt(o(1:ns)) ) * ns;    
             end
             
+            %pjpd = pjpd./sum(pjpd);
+            
             % Compute 'growth rate' of (prob ranked) parameter inclusions
             growth(1) = 1;
             for i = 2:length(pjpd)
                 growth(i) = pjpd(i) ./ growth(i-1);
             end
+            %growth = pjpd;
             
             % JPDtol is a hyperparameter             
             % Starting with the highest probability parameter estimate
@@ -1120,7 +1123,7 @@ X.fun         = [];
 end
 
 function parseinputstruct(opts)
-fprintf('User supplied options s
+fprintf('User supplied options /config structure...\n');
 
 def = DefOpts();
 opt = fieldnames(def);

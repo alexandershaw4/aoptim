@@ -335,7 +335,8 @@ while iterate
         % coming from the same distribution defined by the prior (last best)
         %------------------------------------------------------------------
         for i = 1:length(x1)
-            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
+            %dred   = diag(aopt.Cp);
+            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( dred(i) ));
             pdt(i) = 1-cdf( pd(i), (x1(i)));
             pt(i)  = 1-cdf( pd(i), (dx(i)));
         end
@@ -1120,7 +1121,7 @@ X.fun         = [];
 end
 
 function parseinputstruct(opts)
-fprintf('User supplied options /config structure...\n');
+fprintf('User supplied options / config structure...\n');
 
 def = DefOpts();
 opt = fieldnames(def);

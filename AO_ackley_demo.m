@@ -20,11 +20,10 @@ min_df      = -inf; % minimum average imporvement expected (-inf=off)
 order       = 2;    % see jaco: derivates order (recomnd 2 or 1)
 writelog    = 0;    % write outputs to a log=1, or console=0
 objective   = 'fe'; % objective: 'fe' (free energy), 'sse', 'mse', 'rmse', 'logevidence'
-ba          = 0;    % explicitly (Bayesian) adjust param predictions 
+ba          = 1;    % explicitly (Bayesian) adjust param predictions 
 im          = 1;    % include momentum term (recommend)
-da          = 0;    % divergence adjustment
 step_method = 1;    % param step: 1=aggressive or 3=carful
 
 [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
-                                order,writelog,objective,ba,im,da,step_method)
+                                order,writelog,objective,ba,im,step_method)
                             

@@ -68,7 +68,7 @@ switch lower(method)
     case 'fe'
     % minimise free energy:
     fprintf('Minimising Free-Energy\n');
-    [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,writelog,'fe',0,1,[],3);
+    [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,writelog,'fe',0,1,3);
     case 'logevidence'
     fprintf('Minimising -[log evidence]\n');
     [X,F,CP,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,writelog,'logevidence');

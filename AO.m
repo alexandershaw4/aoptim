@@ -336,7 +336,7 @@ while iterate
         %------------------------------------------------------------------
         for i = 1:length(x1)
             %dred   = diag(aopt.Cp);
-            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( dred(i) ));
+            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
             pdt(i) = 1-cdf( pd(i), (x1(i)));
             pt(i)  = 1-cdf( pd(i), (dx(i)));
         end

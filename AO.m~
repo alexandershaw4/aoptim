@@ -172,7 +172,7 @@ pC  = diag(V);
 %V     = spm_svd(pC);
 V     = eye(length(x0));    %turn off svd 
 pC    = V'*pC*V;
-ipC   = spm_inv(spm_cat(spm_diag({pC})));
+ipC   = inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
 aopt.pC  = V*red;      % store for derivative & objective function access
@@ -331,7 +331,7 @@ while iterate
             end
         end
         
-        % Computes the probabilities of each (predicted) new parameter
+        % This computes the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)
         %------------------------------------------------------------------
         for i = 1:length(x1)
@@ -340,8 +340,39 @@ while iterate
             pt(i)  = (1-cdf( pd(i), (dx(i))));
         end
                 
+        % (option) Param selection using maximum joint-probability estimates
+        %------------------------------------------------------------------
+%         JPD = BayesAdjust;
+%         if JPD
+%             % Compute JPs from rank sorted p(P)s            
+%             [~,o]  = sort(pt(:),'descend');
+%             for ns = 1:length(pt)
+%                 pjpd(ns) = prod( pt(o(1:ns)) ) * ns;    
+%             end
+%             
+%             % Compute 'growth rate' of (prob ranked) parameter inclusions
+%             growth(1) = 1;
+%             for i = 2:length(pjpd)
+%                 growth(i) = pjpd(i) ./ growth(i-1);
+%             end
+%             
+%             % JPDtol is a hyperparameter             
+%             % Starting with the highest probability parameter estimate
+%             % (resulting from the GD), it asks, what is the effect of
+%             % also updating the parameter with the next highest probability
+%             % ... and so on until we hit a small threshold param, JPDtol.
+%             selpar       = o( find( growth(:) > JPDtol ));            
+%             newp         = x1;
+%             newp(selpar) = dx(selpar);
+%             dx           = newp(:);
+%             
+%             probplot(pjpd,JPDtol);
+%                                     
+%         end
         
-        % Given (gradient) predictions, dp[i..n], optimise obj(dp) 
+        
+        % Evaluate parameter(s) step: 
+        % Given (gradient) predictions, x0, 
         %------------------------------------------------------------------
         if obj(dx) < obj(x1) && ~BayesAdjust
             
@@ -352,7 +383,8 @@ while iterate
             DFE = ones(1,length(x0))*de; 
 
         else
-            % Assess each new parameter estimate (step) individually
+            % Assess each new (extrapolated) parameter estimate individually, 
+            % update only improvers
             for nip = 1:length(dx)
                 XX       = V*x0;
                 XX(nip)  = dx(nip);
@@ -361,7 +393,7 @@ while iterate
             
             % Likelihood function: goodness of fit (i.e. error) conferred by p updt
             for i = 1:length(DFE)
-                pe(i)  = makedist('normal','mu', 0,'sigma', sqrt( diag(aopt.Cp) ));
+                pe(i)  = makedist('normal','mu', 0,'sigma', sqrt( red(i) ));
                 pde(i) = (1-cdf( pe(i), DFE(i)-e1 ) );
             end
             
@@ -381,11 +413,10 @@ while iterate
                 de         = obj(dx);
             else
                 % Maximum likelihood estimation: find optimim parameter(s) set
-                % from optimum param joint probabilities^
-                % - maximising likelihood function
+                % from combination of param probs (JPs) - maximising likelihood function
                 [~,o]  = sort(PP(:),'descend');
                 for ns = 1:length(PP)
-                    % p(P[1] & P[2]) = p(P[1]) * p(P[2]) ... ^ 
+                    % p(P[1] & P[2]) = p(P[1]) * p(P[2]) ... 
                     pjpd(ns) = prod( PP(o(1:ns)) );
                 end
                 
@@ -1208,34 +1239,4 @@ end
 %             % Parameter update
 %             ddx = dx(:) - x1(:);
 %             dx  = x1(:) + ddx.*iPQ(:);
-%         end
-
-        % (option) Param selection using maximum joint-probability estimates
-        %------------------------------------------------------------------
-%         JPD = BayesAdjust;
-%         if JPD
-%             % Compute JPs from rank sorted p(P)s            
-%             [~,o]  = sort(pt(:),'descend');
-%             for ns = 1:length(pt)
-%                 pjpd(ns) = prod( pt(o(1:ns)) ) * ns;    
-%             end
-%             
-%             % Compute 'growth rate' of (prob ranked) parameter inclusions
-%             growth(1) = 1;
-%             for i = 2:length(pjpd)
-%                 growth(i) = pjpd(i) ./ growth(i-1);
-%             end
-%             
-%             % JPDtol is a hyperparameter             
-%             % Starting with the highest probability parameter estimate
-%             % (resulting from the GD), it asks, what is the effect of
-%             % also updating the parameter with the next highest probability
-%             % ... and so on until we hit a small threshold param, JPDtol.
-%             selpar       = o( find( growth(:) > JPDtol ));            
-%             newp         = x1;
-%             newp(selpar) = dx(selpar);
-%             dx           = newp(:);
-%             
-%             probplot(pjpd,JPDtol);
-%                                     
 %         end

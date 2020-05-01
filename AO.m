@@ -1,10 +1,10 @@
 function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
                                 order,writelog,objective,ba,im,step_method)
 % A Bayesian gradient/curvature descent-based optimisation, primarily for 
-% model fitting [system identification & parameter estimation]. Objective
-% function minimises free energy or the SSE.
+% model fitting, system identification & parameter estimation. 
+% Objective function minimises free energy or the SSE.
 %
-% Fit multivariate linear/nonlinear models of the forms:
+% Fit multivariate nonlinear models of the forms:
 %   Y0 = f(x) + e   (e.g. state-space models) ..or
 %   e  = f(x)       (e.g. f() is the objective function)
 %
@@ -18,8 +18,8 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
 %   y    = f(p)
-%   e    = (data - y)            ... 
-%   F(p) = log evidence(y) - divergence(p)   ... (Free Energy Objective Fun)
+%   e    = (data - y)                        ... 
+%   F(p) = log evidence(e,y) - divergence(p) ... (Free Energy Objective Fun)
 %
 % the usage is:
 %   [X,F,Cp,Pp,Hist] = AO(fun,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,...
@@ -49,11 +49,11 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % ba         = BayesAdjust flag (def=0): curb parameter step by P(p) 
 % im         = Include momentum (def=0): multiple steps in same dir=bigger step
 % step_meth  = 1, 2 or 3 (def=3): 1=large, variance-controlled steps,
-%                                 2=small GaussNewton steps
+%                                 2=small GaussNewton steps (bit crap)
 %                                 3=smaller (vanilla) steps (still var controlled)
 %
-% To call using an options structure, do this:
-%------------------------------------------------
+% To call this function using an options structure, do this:
+%-------------------------------------------------------------------------
 % opts = AO('options');   % get the options struct
 % opts.fun = @myfun       % fill in what you want...
 % opts.x0  = [0 1];
@@ -157,8 +157,7 @@ IncMomentum = im; % Observe and use momentum data
 % % if no prior guess for parameters step sizes (variances) find step sizes
 % % whereby each parameter has similar effect size w.r.t. error
 % if nargin < 3 || isempty(V)
-%     % iterates: v = v./abs(J)
-%     V = FindOptimumStep(x0,V);
+%     V = FindOptimumStep(x0,V); % this func iterates: v = v./abs(J)
 % end
 
 % parameter and step vectors
@@ -176,7 +175,7 @@ ipC   = spm_inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
 aopt.pC  = V*red;      % store for derivative & objective function access
-aopt.ipC = ipC; 
+aopt.ipC = ipC;        % store ^
 
 % initial objective value
 [e0]       = obj(x0);
@@ -196,7 +195,7 @@ end
 n_reject_consec = 0;
 search          = 0;
 
-% Initial JPD growth factor tolerance
+% Initial probability threshold for inclusion (i.e. update) of a parameter
 Initial_JPDtol = 1e-10;
 JPDtol = Initial_JPDtol;
 
@@ -235,7 +234,7 @@ while iterate
     aopt.updatej = true;
     [e0,df0] = obj( V*x0(ip) );
     e0       = obj( V*x0(ip) );
-        
+            
     %[df0,e0] = spm_diff(@obj,x0,1);
          
     % print end of gradient computation (just so we know it's finished)
@@ -294,7 +293,7 @@ while iterate
         % descend while de < e1
         nfun = nfun + 1;
                                         
-        % Compute The Parameter Step
+        % Compute The Parameter Step (from gradients and step sizes)
         %------------------------------------------------------------------
         if search_method == 1
             dx    = (V*x1(ip)+ x3*J'); 
@@ -304,6 +303,7 @@ while iterate
         elseif search_method == 3
             dx    = ( V*x1(ip) + (x3.*J) ); % (Rasmussen w/ diff p steps)  
         end
+        
                 
         % The following options are essentially 'E-steps' in an Expectation
         % Maximisation routine - i.e. they estimate the missing variables
@@ -333,6 +333,7 @@ while iterate
         
         % Computes the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)
+        % - We're going to use this as the prior probability of each param step
         %------------------------------------------------------------------
         for i = 1:length(x1)
             pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
@@ -340,12 +341,14 @@ while iterate
             pt(i)  = (1-cdf( pd(i), (dx(i))));
         end
                 
-        
-        % Given (gradient) predictions, dp[i..n], optimise obj(dp) 
+        % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
         %------------------------------------------------------------------
         if obj(dx) < obj(x1) && ~BayesAdjust
             
             % Don't perform checks, assume all f(dx[i]) <= e1
+            % i.e. full gradient prediction over parameters is good and we
+            % don't want to be explicitly Bayesian about it ...
+            
             gp  = ones(1,length(x0));
             gpi = 1:length(x0);
             de  = obj(dx);
@@ -356,14 +359,15 @@ while iterate
             for nip = 1:length(dx)
                 XX       = V*x0;
                 XX(nip)  = dx(nip);
-                DFE(nip) = obj(real(XX));
+                DFE(nip) = obj((XX));
             end
             
             % Likelihood function: goodness of fit (i.e. error) conferred by p updt
+            % - We're going to use this as the likelihood - i.e. P(objective|params)
             for i = 1:length(DFE)
-                pe(i)  = makedist('normal','mu', 0,'sigma', sqrt( diag(aopt.Cp) ));
-                pde(i) = (1-cdf( pe(i), DFE(i)-e1 ) );
-            end
+             pe(i)  = makedist('normal','mu', 0,'sigma', sqrt( abs(df0(i)) ));
+             pde(i) = (1-cdf( pe(i), DFE(i)-e1 ) );% p(dP[i] | gradient[i])
+           end
             
             % Bayes rule: Now we have (prior) probabilities of updated params 
             % and likelihoods, compute probabilities of (updated) params
@@ -374,19 +378,21 @@ while iterate
             gpi = find(gp);
             
             if ~BayesAdjust
-                % Only update select parameters
+                % If the full gradient prediction over parameters did not
+                % improve, but the BayesAdjust option is not selected, then
+                % only update parameters showing improvements in objective func
                 ddx        = V*x0;
                 ddx(gpi)   = dx(gpi);
                 dx         = ddx;
                 de         = obj(dx);
             else
-                % Maximum likelihood estimation: find optimim parameter(s) set
-                % from optimum param joint probabilities^
-                % - maximising likelihood function
+                % If the BayesAdjust option is selected, perform a sort of 
+                % Maximum likelihood estimation: find optimum set of 
+                % parameters' steps that maximise param joint probabilities^
                 [~,o]  = sort(PP(:),'descend');
                 for ns = 1:length(PP)
                     % p(P[1] & P[2]) = p(P[1]) * p(P[2]) ... ^ 
-                    pjpd(ns) = prod( PP(o(1:ns)) );
+                    pjpd(ns) = prod( PP(o(1:ns)) ) .^ (1/ns);
                 end
                 
                 selpar       = o( find( pjpd(:) > JPDtol ));       
@@ -394,7 +400,8 @@ while iterate
                 newp(selpar) = dx(selpar);
                 dx           = newp(:);                
                 de           = obj(dx);
-                probplot(pjpd,JPDtol);
+                
+                probplot(PP,JPDtol);
             end
             
         end
@@ -408,6 +415,8 @@ while iterate
         
         if de  < ( obj(x1) + etol )
             
+            % If the objective function has improved...
+            
             if nfun == 1; pupdate(loc,n,0,de,e1,'improv',toc); end
             
             % update the error & the (reduced) parameter set
@@ -417,9 +426,7 @@ while iterate
             x1  = V'*dx;
             dff = [dff df];
         else
-            
-            % flag to stop this loop
-            %--------------------------------------------------------------
+            % If it hasn't improved, flag to stop this loop...
             improve = false;            
         end
         
@@ -432,11 +439,12 @@ while iterate
       
     % ignore complex parameter values - for most functions, yes
     %----------------------------------------------------------------------
-    x1 = real(x1);
+    x1 = (x1); % (put 'real' here)
+    
     
     % evaluate - accept/reject - plot - adjust rate
     %======================================================================
-    if e1 < e0
+    if e1 < e0     % Improvement...
         
         % compute deltas & accept new parameters and error
         %------------------------------------------------------------------
@@ -445,19 +453,20 @@ while iterate
         x0 = -dp + x0;
         e0 =  e1;
                 
-        % (like a line search?)
+        % Extrapolate...
         %==================================================================
         
-        %if the system is (locally?) linear, and we know what dp caused de
+        % we know what param-step caused what improvement, so try again...
         %------------------------------------------------------------------
         exploit = true;
         nexpl   = 0;
         pupdate(loc,n,nexpl,e1,e0,'descnd',toc);
+        totstep = dx - p; % total parameter step in while loop above
+        
         while exploit
             if obj(V*(x1+(-dp./-df))) < e1
                 x1    = V*(x1+(-dp./-df));
-                e1    = obj(real(x1));
-                x1    = V'*real(x1);
+                e1    = obj((x1));
                 nexpl = nexpl + 1;
             else
                 exploit = false;
@@ -478,9 +487,10 @@ while iterate
         %------------------------------------------------------------------
         pupdate(loc,n,nfun,e1,e0,'accept',toc);
         if doplot; makeplot(V*x0(ip),aopt.pp); end
-        n_reject_consec = 0;
-        dff = [dff df];
-        JPDtol = Initial_JPDtol;
+        
+        n_reject_consec = 0;              % monitors consec rejections
+        dff             = [dff df];       % monitors change in f over its
+        JPDtol          = Initial_JPDtol; % resets prob threshold for update
 
     else
         
@@ -488,39 +498,40 @@ while iterate
         %==================================================================
         pupdate(loc,n,nfun,e1,e0,'select',toc);             
         
-        % improver params in dx
+        % select only parameters whose steps improved the objective
         %------------------------------------------------------------------
-        thisgood = gp*0;
+        thisgood = gp*0; % track whether any of selection get used
         if any(gp)
             
-            % sort good params by improvement amount * probability
+            % sort good params by (improvement amount) * (probability)
             %--------------------------------------------------------------
             % update p's causing biggest improvment in fe while maintaining highest P(p)
             %[~,PO] = sort(pt(gpi).*DFE(gpi),'ascend'); % DFE(gpi) = dp that cause imrpvoements
             %[~,PO] = sort(pt(gpi),'descend');
             [~,PO] = sort(pt(gpi).*rescale(-DFE(gpi)),'descend');
-            
-            dx0 = real(dx);
-            
-            % loop the good params in effect-size order
+                        
+            % loop the good params in selected (PO) order
             %--------------------------------------------------------------
             improve1 = 1;
             while improve1
                 thisgood = gp*0; % tracks which params are updated below
                 % evaluate the 'good' parameters
                 for i  = 1:length(gpi)
-                    xnew             = real(V*x0);
-                    xnew(gpi(PO(i))) = dx0(gpi(PO(i)));
-                    xnew             = real(xnew);
+                    %xnew             = real(V*x0);
+                    xnew             = V*x0;
+                    xnew(gpi(PO(i))) = dx(gpi(PO(i)));
                     enew             = obj(xnew);
                     % accept new error and parameters and continue
                     if enew < e0
                         dff = [dff (e0-enew)];
-                        x0  = V'*real(xnew);
+                        x0  = V'*(xnew);
                         e0  = enew;
                         thisgood(gpi(PO(i))) = 1;
                     end
                 end
+                
+                % Ok, now assess whether any parameters were accepted from
+                % this selective search....
                 if any(thisgood)
 
                     % print & plot update
@@ -537,7 +548,11 @@ while iterate
                     JPDtol = Initial_JPDtol;
 
                 else
-                    % reduce step and go back to main loop
+                    % If we made it to here, then neither the full gradient
+                    % predicted update, nore the selective search, managed
+                    % to improve the objective. So:
+                    
+                    % reduce param steps (vars) and go back to main loop
                     red = red*.8;
                     
                     % halt this while loop
@@ -552,6 +567,8 @@ while iterate
             end
         else
             
+            % If we get here, then there were not gradient steps across any
+            % parameters which improved the objective! So...
             pupdate(loc,n,nfun,e0,e0,'reject',toc);
             
             % reduce step and go back to main loop
@@ -561,7 +578,8 @@ while iterate
             % keep counting rejections
             n_reject_consec = n_reject_consec + 1;
             
-            % loosen JPDtol (temporarily)
+            % loosen inclusion threshold on param probability (temporarily)
+            % i.e. specified variances aren't making sense.
             JPDtol = JPDtol * 1e-10;
             pupdate(loc,n,nfun,e0,e0,'TolAdj',toc);
         end
@@ -596,7 +614,7 @@ while iterate
         fprintf(loc,'I think we''re stuck...stopping.\n');
         
         % return current best
-        X = V*real(x0(ip));
+        X = V*(x0(ip));
         F = e0;
                 
         % covariance estimation
@@ -620,7 +638,7 @@ while iterate
         fprintf(loc,'Reached maximum iterations: stopping.\n');
         
         % return current best
-        X = V*real(x0(ip));
+        X = V*(x0(ip));
         F = e0;
                 
         % covariance estimation
@@ -636,7 +654,7 @@ while iterate
         fprintf(loc,'Convergence.\n');
         
         % return current best
-        X = V*real(x0(ip));
+        X = V*(x0(ip));
         F = e0;
                 
         % covariance estimation
@@ -652,7 +670,7 @@ while iterate
         fprintf(loc,'Failed to converge...\n');
         
             % return current best
-            X = V*real(x0(ip));
+            X = V*(x0(ip));
             F = e0;
 
             % covariance estimation
@@ -727,9 +745,10 @@ function probplot(growth,thresh)
 growth(isnan(growth))=0;
 these = find(growth>thresh);
 s = subplot(414);
-plot(growth,'w','linewidth',3);hold on
-plot(growth(these),'linewidth',3,'Color',[1 .7 .7]);
-title('Param Joint Probability Landscape','color','w','fontsize',18);
+bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
+%plot(growth,'w','linewidth',3);hold on
+%plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
+title('Parameter Step Probability','color','w','fontsize',18);
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -911,7 +930,7 @@ e   = spm_vec(Y) - spm_vec(y);
 ipC = aopt.ipC;
 warning off; % don't warn abour singularity
 
-%if aopt.computeiCp
+%if aopt.computeiCp    
     Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %else
 %    Cp = aopt.Cp;
@@ -1148,10 +1167,12 @@ fprintf(['AO implements a gradient descent optimisation that incorporates \n' ..
     'When the full gradient prediction doesnt improve the objective, the routine\n' ...
     'picks a subset of parameters that do. This selection is based on the probability\n' ...
     'of the (GD predicted) new parameter value coming from the prior distribution.\n' ...
+    '\nIf using the BayesAdjust option = 1, this selection routine entails MLE\n' ...
+    'to find the optimum set of parameter steps that maximise their approx joint probabilities.\n'...
     '\nIn model fitting scenarios, the code is set up so that you pass the model\n'...
     'function (fun), parameters and also the data you want to fit. The advantage of\n'...
     'this is that the algo can compute the objective function. This is necessary\n'...
-    'if you want to minimising free energy (but also has SSE, MSE, RMSE etc).\n' ...
+    'if you want to minimise free energy (but also has SSE, MSE, RMSE etc).\n' ...
     '\nOutputs are the posteriors (means), objective value (F), (co)variance (CP),\n' ...
     'posterior probabilities (Pp) and a History structure (Hist) that contains the\n'...
     'parameters, objective values and gradients from each iteration of the algorithm.\n' ...
@@ -1159,11 +1180,11 @@ fprintf(['AO implements a gradient descent optimisation that incorporates \n' ..
     'vectorising and un-vectorising - so SPM is a dependency. This means that\n' ...
     'the data you''re fitting (y in AO(fun,p,v,y) ) and the output of fun(p)\n'...
     'can be of whatever data type you like (vector, matrix, cell etc).\n' ...
-    '\nIf you want to speed up the algorithm, look around line 211 and change\n'...
-    'search_method from 3 to 1. This method extrapolates further and can fit data\n'...
-    'quite a bit faster (and with better fits). However, it is also prone to\n'...
-    'pushing parameters to extremes, which is often bad in model fitting when you\n'...
-    'plan to make some parameter inference.\n']);
+    '\nIf you want to speed up the algorithm, change search_method from 3 to 1.\n'...
+    'This method extrapolates further and can fit data quite a bit faster \n'...
+    '(and with better fits). However, it is also prone to pushing parameters\n'...
+    'to extremes, which is often bad in model fitting when you plan to make\n'...
+    'some parameter inference.\n']);
 
 
 

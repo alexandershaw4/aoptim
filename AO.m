@@ -366,7 +366,7 @@ while iterate
             % - We're going to use this as the likelihood - i.e. P(objective|params)
             for i = 1:length(DFE)
              pe(i)  = makedist('normal','mu', 0,'sigma', sqrt( abs(df0(i)) ));
-             pde(i) = (1-cdf( pe(i), DFE(i)-e1 ) );% p(dP[i] | gradient[i])
+             pde(i) = (1-cdf( pe(i), DFE(i)-e1 ) );
            end
             
             % Bayes rule: Now we have (prior) probabilities of updated params 

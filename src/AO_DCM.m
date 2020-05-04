@@ -83,7 +83,7 @@ switch lower(method)
     opts.order       = 2;
     opts.writelog    = 0;
     opts.objective   = 'fe';
-    opts.ba          = 1;
+    opts.ba          = 0;
     opts.im          = 1;
     opts.step_method = sm;
     

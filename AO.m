@@ -310,6 +310,15 @@ while iterate
         % (parameter's values) that should be optimised in this iteration
         %==================================================================
         
+        % Computes the probabilities of each (predicted) new parameter
+        % coming from the same distribution defined by the prior (last best)
+        % - We're going to use this as the prior probability of each param step        
+        for i = 1:length(x1)
+            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
+            pdt(i) = (1-cdf( pd(i), (x1(i))));
+            pt(i)  = (1-cdf( pd(i), (dx(i))));
+        end
+        
         % (option) Momentum inclusion
         %------------------------------------------------------------------
         if n > 2 && IncMomentum
@@ -335,11 +344,11 @@ while iterate
         % coming from the same distribution defined by the prior (last best)
         % - We're going to use this as the prior probability of each param step
         %------------------------------------------------------------------
-        for i = 1:length(x1)
-            pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
-            pdt(i) = (1-cdf( pd(i), (x1(i))));
-            pt(i)  = (1-cdf( pd(i), (dx(i))));
-        end
+%         for i = 1:length(x1)
+%             pd(i)  = makedist('normal','mu', (x1(i)),'sigma', sqrt( red(i) ));
+%             pdt(i) = (1-cdf( pd(i), (x1(i))));
+%             pt(i)  = (1-cdf( pd(i), (dx(i))));
+%         end
                 
         % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
         %------------------------------------------------------------------

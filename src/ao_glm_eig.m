@@ -54,6 +54,9 @@ fit.mb{3} = reshape(b(nc+2:end),[nc nb]);
 % the reduced vectors
 fit.W = (fit.mb{3}*y')';
 
+% least squares solution:
+% b = inv(X'*X)*X'*y
+
 
 % % explicitly compute fitted variables to get correlations
 % %----------------------------------------------------

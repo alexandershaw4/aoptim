@@ -39,6 +39,7 @@ end
 
 DD    = DCM;
 DD.SP = P;
+b0    = P;
 P     = spm_vec(P);
 V     = spm_vec(DCM.M.pC);
 ip    = find(V);
@@ -78,7 +79,7 @@ switch lower(method)
     opts.maxit       = niter;
     opts.inner_loop  = 12*4;
     opts.Q           = [];
-    opts.criterion   = -inf;
+    opts.criterion   = -inf;%-500;%-inf;
     opts.min_df      = 1e-12;
     opts.order       = 2;
     opts.writelog    = 0;
@@ -87,7 +88,9 @@ switch lower(method)
     opts.im          = 1;
     opts.step_method = sm;
     
-    [X,F,CP,Pp,History] = AO(opts);        
+    %[X,F,CP,Pp,History] = AO(opts);        
+        
+    [X,F,CP,Pp,History] = AO(opts);   
     
     %[X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'fe',1,1,sm);
     %[X,F,CP,History]  = AOm(@fakeDM,p(:),c,DCM.xY.y);

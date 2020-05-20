@@ -310,7 +310,7 @@ while iterate
             % Compute the gradient w.r.t steps sizes
             [agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
 
-            red = red + ( (1e-4)*-agrad );
+            red = red + ( (1e)*-agrad );
             
             dx  = compute_dx(x1,a,J,red,search_method);
             

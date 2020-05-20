@@ -1,9 +1,9 @@
 function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
                                 order,writelog,objective,ba,im,step_method)
-% A Bayesian gradient/curvature descent-based optimisation, designed primarily 
+% A gradient/curvature descent optimisation routine, designed primarily 
 % for nonlinear model fitting / system identification & parameter estimation. 
 % 
-% The objective function minimises free energy (aka ELBO) or the SSE.
+% The objective function minimises the free energy (~ ELBO) or the SSE.
 %
 % Fit multivariate nonlinear models of the forms:
 % 1)  Y0 = f(x) + e   (e.g. generative models) ..or
@@ -16,7 +16,36 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % x  = model parameters/inputs to be optimised 
 %      (treated as Gaussians with variance V)
 %
-% ** Do >> AO('help') for an overview of the optimser.
+%
+% For a multivariate function f(x) where x = [p1 .. pn]' the ascent scheme
+% is:
+%
+%   x[p,t+1] = x[p,t] +      a[p]      *-dfdx[p]
+%
+% Note the use of different step sizes, a[p], for each parameter.
+% Optionally, a second GD can be computed to find the best step size a[p]:
+%
+%   x[p,t+1] = x[p,t] + ( b*-dfda[p] ) *-dfdx[p]   ...  /  b = 1e-4
+%
+% dfdx[p] are the partial derivatives of f, w.r.t parameters p. See
+% jaco.m for options, although by default these are computed using a finite
+% difference approximation of the curvature:
+%
+% f0 = f(x[p]+h) 
+% fx = f(x[p]  )
+% f1 = f(x[p]-h) 
+%
+% j(p,:) =        (f0 - f1) / 2h  
+%          ----------------------------
+%            (f0 - 2 * fx + f1) / h^2  
+%
+% nb. - depending on the specified step method, a is computed from j & V
+% using variations on:
+% 
+%  J      = -j ;
+%  dFdpp  = -(J'*J);
+%  a      = (V)./(1-dFdpp);   % Initial step
+% 
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------
@@ -82,6 +111,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %       F    = -sum(L);
 %
 % *NOTE THAT THE F-VALUE IS SIGN FLIPPED!
+% ** Do >> AO('help') for an overview of the optimser.
 %
 %
 % Usage 2: minimise objective problems of the form:

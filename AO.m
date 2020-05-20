@@ -321,9 +321,9 @@ while iterate
         
         % Optionally now compute a gradient descent on the step size, a:
         %
-        % x[p,t+1] = x[p,t] +      a[p]      *-dfdx[p]
+        % x[p,t+1] = x[p,t] +         a[p]          *-dfdx[p]
         % 
-        % x[p,t+1] = x[p,t] + ( b*-dfda[p] ) *-dfdx[p]
+        % x[p,t+1] = x[p,t] + ( a[p] + b*-dfda[p] ) *-dfdx[p]
         %
         % where b (the step of the step) is fixed at 1e-4
         %
@@ -340,8 +340,16 @@ while iterate
             % Compute the gradient w.r.t steps sizes
             [agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
 
-            red = red + ( (1e-4)*-agrad );
+            d_red = red + ( (1e-4)*-agrad );
             
+            % Update only stable new step sizes
+            bad = unique([ find(isnan(d_red)); ...
+                           find(isinf(d_red)); ...
+                           find(d_red < 0) ]);
+            d_red(bad) = red(bad);
+            red        = d_red;
+            
+            % Final dx
             dx  = compute_dx(x1,a,J,red,search_method);
             
             pupdate(loc,n,0,e1,e1,'--done',toc); 

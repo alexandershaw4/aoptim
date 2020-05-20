@@ -240,7 +240,7 @@ while iterate
     [e0,df0]  = obj( V*x0(ip) );
     [e0,~,er] = obj( V*x0(ip) );
     
-    % Second order partial derivates w.r.t parameters, i, using:
+    % Second order partial derivates w.r.t parameters, x[i], using:
     %
     % f0 = f(x[i]+h) 
     % fx = f(x[i]  )
@@ -295,7 +295,7 @@ while iterate
         % 
         % x[p,t+1] = x[p,t] + ( b*-dfda[p] ) *-dfdx[p]
         %
-        % where b (the step of the step) is fixed at 1/64
+        % where b (the step of the step) is fixed at 1e-4
         %
         OptimiseStepSize = 1;
         
@@ -400,10 +400,12 @@ while iterate
                 % If the full gradient prediction over parameters did not
                 % improve, but the BayesAdjust option is not selected, then
                 % only update parameters showing improvements in objective func
+                
                 ddx        = V*x0;
                 ddx(gpi)   = dx(gpi);
                 dx         = ddx;
                 de         = obj(dx);
+                
             else
                 % If the BayesAdjust option is selected, perform a sort of 
                 % Maximum likelihood estimation: find optimum set of 

@@ -25,7 +25,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % Note the use of different step sizes, a[p], for each parameter.
 % Optionally, a second GD can be computed to find the best step size a[p]:
 %
-%   x[p,t+1] = x[p,t] + ( b*-dfda[p] ) *-dfdx[p]   ...  /  b = 1e-4
+%   x[p,t+1] = x[p,t] + ( a[ b*-dfda[p] ) *-dfdx[p]   ...  /  b = 1e-4
 %
 % dfdx[p] are the partial derivatives of f, w.r.t parameters p. See
 % jaco.m for options, although by default these are computed using a finite
@@ -39,13 +39,13 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %          ----------------------------
 %            (f0 - 2 * fx + f1) / h^2  
 %
-% note: depending on the specified step method, -dfdx is computed from j
-% using:
+% nb. - depending on the specified step method, a is computed from j & V
+% using variations on:
 % 
 %  J      = -j ;
 %  dFdpp  = -(J'*J);
 %  a      = (V)./(1-dFdpp);   % Initial step
-
+% 
 %
 % Usage 1: to minimise a model fitting problem of the form:
 %--------------------------------------------------------------------------

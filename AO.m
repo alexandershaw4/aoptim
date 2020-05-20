@@ -20,16 +20,17 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 % For a multivariate function f(x) where x = [p1 .. pn]' the ascent scheme
 % is:
 %
-%   x[p,t+1] = x[p,t] +      a[p]      *-dfdx[p]
+%   x[p,t+1] = x[p,t] +         a[p]          *-dfdx[p]
 %
 % Note the use of different step sizes, a[p], for each parameter.
 % Optionally, a second GD can be computed to find the best step size a[p]:
 %
-%   x[p,t+1] = x[p,t] + ( b*-dfda[p] ) *-dfdx[p]   ...  /  b = 1e-4
+%   x[p,t+1] = x[p,t] + ( a[p] + b*-dfda[p] ) *-dfdx[p]   ...  /  b = 1e-4
 %
 % dfdx[p] are the partial derivatives of f, w.r.t parameters p. See
 % jaco.m for options, although by default these are computed using a finite
-% difference approximation of the curvature:
+% difference approximation of the curvature, which retains the sign of the
+% gradient:
 %
 % f0 = f(x[p]+h) 
 % fx = f(x[p]  )
@@ -40,7 +41,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %            (f0 - 2 * fx + f1) / h^2  
 %
 % nb. - depending on the specified step method, a is computed from j & V
-% using variations on:
+% using variations on (where V is the 'variance' of each param):
 % 
 %  J      = -j ;
 %  dFdpp  = -(J'*J);
@@ -110,9 +111,8 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 %       F    = -sum(L);
 %
-% *NOTE THAT THE F-VALUE IS SIGN FLIPPED!
+% *NOTE THAT, FOR FREE ENERGY, THE F-VALUE IS SIGN FLIPPED!
 % ** Do >> AO('help') for an overview of the optimser.
-%
 %
 % Usage 2: minimise objective problems of the form:
 %--------------------------------------------------------------------------

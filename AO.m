@@ -1,5 +1,4 @@
-function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,...
-                                order,writelog,objective,ba,im,step_method)
+function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,order,writelog,objective,ba,im,step_method)
 % A gradient/curvature descent optimisation routine, designed primarily 
 % for nonlinear model fitting / system identification & parameter estimation. 
 % 

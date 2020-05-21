@@ -31,6 +31,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %
 %   x[p,t+1] = x[p,t] + ( a[p] + b*-dFda[p] ) *-dFdx[p] ... where b = 1e-4
 %
+% For the new step sizes, the Armijo-Goldstein condition is enforced.
 % dFdx[p] are the partial derivatives of F, w.r.t parameters, p. See
 % jaco.m for options, although by default these are computed using a finite
 % difference approximation of the curvature, which retains the sign of the
@@ -51,6 +52,11 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %  dFdpp  = -(J'*J);
 %  a      = (V)./(1-dFdpp);   
 % 
+% If step_method = 3, dFdpp is a small number and this reduces to a simple
+% scale on the stepsize - i.e. a = V./scale. However, if step_method = 1, J
+% is transposed, such that dFdpp is np*np. This leads to much bigger
+% parameter steps & can be useful when your start positions are a long way
+% from the solution.
 %
 % For each iteration of the ascent:
 % 
@@ -106,7 +112,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %                                 2=small GaussNewton steps (bit crap)
 %                                 3=smaller (vanilla) steps (still var controlled)
 %
-% To call this function using an options structure, do this:
+% To call this function using an options structure (recommended), do this:
 %-------------------------------------------------------------------------
 % opts = AO('options');   % get the options struct
 % opts.fun = @myfun       % fill in what you want...

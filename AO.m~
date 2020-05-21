@@ -31,6 +31,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %
 %   x[p,t+1] = x[p,t] + ( a[p] + b*-dFda[p] ) *-dFdx[p] ... where b = 1e-4
 %
+% For the new step sizes, the Armijo-Goldstein condition is enforced.
 % dFdx[p] are the partial derivatives of F, w.r.t parameters, p. See
 % jaco.m for options, although by default these are computed using a finite
 % difference approximation of the curvature, which retains the sign of the
@@ -51,6 +52,11 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %  dFdpp  = -(J'*J);
 %  a      = (V)./(1-dFdpp);   
 % 
+% If step_method = 3, dFdpp is a small number and this reduces to a simple
+% scale on the stepsize - i.e. a = V./scale. However, if step_method = 1, J
+% is transposed, such that dFdpp is np*np. This leads to much bigger
+% parameter steps & can be useful when your start positions are a long way
+% from the solution.
 %
 % For each iteration of the ascent:
 % 
@@ -106,7 +112,7 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %                                 2=small GaussNewton steps (bit crap)
 %                                 3=smaller (vanilla) steps (still var controlled)
 %
-% To call this function using an options structure, do this:
+% To call this function using an options structure (recommended), do this:
 %-------------------------------------------------------------------------
 % opts = AO('options');   % get the options struct
 % opts.fun = @myfun       % fill in what you want...
@@ -132,7 +138,9 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,..
 %       L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 %       F    = -sum(L);
 %
-% *NOTE THAT, FOR FREE ENERGY, THE F-VALUE IS SIGN FLIPPED!
+% *NOTE THAT, FOR FREE ENERGY OBJECTIVE, THE OUTPUT F-VALUE IS SIGN FLIPPED!
+%
+% *If the optimiser isn't working well, try making V smaller!
 %
 % See also ao_glm AO_DCM jaco AO
 %
@@ -345,7 +353,10 @@ while iterate
 
             % Compute the gradient w.r.t steps sizes
             [agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
-
+            
+            % condition it
+            agrad(isinf(agrad))=0;
+            
             d_red = red + ( (1e-4)*-agrad );
             
             % Update only stable new step sizes
@@ -361,9 +372,9 @@ while iterate
             % Enforce Armijo-Goldstein condition:
             %    f(p + a*-y) <= f(p) + gamma * a *-y' *delta
             checkn = 0;
-            while ~all(obj(dx) <= obj(x1) + 1e-4 * red * J' * agrad)
+            while ~all(obj(dx) <= obj(x1) + 1e-4 * red .* J(:) .* agrad)
                 pupdate(loc,n,0,e1,e1,'AGcond',toc); 
-                si = find(obj(dx) > obj(x1) + 1e-4 * red * J' * agrad);
+                si = find(obj(dx) > obj(x1) + 1e-4 * red .* J(:) .* agrad);
                 red(si) = red(si) * (0.5);
                 checkn  = checkn + 1;
                 if checkn == 10; break; end
@@ -669,7 +680,10 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    if min_df ~= 0
+    if min_df == -1
+        ldf   = inf;
+        dftol = inf;
+    elseif min_df ~= 0
         % user can define minimum DF
         ldf = 100; dftol = min_df;
     else
@@ -679,7 +693,6 @@ while iterate
         if aopt.order == 0; ldf = 30; dftol = 0.002; end
         if aopt.order <  0; ldf = 30; dftol = 0.002; end
         if aopt.order >  2; ldf = 800; dftol = 0.0001; end
-        
     end
     
     if length(dff) > ldf
@@ -986,7 +999,7 @@ Q  = aopt.Q;
 if ~isfield(aopt,'J')
     aopt.J = ones(length(x0),length(spm_vec(y)));
 end
-if isfield(aopt,'J') && isvector(aopt.J)
+if isfield(aopt,'J') && isvector(aopt.J) && length(x0) > 1
     aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
 end
 

@@ -993,7 +993,7 @@ Q  = aopt.Q;
 if ~isfield(aopt,'J')
     aopt.J = ones(length(x0),length(spm_vec(y)));
 end
-if isfield(aopt,'J') && isvector(aopt.J)
+if isfield(aopt,'J') && isvector(aopt.J) && length(x0) > 1
     aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
 end
 

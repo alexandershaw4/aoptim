@@ -348,10 +348,21 @@ while iterate
                            find(d_red < 0) ]);
             d_red(bad) = red(bad);
             red        = d_red;
-            
+                        
             % Final dx
             dx  = compute_dx(x1,a,J,red,search_method);
             
+            % Enforce Armijo-Goldstein condition:
+            %    f(p + a*-y) <= f(p) + gamma * a *-y' *delta
+            checkn = 0;
+            while ~all(obj(dx) <= obj(x1) + 1e-4 * red * J' * agrad)
+                pupdate(loc,n,0,e1,e1,'AGcond',toc); 
+                si = find(obj(dx) > obj(x1) + 1e-4 * red * J' * agrad);
+                red(si) = red(si) * (0.5);
+                checkn  = checkn + 1;
+                if checkn == 10; break; end
+            end
+
             pupdate(loc,n,0,e1,e1,'--done',toc); 
         end
         

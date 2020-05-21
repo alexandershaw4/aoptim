@@ -2,6 +2,7 @@
 %
 % Example of fitting a GLM using AO.m curvature-descent optimsation.
 % Comparison of returned model (ß) to that using glmfit.m
+close all; clear global;
 
 dat = load([fileparts(fileparts(mfilename('fullpath'))) '/src/test_glm_data.mat']); 
 

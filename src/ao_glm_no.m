@@ -30,8 +30,6 @@ opts.V   = V;
 opts.y   = x;
 opts.maxit = inf;
 opts.step_method = 1;
-opts.im = 1;
-opts.ba = 1;
 [b,F,Cp] = AO(opts);
 
 

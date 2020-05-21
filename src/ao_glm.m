@@ -17,10 +17,21 @@ id  = y'/oy';                       % i.e. oy*id ~ y
 nb = size(y,2);
 n  = size(y,1);
 b  = ones(1,nb+1);
-V  = [2 b(2:end)/8];
+V  = [2 b(2:end)/64];
 
 fun = @(b) (b(1)+b(2:end)*oy');
-[b,F,Cp] = AO(fun,b,V,x,inf);
+
+op = AO('options');
+op.fun = fun;
+op.x0  = b;
+op.V   = V;
+op.y   = x;
+op.step_method = 1;
+op.maxit = 1000;
+
+[b,F,Cp] = AO(op);
+
+%[b,F,Cp] = AO(fun,b,V,x,inf);
 
 % compute betas on the non-orthongal predictors
 %----------------------------------------------------

@@ -1,0 +1,30 @@
+clear global ; clear; close all;
+
+f = @(x) x.^2;
+
+y = [2 3 4 5 6 7]';
+
+%x = [1 2 3 4 5 6]';
+x = [0.9636    0.6895    0.0798    0.6942    0.8498    0.6080]';
+
+v = [1 1 1 1 1 1]'/64;
+
+
+op = AO('options');
+op.fun = f;
+op.x0  = x;
+op.V   = v;
+op.y   = y;
+op.step_method = 1;
+op.criterion = -2.7;
+
+[X,F] = AO(op);
+
+[y(:) f(X)]
+
+bub = 
+figure('position',[1078 283 482 695]);
+subplot(211);scatter(y,f(X),),'filled');lsline;
+xlim([1 8]);ylim([1 8]);xlabel('data');ylabel('model');
+subplot(212); b=bar([y f(X)]);b(1).FaceColor=[.4 .4 .4];
+b(2).FaceColor=[1 .4 .4];

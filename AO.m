@@ -342,7 +342,7 @@ while iterate
         %
         OptimiseStepSize = 1;
         
-        if OptimiseStepSize && nfun == 1 %&& obj(dx) < obj(x1)
+        if OptimiseStepSize && nfun == 1 && obj(dx) < obj(x1)
             
             pupdate(loc,n,0,e1,e1,'grdstp',toc); 
             
@@ -381,7 +381,7 @@ while iterate
                 
                 if obj(ddx) < obj(dx)
                     if chn == 1
-                        pupdate(loc,n,0,obj(ddx),e1,'A-GCON',toc);
+                        pupdate(loc,n,0,obj(ddx),e1,'BkLnSr',toc);
                     end
                     dx = ddx;
                     a  = da;
@@ -503,7 +503,7 @@ while iterate
                 
             end            
         end
-        
+                
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima

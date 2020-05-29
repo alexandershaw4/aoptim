@@ -340,26 +340,36 @@ while iterate
         %
         % where b (the step of the step) is fixed at 1e-4
         %
+        % Note that optimising 'a' isn't just about speeding up the ascent,
+        % because a is also the variance term on the parameters
+        % distributions, this is also optimising the variance
         OptimiseStepSize = 1;
         
-        if OptimiseStepSize && nfun == 1 %&& obj(dx) < obj(x1)
+        if OptimiseStepSize && nfun == 1 && obj(dx) < obj(x1)
             
             pupdate(loc,n,0,e1,e1,'grdstp',toc); 
+            
+            br = red;
             
             % Optimise a!
             % - Do a gradient descent on the step size!        
             afun = @(red) obj( compute_dx(x1,compute_step(df0,red,e0,step_method),...
-                compute_step_J(df0,red,e0,step_method),red,search_method) );
+                                    J,red,search_method) );
 
             % Compute the gradient w.r.t steps sizes
-            [agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
+            %[agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
+            [agrad] = jaco(afun,red,red/2,0,2);
             
             % condition it
             agrad(isinf(agrad))=0;
             
-            check_n = 0; loop = true;
+            % Backtracking Line Search:
+            %    f(p + g(a)*-y) <= f(p + a*-y)
+            
+            chn = 0; loop = true;
             while loop
             
+                chn   = chn + 1;
                 d_red = red + ( (1e-4)*-agrad );
 
                 % Update only stable new step sizes
@@ -369,27 +379,29 @@ while iterate
                 d_red(bad) = red(bad);
                 red        = d_red;
 
-                % Final dx
-                [da,dJ] = compute_step(df0,red,e0,step_method);
+                % Final ddx
+                [da,~]  = compute_step(df0,red,e0,step_method);
                 ddx     = compute_dx(x1,da,J,red,search_method);
                 
                 if obj(ddx) < obj(dx)
-                    d
+                    if chn == 1
+                        pupdate(loc,n,0,obj(ddx),e1,'BkLnSr',toc);
+                    end
+                    dx = ddx;
+                    a  = da;
+                    br = red;   
                     
-                
-            % Enforce Armijo-Goldstein condition:
-            %    f(p + a*-y) <= f(p) + gamma * a *-y' *delta
-            checkn = 0;
-            while ~all(obj(dx)   <= obj(dx) + 1e-4 * (red.*J(:)) ) %.* J(:) .* agrad)
-                
-                
-                
-                checkn  = checkn + 1;
-                pupdate(loc,n,0,obj(obj(x1+(red.*J(:)))),obj(dx),'AGcond',toc); 
-                if checkn == 10; break; end
+                    % Update the (inverse) variance used in computing F
+                    aopt.ipC   = spm_inv(spm_cat(spm_diag({diag(red)})));
+                else
+                    red  = br;
+                    loop = false;
+                end
+                if chn == 10
+                    loop = 0;
+                end
             end
-
-            pupdate(loc,n,0,e1,e1,'--done',toc); 
+            
         end
         
         % The following options are essentially 'E-steps' in an Expectation
@@ -498,8 +510,7 @@ while iterate
                 
             end            
         end
-        
-        
+             
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
@@ -790,7 +801,7 @@ end
 function refdate(loc)
 fprintf(loc,'\n');
 
-fprintf(loc,'| ITERATION     | FUN EVAL | CURRENT ERROR     | BEST ERROR SO FAR  | ACTION | TIME\n');
+fprintf(loc,'| ITERATION     | FUN EVAL | CURRENT F         | BEST F SO FAR      | ACTION | TIME\n');
 fprintf(loc,'|---------------|----------|-------------------|--------------------|--------|-------------\n');
 
 end

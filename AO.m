@@ -340,6 +340,9 @@ while iterate
         %
         % where b (the step of the step) is fixed at 1e-4
         %
+        % Note that optimising 'a' isn't just about speeding up the ascent,
+        % because a is also the variance term on the parameters
+        % distributions, this is also optimising the variance...
         OptimiseStepSize = 1;
         
         if OptimiseStepSize && nfun == 1 && obj(dx) < obj(x1)
@@ -354,7 +357,8 @@ while iterate
                                     J,red,search_method) );
 
             % Compute the gradient w.r.t steps sizes
-            [agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
+            %[agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
+            [agrad] = jaco(afun,red,red/2,0,2);
             
             % condition it
             agrad(isinf(agrad))=0;
@@ -385,7 +389,10 @@ while iterate
                     end
                     dx = ddx;
                     a  = da;
-                    br = red;                
+                    br = red;   
+                    
+                    % Update the (inverse) variance used in computing F
+                    aopt.ipC   = spm_inv(spm_cat(spm_diag({diag(red)})));
                 else
                     red  = br;
                     loop = false;
@@ -503,8 +510,7 @@ while iterate
                 
             end            
         end
-                
-        
+             
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
@@ -795,7 +801,7 @@ end
 function refdate(loc)
 fprintf(loc,'\n');
 
-fprintf(loc,'| ITERATION     | FUN EVAL | CURRENT ERROR     | BEST ERROR SO FAR  | ACTION | TIME\n');
+fprintf(loc,'| ITERATION     | FUN EVAL | CURRENT F         | BEST F SO FAR      | ACTION | TIME\n');
 fprintf(loc,'|---------------|----------|-------------------|--------------------|--------|-------------\n');
 
 end

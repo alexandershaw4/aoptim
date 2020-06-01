@@ -349,7 +349,7 @@ while iterate
         % distributions, this is also optimising the variance...
         OptimiseStepSize = 1;
         
-        if OptimiseStepSize && nfun == 1 && obj(dx) < obj(x1)
+        if OptimiseStepSize && nfun == 1 && obj(dx) < obj(x1) && step_method ~= 4
             
             pupdate(loc,n,0,e1,e1,'grdstp',toc); 
             
@@ -362,7 +362,7 @@ while iterate
 
             % Compute the gradient w.r.t steps sizes
             %[agrad] = jaco(afun,red,(~~red)*1e-4,0,2);
-            [agrad] = jaco(afun,red,red/2,0,2);
+            [agrad] = jaco(afun,red,red/2,0,1);
             
             % condition it
             agrad(isinf(agrad))=0;
@@ -374,7 +374,7 @@ while iterate
             while loop
             
                 chn   = chn + 1;
-                d_red = red + ( (1e-4)*-agrad );
+                d_red = red + ( (1e-3)*-agrad );
 
                 % Update only stable new step sizes
                 bad = unique([ find(isnan(d_red)); ...

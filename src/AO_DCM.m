@@ -5,7 +5,6 @@ function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,method,sm)
 %
 %    [EP,F,CP] = AO_DCM(P,DCM)
 %
-%     
 %    [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,mimo,method)
 %
 %  Inputs:

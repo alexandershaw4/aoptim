@@ -17,7 +17,7 @@ opts.x0  = p(:);
 opts.V   = c;
 opts.y   = DCM.xY.y;
 
-opts.maxit       = 36;
+opts.maxit       = 12;
 opts.inner_loop  = 12*4;
 opts.Q           = [];
 opts.criterion   = -500;

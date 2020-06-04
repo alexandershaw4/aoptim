@@ -263,7 +263,8 @@ localminflag = 0;  % triggers when stuck in local minima
 
 if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
 if IncMomentum; fprintf('Using Momentum option\n');    end
-fprintf('Using step-method %d\n',step_method);
+fprintf('Using step-method: %d\n',step_method);
+fprintf('Using Jaco (gradient) option: %d\n',order);
 
 % print start point - to console or logbook (loc)
 refdate(loc);
@@ -1029,7 +1030,7 @@ end
 
 % Free Energy Objective Function: F(p) = log evidence - divergence
 %--------------------------------------------------------------------------
-Q  = spm_Ce(1*ones(1,length(spm_vec(y))));
+Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %Q  = {AGenQ(spm_vec(Y))};
 h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
 
 if isinf(h)
@@ -1146,6 +1147,8 @@ if nargout == 2
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
         %V = (~~V)*exp(-8);
+    else
+        V = V*1e-2;
     end
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp

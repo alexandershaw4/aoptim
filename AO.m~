@@ -406,7 +406,7 @@ while iterate
                     red  = br;
                     loop = false;
                 end
-                if chn == 20
+                if chn == 10
                     loop = 0;
                 end
             end

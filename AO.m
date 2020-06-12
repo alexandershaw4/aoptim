@@ -1016,16 +1016,18 @@ method = aopt.ObjectiveMethod;
 IS = aopt.fun;
 P  = x0(:)';
 
+% Evalulate f(X)
 warning off
 try    y  = IS(P); 
 catch; y  = spm_vec(aopt.y)*0+inf;
 end
 warning on;
 
+% Data & precision
 Y  = aopt.y;
 Q  = aopt.Q;
 
-% Check / complete the derivative matrix
+% Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
     aopt.J = ones(length(x0),length(spm_vec(y)));
@@ -1044,6 +1046,7 @@ else
     h = aopt.h;
 end
 
+% If the system output >1D (e.g. a power spectum), prioritise shifts along x
 ny    = length(spm_vec(y));
 [~,l] = findpeaks(spm_vec(Y));
 FS    = ones(ny,1)./ny;
@@ -1069,11 +1072,11 @@ nq  = ny ./ length(Q);
 e   = spm_vec(Y) - spm_vec(y);
 
 ipC = aopt.ipC;
-warning off; % don't warn abour singularity
 
+warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
-
 warning on
+
 p   = ( x0(:) - aopt.pp(:) );
 
 if any(isnan(Cp(:))) 
@@ -1125,7 +1128,7 @@ if aopt.hyperparameters
     if aopt.updateh
         aopt.h = h;
     end
-end
+end % end of if hyperparams (from spm) ... 
 
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;

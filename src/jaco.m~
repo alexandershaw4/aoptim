@@ -56,8 +56,7 @@ if nargin < 5 || isempty(order)  ; order   = 1; end
 if nargin < 4 || isempty(verbose); verbose = 0; end
 
 % initialise output cells
-% op = cell(1,nout); need to finish this - for derivs of a MIMO - i.e.
-% w.r.t to a multiple output function 
+op = cell(1,nout);
 
 if isempty(params)
     IS = fun;
@@ -73,7 +72,7 @@ end
 
 % The subfunction -
 warning off; % suppress matrix singularity warnings in unstable systems
-[j,j1]  = jacf(IS,P,ip,verbose,V,order);
+[j,j1]  = jacf(IS,P,ip,verbose,V,order,op);
 warning on;
 
 if isnumeric(j)
@@ -91,7 +90,7 @@ end
 
 
 
-function [j,j1] = jacf(IS,P,ip,verbose,V,order)
+function [j,j1] = jacf(IS,P,ip,verbose,V,order,op)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
@@ -107,16 +106,17 @@ end
 
 %f0    = feval(IS,P);
 
-% mimo code
-% f0 = op;
-% [f0{:}] = feval(IS,P);
-% fx = f0;
-% f1 = f0;
+f0 = op;
+[f0{:}] = feval(IS,P);
+fx = f0;
 
-f0    = spm_cat( feval(IS,P) );
-fx    = f0(:);
-j     = zeros(length(P),length(f0(:))); % n param x n output
-c     = zeros(length(P),length(f0(:))); % n param x n output
+
+f1 = f0;
+
+%f0    = spm_cat( feval(IS,P) );
+%fx    = f0(:);
+%j     = zeros(length(P),length(f0(:))); % n param x n output
+%c     = zeros(length(P),length(f0(:))); % n param x n output
 
 if ismember(order,[1 2 3 4])
     for i = 1:length(P)
@@ -142,14 +142,14 @@ if ismember(order,[1 2 3 4])
             P0(i)  = P0(i) + d  ;
             P1(i)  = P1(i) - d  ;
 
-            % This would be the mimo equivalent code
-            %[f0{:}] = feval(IS,P0);
-            %[f1{:}] = feval(IS,P1);
-            %j(i,:) = spm_unvec( ( spm_vec(f0) - spm_vec(f1) ) / (2 * d) , fx );
+            [f0{:}] = feval(IS,P0);
+            [f1{:}] = feval(IS,P1);
+
+            j(i,:) = spm_unvec( ( spm_vec(f0) - spm_vec(f1) ) / (2 * d) , fx );
             
-            f0     = spm_vec(spm_cat(feval(IS,P0)));
-            f1     = spm_vec(spm_cat(feval(IS,P1)));
-            j(i,:) = (f0 - f1) / (2 * d);
+            %f0     = spm_vec(spm_cat(feval(IS,P0)));
+            %f1     = spm_vec(spm_cat(feval(IS,P1)));
+            %j(i,:) = (f0 - f1) / (2 * d);
             
             if order == 3 || order == 4
                 j(i,:) = ( ( (f0 - fx) / (2*d) ) + ...
@@ -158,17 +158,11 @@ if ismember(order,[1 2 3 4])
             
             if order == 2 
                 j1(i,:) = j(i,:); % keep first order
-                
                 % Alternatively, include curvature
                 deriv1 = (f0 - f1) / 2 / d;
                 deriv2 = (f0 - 2 * fx + f1) / d ^ 2; % 2nd ORDER CENTRAL
                 j(i,:) = deriv1 ./ deriv2;
-                
-                % This would be the mimo equivalent
-                %deriv1 = spm_unvec( ( spm_vec(f0) - spm_vec(f1) ) / 2 / d , fx );
-                %deriv2 = spm_unvec( (spm_vec(f0) - 2 * spm_vec(fx) + spm_vec(f1)) / d.^2 , fx);
-                %j(i,:) = spm_unvec( spm_vec(deriv1)./spm_vec(deriv2) , fx);
-                
+                                
             elseif order == 4
                 % curvature using the 3-point routine
                 deriv1a = (f0 - fx) / (2*d);

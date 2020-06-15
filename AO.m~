@@ -482,9 +482,14 @@ while iterate
             for nip = 1:length(dx)
                 XX       = V*x0;
                 XX(nip)  = dx(nip);
-                DFE(nip) = obj(XX); % FE
+                [DFE(nip),~,~,~,~,FE] = obj((XX)); % FE
+                pXm(nip) = FE(1);                  % model evidence
+                KLD(nip) = FE(2);                  % KL divergence
             end
             
+            %[~,~,~,~,~,FE] = obj(x0);
+            %SpXm = pXm./sum(pXm);
+            %SKLD = KLD./sum(KLD);            
             DFE  = real(DFE(:));
                         
             % Identify improver-parameters
@@ -509,7 +514,8 @@ while iterate
                 
                 % Now we have (prior) probabilities of updated params 
                 % and 'likelihoods', compute probabilities of (updated) params
-                PP = pt(:) .* rescale(-DFE);
+                %PP = pt(:) .* rescale(-DFE);
+                PP = (-pXm ./ max(-pXm))' .* (1-max(pt(:))) ;
                 
                 [~,o]  = sort(PP(:),'descend');
                 selpar = o( find(cumprod(PP(o)) > JPDtol) );

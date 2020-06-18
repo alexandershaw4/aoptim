@@ -34,10 +34,10 @@ function [X,F,Cp,PP,Hist] = AO(fun,x0,V,y,maxit,inner_loop,Q,criterion,min_df,or
 % secondary optimisation (of a) is only invoked is the full gradient
 % prediction initially inproved F, since it is computationally intensive.
 %
-% dFdx[p] are the partial derivatives of F, w.r.t parameters, p. See
-% jaco.m for options, although by default these are computed using a finite
-% difference approximation of the curvature, which retains the sign of the
-% gradient:
+% dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
+% the objective function and not 'f' - your function). See jaco.m for options, 
+% although by default these are computed using a finite difference 
+% approximation of the curvature, which retains the sign of the gradient:
 %
 % f0 = F(x[p]+h) 
 % fx = F(x[p]  )
@@ -171,7 +171,7 @@ else
     if nargin < 15 || isempty(step_method);step_method = 3;   end
     if nargin < 14 || isempty(im);         im = 0;            end
     if nargin < 13 || isempty(ba);         ba = 0;            end
-    if nargin < 12 || isempty(objective);  objective = 'sse'; end
+    if nargin < 12 || isempty(objective);  objective = 'fe';  end
     if nargin < 11 || isempty(writelog);   writelog = 0;      end   
     if nargin < 10 || isempty(order);      order = 2;         end
     if nargin < 9  || isempty(min_df);     min_df = 0;        end
@@ -230,7 +230,7 @@ pC    = V'*pC*V;
 ipC   = spm_inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
-aopt.updateh = true;
+aopt.updateh = true;   % update hyperpriors
 aopt.pC  = V*red;      % store for derivative & objective function access
 aopt.ipC = ipC;        % store ^
 

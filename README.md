@@ -128,5 +128,5 @@
 ```
 
 Here's a video of the the optimiser solving a system of nonlinear differential equations that describe a mean-field neural mass model - fitting it's spectral output to some real data:
-```
+
 ![screenshot](OptimisationGIF.gif)

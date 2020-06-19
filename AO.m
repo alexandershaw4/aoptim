@@ -144,7 +144,8 @@ end
 if isstruct(funopts)
    parseinputstruct(funopts);
 else
-   fprintf('You have to supple a funopts input struct now,,,\nTry AO(''opts'')'\n'); 
+   fprintf('You have to supply a funopts input struct now...\nTry AO(''options'')\n');
+   return;
 end
 
 % Set up log if requested

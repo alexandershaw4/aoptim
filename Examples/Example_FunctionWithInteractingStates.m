@@ -19,7 +19,9 @@ op.y   = y(:);
 op.V   = V(:);
 
 op.step_method = 3;
-op.maxit       = 256;
+op.maxit       = 512;
 
 [X,F,CV] = AO(op);
 
+% Compare data with prediction
+[f(x) f(X)]

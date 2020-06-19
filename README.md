@@ -36,10 +36,10 @@
 % secondary optimisation (of a) is only invoked is the full gradient
 % prediction initially inproved F, since it is computationally intensive.
 %
-% dFdx[p] are the partial derivatives of F, w.r.t parameters, p. See
-% jaco.m for options, although by default these are computed using a finite
-% difference approximation of the curvature, which retains the sign of the
-% gradient:
+% dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
+% the objective function and not 'f' - your function). See jaco.m for options, 
+% although by default these are computed using a finite difference 
+% approximation of the curvature, which retains the sign of the gradient:
 %
 % f0 = F(x[p]+h) 
 % fx = F(x[p]  )
@@ -93,39 +93,18 @@
 % minimum usage (using defaults):
 %   [X,F] = AO(fun,x0,V,[y])
 %
+%
 % INPUTS:
 %-------------------------------------------------------------------------
-% *Note: you can either specify inputs in this order (to ommit use []), or
-% you can pass an options structure (see below).
-%
-% f          = function handle / anonymous function
-% x0         = starting params (vector input to fun, mean of Gauss)
-% V          = variances controlling each element of x0 (var of Gauss)
-% data       = Y0 / the data to fit, for computing the objective function
-% maxit      = number of iterations (def=128) 
-% inner_loop = num iters to continue on a specific descent (def=9999)
-% Q          = optional precision matrix (*NOW IGNORED*)
-% crit       = objective convergence value
-% min_df     = minimum change in function value (Error) to continue
-%              (set to -1 to switch off)
-% order      = [-1, 0, 1, 2, 3, 4, 5] - ** see jaco.m for opts **
-% writelog   = flag to write progress to command window (0) or a txt log (1)
-% obj        = 'sse' 'free_energy' 'mse' 'rmse' 'logevidence' (def 'fe')
-% ba         = BayesAdjust flag (def=0): curb parameter step by P(p) 
-% im         = Include momentum (def=0): multiple steps in same dir=bigger step
-% step_meth  = 1, 2 or 3 (def=3): 1=large, variance-controlled steps,
-%                                 2=small GaussNewton steps (bit crap)
-%                                 3=smaller (vanilla) steps (still var controlled)
-%
 % To call this function using an options structure (recommended), do this:
 %-------------------------------------------------------------------------
 % opts = AO('options');   % get the options struct
 % opts.fun = @myfun       % fill in what you want...
-% opts.x0  = [0 1];
-% opts.V   = [1 1]/8;
-% opts.step_meth = 1;
+% opts.x0  = [0 1];       % start param value
+% opts.V   = [1 1]/8;     % variances for each param
+% opts.y   = [...];       % data to fit - .e.g y = f(p) + e
+% opts.step_meth = 1;     % 
 % [X,F] = AO(opts);       % call the optimser, passing the struct
-%
 %
 % OUTPUTS:
 %-------------------------------------------------------------------------
@@ -144,8 +123,8 @@
 %       F    = -sum(L);
 %
 % *NOTE THAT, FOR FREE ENERGY OBJECTIVE, THE OUTPUT F-VALUE IS SIGN FLIPPED!
-%
 % *If the optimiser isn't working well, try making V smaller!
+
 ```
 
 Here's a video of the the optimiser solving a system of nonlinear differential equations that describe a mean-field neural mass model - fitting it's spectral output to some real data:

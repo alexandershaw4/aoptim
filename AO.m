@@ -96,13 +96,20 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %-------------------------------------------------------------------------
 % To call this function using an options structure (recommended), do this:
 %-------------------------------------------------------------------------
-% opts = AO('options');   % get the options struct
-% opts.fun = @myfun       % fill in what you want...
-% opts.x0  = [0 1];       % start param value
-% opts.V   = [1 1]/8;     % variances for each param
-% opts.y   = [...];       % data to fit - .e.g y = f(p) + e
-% opts.step_meth = 1;     % 
-% [X,F] = AO(opts);       % call the optimser, passing the struct
+% opts = AO('options');     % get the options struct
+% opts.fun = @myfun         % fill in what you want...
+% opts.x0  = [0 1];         % start param value
+% opts.V   = [1 1]/8;       % variances for each param
+% opts.y   = [...];         % data to fit - .e.g y = f(p) + e
+% opts.macit       = 125;   % max num iterations 
+% opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla).
+% opts.im    = 1;           % flag to include momentum of parameters
+% opts.order = 2;           % partial derivate fun option (see jaco.m)
+% opts.hyperparameters = 0; % do an grad asc on the precision (see spm_nlsi_GN)
+% opts.BTLineSearch    = 1; % back tracking line search
+% opts.criterion    = -300  % convergence threshold
+%
+% [X,F] = AO(opts);       % call the optimser, passing the opttions struct
 %
 % OUTPUTS:
 %-------------------------------------------------------------------------

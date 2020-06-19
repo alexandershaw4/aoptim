@@ -181,6 +181,14 @@ IncMomentum = im; % Observe and use momentum data
 %     V = FindOptimumStep(x0,V); % this func iterates: v = v./abs(J)
 % end
 
+% set up plot function is one was supplied - must adhere to userplot(Y,y)
+% where Y is the data and y the prediction
+if exist('plotfun') && isa(plotfun,'function_handle')
+    fprintf('User-supplied plot function');
+    makeplot         = @userplot;
+    aopt.userplotfun = plotfun;
+end
+
 % parameter and step vectors
 x0  = full(x0(:));
 V   = full(V(:));
@@ -858,6 +866,14 @@ drawnow;hold off;
 
 end
 
+function userplot(x,varargin)
+global
+[Y,y] = GetStates(x);
+
+aopt.userplotfun(Y,y);
+
+end
+
 function makeplot(x,ox)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
@@ -1385,6 +1401,7 @@ X.fun         = [];
 
 X.hyperparameters = 0;
 X.BTLineSearch = 1;
+X.plotfun = [];
 end
 
 function parseinputstruct(opts)

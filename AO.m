@@ -244,6 +244,7 @@ if BayesAdjust; fprintf('Using BayesAdjust option\n'); end
 if IncMomentum; fprintf('Using Momentum option\n');    end
 fprintf('Using step-method: %d\n',step_method);
 fprintf('Using Jaco (gradient) option: %d\n',order);
+fprintf('User fun has %d varying parameters\n',length(find(red)));
 
 % print start point - to console or logbook (loc)
 refdate(loc);pupdate(loc,n,0,e0,e0,'start:');

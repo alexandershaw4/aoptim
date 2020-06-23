@@ -19,7 +19,7 @@ op.y   = y(:);
 op.V   = V(:);
 
 op.step_method = 3;
-op.maxit       = 512;
+op.maxit       = 128;
 
 [X,F,CV] = AO(op);
 

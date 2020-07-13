@@ -181,6 +181,41 @@ if ismember(order,[1 2 3 4])
     end
     
 
+elseif ismember(order,22)
+    
+    k = 3;
+    
+    % Belyaev 1999 curvature
+    %-------------------------------
+    for i = 1:length(P)
+        if ip(i)
+            
+            P0     = P;
+            P1     = P;
+            a      = P0(i) * V(i);
+            b      = P0(i) * V(i) * k;
+
+            if a == 0
+                a = 0.01;
+                b = a * k;
+            end
+
+            P0(i)  = P0(i) - a  ;
+            P1(i)  = P1(i) + b  ;
+
+            % f''(x) =  2f(x-a)       2f(x)     2f(x+b)
+            %          ---------  -  ------- +  -------
+            %            a(a+b)         ab       b(a+b)
+
+
+            f0     = spm_vec(spm_cat(feval(IS,P0)));    
+            f1     = spm_vec(spm_cat(feval(IS,P1)));
+
+            j(i,:) = ( 2*f0 ./ (a*(a+b)) ) - ...
+                     ( 2*fx ./ (a*b)     ) + ...
+                     ( 2*f1 ./ (b*(a+b)) );
+        end
+    end
     
 elseif ismember(order,-2)
     

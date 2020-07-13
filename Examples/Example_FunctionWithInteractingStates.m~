@@ -1,7 +1,7 @@
 clear global ; clear; close all;
 
-% Example function with interacting states (params)...
-%-------------------------------------------------------------
+% Example function with interacting states...
+%-------------
 f  = @(x) ( sum(toeplitz(x)) )' ;
 
 x  = 2:12; % actual optimsed values to find
@@ -12,8 +12,6 @@ rng default;
 x0 = randn(size(x));     % random start positions
 V  = ones(size(x0))/512; % variances/step sizes
 
-% Setting up the optimiser
-%-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
 op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
@@ -24,7 +22,7 @@ op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 op.step_method = 3;   % aggressive steps = 1, careful = 3, vanilla = 4.
 op.maxit       = 128; % maximum number of iterations
 
-[X,F,CV] = AO(op);    % RUN IT
+[X,F,CV] = AO(op);
 
 % Compare data with prediction
 [f(x) f(X)]

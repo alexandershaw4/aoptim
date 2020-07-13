@@ -97,10 +97,19 @@ switch lower(method)
     case 'logevidence'
     fprintf('Minimising -[log evidence]\n');
     [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'logevidence');
-    case {'sample_fe' 'sampler_fe' 'fe_sampler' 'fe_sample'}
+    case {'sample_fe' 'sampler_fe' 'fe_sampler' 'fe_sample' 'sample'}
     % sampling routine
-    [X,F]  = AOsampler(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');
-    CP=[];Pp=[];History=[]; 
+    %[X,F]  = AOsample(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');
+    %CP=[];Pp=[];History=[]; 
+    
+        opts     = AOsample('options');      
+        opts.fun = @fakeDM; 
+        opts.x0  = p(:);
+        opts.V   = c;
+        opts.y   = DCM.xY.y;
+        opts.criterion   = -inf;%-500;%-inf;
+        [X,F] = AOsample(opts);   
+
 end
 
 % to ignore the variances/step sizes and allow AO to compute them:

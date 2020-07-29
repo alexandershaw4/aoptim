@@ -1037,10 +1037,9 @@ end
 % using an auto-generated smooth precision operator
 %----------------------------------------------------------------------------
 ny    = length(spm_vec(y));
-[~,l] = findpeaks(spm_vec(Y),'NPeaks',3);
+[~,l] = findpeaks(spm_vec(Y));
 FS    = ones(ny,1)./ny;
-%FS    = linspace(1,4,length(y))';
-%FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
+FS    = linspace(1,4,length(y))';
 FS(l) = 4;
 FS    = AGenQ(FS);
 
@@ -1066,7 +1065,6 @@ ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
-%Cp  = spm_inv( ipC );
 warning on
 
 p   = ( x0(:) - aopt.pp(:) );
@@ -1188,7 +1186,7 @@ end
 %end
 
 % error along output vector
-er = ( spm_vec(y) - spm_vec(Y) ).^2;
+er = spm_vec(y) - spm_vec(Y);
 mp = spm_vec(y);
 
 % this wraps obj to return only the third output for MIMOs
@@ -1216,7 +1214,7 @@ if nargout == 2
     aopt.updateh = 0;
     
     [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
-    
+
     aopt.updateh = 1;
     
     % store for objective function

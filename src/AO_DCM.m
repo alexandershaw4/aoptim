@@ -87,6 +87,8 @@ switch lower(method)
     opts.im          = 1;
     opts.step_method = sm;
     
+    opts.force_ls=0;
+    
     %[X,F,CP,Pp,History] = AO(opts);        
         
     [X,F,CP,Pp,History] = AO(opts);   
@@ -109,6 +111,10 @@ switch lower(method)
         opts.y   = DCM.xY.y;
         opts.criterion   = -inf;%-500;%-inf;
         [X,F] = AOsample(opts);   
+        
+    case 'control'
+        
+        mpcontrol(@fakeDM,p,c,DCM.xY.y);
 
 end
 

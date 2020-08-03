@@ -212,7 +212,7 @@ aopt.ipC = ipC;        % store ^
 [e0]       = obj(x0);
 n          = 0;
 iterate    = true;
-doplot     = 1;
+%doplot     = 1;
 Vb         = V;
 
 % initial error plot(s)
@@ -1399,6 +1399,7 @@ X.fun         = [];
 X.hyperparams  = 0;
 X.BTLineSearch = 1;
 X.force_ls     = 0;
+X.doplot       = 1;
 end
 
 function parseinputstruct(opts)

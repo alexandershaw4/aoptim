@@ -168,7 +168,7 @@ if ismember(order,[1 2 3 4])
                 
                 % Alternatively, include curvature
                 deriv1 = (f0 - f1) / 2 / d;
-                deriv2 = (f0 - 2 * fx + f1) / d ^ 2; % 2nd ORDER CENTRAL
+                deriv2 = (f0 - 2 * fx + f1) / d ^ 2; % 2nd ORDER
                 j(i,:) = deriv1 ./ deriv2;
                 
                 % This would be the mimo equivalent

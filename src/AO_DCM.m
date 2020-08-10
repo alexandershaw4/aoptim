@@ -63,7 +63,32 @@ switch lower(method)
     case 'sse'
     % use this to minimise SSE:
     fprintf('Minimising SSE\n');
-    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,2,0,'sse');
+    %[X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],1e-3,1e-12,2,0,'sse');
+    
+    % Get and fill in AO options struct
+    opts     = AO('options');      
+    opts.fun = @fakeDM; 
+    opts.x0  = p(:);
+    opts.V   = c;
+    opts.y   = DCM.xY.y;
+    
+    opts.maxit       = niter;
+    opts.inner_loop  = 12*4;
+    opts.Q           = [];
+    opts.criterion   = -inf;%-500;%-inf;
+    opts.min_df      = 1e-12;
+    opts.order       = 2;
+    opts.writelog    = 0;
+    opts.objective   = 'sse';
+    opts.ba          = 0;
+    opts.im          = 1;
+    opts.step_method = sm;
+    
+    opts.force_ls=0;
+        
+    [X,F,CP,Pp,History] = AO(opts);       
+    
+    
     case 'fe'
     % minimise free energy:
     fprintf('Minimising Free-Energy\n'); % 
@@ -98,7 +123,35 @@ switch lower(method)
     
     case 'logevidence'
     fprintf('Minimising -[log evidence]\n');
-    [X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'logevidence');
+    %[X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'logevidence');
+    
+    % Get and fill in AO options struct
+    opts     = AO('options');      
+    opts.fun = @fakeDM; 
+    opts.x0  = p(:);
+    opts.V   = c;
+    opts.y   = DCM.xY.y;
+    
+    opts.maxit       = niter;
+    opts.inner_loop  = 12*4;
+    opts.Q           = [];
+    opts.criterion   = -inf;%-500;%-inf;
+    opts.min_df      = 1e-12;
+    opts.order       = 2;
+    opts.writelog    = 0;
+    opts.objective   = 'logevidence';
+    opts.ba          = 0;
+    opts.im          = 1;
+    opts.step_method = sm;
+    
+    opts.force_ls=0;
+    
+    %[X,F,CP,Pp,History] = AO(opts);        
+        
+    [X,F,CP,Pp,History] = AO(opts);       
+    
+    
+    
     case {'sample_fe' 'sampler_fe' 'fe_sampler' 'fe_sample' 'sample'}
     % sampling routine
     %[X,F]  = AOsample(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,mimo,2,0,'fe');

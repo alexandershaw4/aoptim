@@ -212,7 +212,7 @@ aopt.ipC = ipC;        % store ^
 [e0]       = obj(x0);
 n          = 0;
 iterate    = true;
-doplot     = 1;
+%doplot     = 1;
 Vb         = V;
 
 % initial error plot(s)
@@ -410,6 +410,7 @@ while iterate
                 pd(i)  = makedist('normal','mu', real(x1(i)),'sigma', vv);
                 pdt(i) = (1-cdf( pd(i), real(x1(i))));
                 pt(i)  = (1-cdf( pd(i), real(dx(i))));
+                mh(i)  = mahal(dx(i),pdf(pd(i),linspace(x1(i)-1,x1(i)+1,20))');
                                 
             end
         end    
@@ -1037,9 +1038,10 @@ end
 % using an auto-generated smooth precision operator
 %----------------------------------------------------------------------------
 ny    = length(spm_vec(y));
-[~,l] = findpeaks(spm_vec(Y));
+[~,l] = findpeaks(spm_vec(Y),'NPeaks',3);
 FS    = ones(ny,1)./ny;
-FS    = linspace(1,4,length(y))';
+%FS    = linspace(1,4,length(y))';
+%FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
 FS(l) = 4;
 FS    = AGenQ(FS);
 
@@ -1065,6 +1067,7 @@ ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+%Cp  = spm_inv( ipC );
 warning on
 
 p   = ( x0(:) - aopt.pp(:) );
@@ -1186,7 +1189,7 @@ end
 %end
 
 % error along output vector
-er = spm_vec(y) - spm_vec(Y);
+er = ( spm_vec(y) - spm_vec(Y) ).^2;
 mp = spm_vec(y);
 
 % this wraps obj to return only the third output for MIMOs
@@ -1214,7 +1217,7 @@ if nargout == 2
     aopt.updateh = 0;
     
     [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
-
+    
     aopt.updateh = 1;
     
     % store for objective function
@@ -1397,6 +1400,7 @@ X.fun         = [];
 X.hyperparams  = 0;
 X.BTLineSearch = 1;
 X.force_ls     = 0;
+X.doplot       = 1;
 end
 
 function parseinputstruct(opts)

@@ -409,8 +409,7 @@ while iterate
                 
                 pd(i)  = makedist('normal','mu', real(x1(i)),'sigma', vv);
                 pdt(i) = (1-cdf( pd(i), real(x1(i))));
-                pt(i)  = (1-cdf( pd(i), real(dx(i))));
-                                
+                pt(i)  = (1-cdf( pd(i), real(dx(i))));                                
             end
         end    
         
@@ -442,7 +441,7 @@ while iterate
         % (2) update all parameters whose updated value improves obj
         % (3) update only parameters whose probability exceeds a threshold
         %------------------------------------------------------------------
-        if obj(dx) < obj(x1) && ~BayesAdjust
+        if obj(dx) < obj(x1) && ~BayesAdjust && ~aopt.forcels
             
             % Don't perform checks, assume all f(dx[i]) <= e1
             % i.e. full gradient prediction over parameters is good and we
@@ -461,7 +460,7 @@ while iterate
             end
             
             DFE  = real(DFE(:));
-                        
+           
             % Identify improver-parameters
             gp  = double(DFE < e0); % e0
             gpi = find(gp);
@@ -1037,7 +1036,7 @@ end
 % using an auto-generated smooth precision operator
 %----------------------------------------------------------------------------
 ny    = length(spm_vec(y));
-[~,l] = findpeaks(spm_vec(Y),'NPeaks',3);
+[~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
 FS    = ones(ny,1)./ny;
 %FS    = linspace(1,4,length(y))';
 %FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
@@ -1122,6 +1121,7 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
+%L(1) = spm_logdet(iS)*nq/2  - sum( sum(real(e'.*iS.*e)/2) ) - ny*log(8*atan(1))/2;
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 

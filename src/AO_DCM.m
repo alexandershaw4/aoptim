@@ -112,7 +112,7 @@ switch lower(method)
     opts.im          = 1;
     opts.step_method = sm;
     
-    opts.force_ls=0;
+    opts.force_ls=0;    
     
     %[X,F,CP,Pp,History] = AO(opts);        
         

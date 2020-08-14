@@ -179,6 +179,7 @@ aopt.fixedstepderiv  = 1;% fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
+aopt.smoothfun       = smoothfun; % auto smooth the error function
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
@@ -250,6 +251,9 @@ fprintf('User fun has %d varying parameters\n',length(find(red)));
 % print start point - to console or logbook (loc)
 refdate(loc);pupdate(loc,n,0,e0,e0,'start:');
 
+% gen & store smoothing vec
+smoothvec = round(linspace(6,1,maxit).^2);
+
 % start optimisation loop
 %==========================================================================
 while iterate
@@ -261,6 +265,11 @@ while iterate
     pupdate(loc,n,0,e0,e0,'grdnts',toc);
     
     aopt.pp = x0;
+    
+    %  compute & store the smoothing function for this iteration
+    if smoothfun
+        aopt.R = @(x) spm_unvec(smooth(spm_vec(x),smoothvec(n)),x);
+    end
     
     % compute gradients & search directions
     %----------------------------------------------------------------------
@@ -554,10 +563,13 @@ while iterate
                 
         while exploit
             % local linear extrapolation
-            extrapx = V*(x1+(-dp./-df));
+            %extrapx = V*(x1+(-dp./-df));
+            extrapx = V*(x1 + ((-dp).*((df-e1)./e1)).^(1+nexpl) );
             if obj(extrapx) < e1
+                %dp    = dp + (extrapx-x1);
                 x1    = extrapx(:);
                 e1    = obj(x1);
+                %df    = df + (e0-e1);
                 nexpl = nexpl + 1;
             else
                 % if this didn't work, just stop and move on to accepting
@@ -571,6 +583,30 @@ while iterate
                 exploit = false;
             end
         end
+        
+%         % after best full steps, try some smaller steps using selection of
+%         % best performing parameters
+%         [these,Ip] = sort(dp,'descend');
+%         Ip = Ip(1:length(find(these)));
+%         
+%         parsel = true;
+%         while parsel
+%             
+%             for jp = 1:length(Ip)
+%                 x2         = x1;
+%                 x2(Ip(jp)) = x1(Ip(jp)) - dp(Ip(jp));
+%                 
+%                 if obj(x2) < obj(x1)
+%                     x1 = x2;
+%                     e1 = obj(x1);
+%                 else
+%                     pfail(jp)=1;
+%                 end
+%             end
+%             if sum(pfail)>=length(Ip)
+%                 parsel=false;
+%             end
+%         end
         
         % Update best-so-far estimates
         e0 = e1;
@@ -1013,6 +1049,12 @@ warning on;
 Y  = aopt.y;
 Q  = aopt.Q;
 
+% Apply smoothing operator if supplied
+if isfield(aopt,'smoothfun') && isfield(aopt,'R') && aopt.smoothfun
+    y = aopt.R(y);
+    Y = aopt.R(Y);
+end
+
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
@@ -1035,17 +1077,17 @@ end
 % If the system output >1D (e.g. a power spectum), prioritise shifts along x
 % using an auto-generated smooth precision operator
 %----------------------------------------------------------------------------
-ny    = length(spm_vec(y));
-[~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
-FS    = ones(ny,1)./ny;
-%FS    = linspace(1,4,length(y))';
-%FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
-FS(l) = 4;
-FS    = AGenQ(FS);
-
-for i = 1:ny
-    Q{i} = sparse(i,i,FS(i,i),ny,ny);
-end
+% ny    = length(spm_vec(y));
+% [~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
+% FS    = ones(ny,1)./ny;
+% %FS    = linspace(1,4,length(y))';
+% %FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
+% FS(l) = 4;
+% FS    = AGenQ(FS);
+% 
+% for i = 1:ny
+%     Q{i} = sparse(i,i,FS(i,i),ny,ny);
+% end
 
 if isinf(h)
     h = 1/8;
@@ -1400,6 +1442,7 @@ X.hyperparams  = 0;
 X.BTLineSearch = 1;
 X.force_ls     = 0;
 X.doplot       = 1;
+X.smoothfun    = 0;
 end
 
 function parseinputstruct(opts)

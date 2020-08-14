@@ -184,6 +184,7 @@ for chan=1:size(x,2)
   if nx > n+1
     % find local maxima separated by at least N samples
     [~,iPk] = findpeaks(double(x(:,chan)),'MinPeakDistance',n);
+    %[~,iPk] = findpeaks(double(x(:,chan)),'NPeaks',n);
   else
     iPk = [];
   end
@@ -204,6 +205,7 @@ for chan=1:size(x,2)
   if nx > n+1
     % find local minima separated by at least N samples
     [~,iPk] = findpeaks(double(-x(:,chan)),'MinPeakDistance',n);
+    %[~,iPk] = findpeaks(double(-x(:,chan)),'NPeaks',n);
   else
     iPk = [];
   end

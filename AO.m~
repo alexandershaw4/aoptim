@@ -180,6 +180,7 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.smoothfun       = smoothfun; % auto smooth the error function
+aopt.mimo            = 0;
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
@@ -251,7 +252,9 @@ fprintf('User fun has %d varying parameters\n',length(find(red)));
 % print start point - to console or logbook (loc)
 refdate(loc);pupdate(loc,n,0,e0,e0,'start:');
 
-% gen & store smooth
+% gen & store smoothing vec
+smoothvec = round(linspace(6,1,maxit).^2);
+
 % start optimisation loop
 %==========================================================================
 while iterate
@@ -562,12 +565,12 @@ while iterate
         while exploit
             % local linear extrapolation
             %extrapx = V*(x1+(-dp./-df));
-            extrapx = V*(x1 + ((-dp).*(df./e1)).^(1+nexpl) );
+            extrapx = V*(x1 + ((-dp).*((df-e1)./e1)).^(1+nexpl) );
             if obj(extrapx) < e1
-                dp    = dp + (extrapx-x1);
+                %dp    = dp + (extrapx-x1);
                 x1    = extrapx(:);
                 e1    = obj(x1);
-                df    = df + (e0-e1);
+                %df    = df + (e0-e1);
                 nexpl = nexpl + 1;
             else
                 % if this didn't work, just stop and move on to accepting
@@ -582,29 +585,29 @@ while iterate
             end
         end
         
-        % after best full steps, try some smaller steps using selection of
-        % best performing parameters
-        [these,Ip] = sort(dp,'descend');
-        Ip = Ip(1:length(find(these)));
-        
-        parsel = true;
-        while parsel
-            
-            for jp = 1:length(Ip)
-                x2         = x1;
-                x2(Ip(jp)) = x1(Ip(jp)) - dp(Ip(jp));
-                
-                if obj(x2) < obj(x1)
-                    x1 = x2;
-                    e1 = obj(x1);
-                else
-                    pfail(jp)=1;
-                end
-            end
-            if sum(pfail)>=length(Ip)
-                parsel=false;
-            end
-        end
+%         % after best full steps, try some smaller steps using selection of
+%         % best performing parameters
+%         [these,Ip] = sort(dp,'descend');
+%         Ip = Ip(1:length(find(these)));
+%         
+%         parsel = true;
+%         while parsel
+%             
+%             for jp = 1:length(Ip)
+%                 x2         = x1;
+%                 x2(Ip(jp)) = x1(Ip(jp)) - dp(Ip(jp));
+%                 
+%                 if obj(x2) < obj(x1)
+%                     x1 = x2;
+%                     e1 = obj(x1);
+%                 else
+%                     pfail(jp)=1;
+%                 end
+%             end
+%             if sum(pfail)>=length(Ip)
+%                 parsel=false;
+%             end
+%         end
         
         % Update best-so-far estimates
         e0 = e1;
@@ -668,7 +671,7 @@ while iterate
                     if doplot; makeplot(V*x0,x1); end
 
                     % update step size for these params
-                    %red = red(:) + ( red(:).*thisgood(:) );      
+                    red = red(:) + ( red(:).*thisgood(:) );      
                    
                     % reset rejection counter
                     n_reject_consec = 0;
@@ -1075,17 +1078,17 @@ end
 % If the system output >1D (e.g. a power spectum), prioritise shifts along x
 % using an auto-generated smooth precision operator
 %----------------------------------------------------------------------------
-ny    = length(spm_vec(y));
-[~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
-FS    = ones(ny,1)./ny;
-%FS    = linspace(1,4,length(y))';
-%FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
-FS(l) = 4;
-FS    = AGenQ(FS);
-
-for i = 1:ny
-    Q{i} = sparse(i,i,FS(i,i),ny,ny);
-end
+% ny    = length(spm_vec(y));
+% [~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
+% FS    = ones(ny,1)./ny;
+% %FS    = linspace(1,4,length(y))';
+% %FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
+% FS(l) = 4;
+% FS    = AGenQ(FS);
+% 
+% for i = 1:ny
+%     Q{i} = sparse(i,i,FS(i,i),ny,ny);
+% end
 
 if isinf(h)
     h = 1/8;
@@ -1255,8 +1258,13 @@ if nargout == 2
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     aopt.updateh = 0;
     
-    [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
-    
+    if ~aopt,mimo
+        [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
+    elseif aopt.
+    [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,4);
+    J0     = cat(2,J{:,1})';
+    J      = cat(2,J{:,4})';
+            
     aopt.updateh = 1;
     
     % store for objective function
@@ -1274,6 +1282,10 @@ if nargout == 2
             aopt.pJ = J;
         end
     end
+    
+    J = spm_vec(J0);
+    
+    
     
     %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
     %J = repmat(V,[1 size(J,2)])./J;

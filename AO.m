@@ -167,19 +167,20 @@ end
 
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
-%aopt         = [];       % reset
+%aopt         = [];      % reset
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
 aopt.pp      = x0(:);    % starting parameters
 aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
 aopt.history = [];       % error history when y=e & arg min y = f(x)
-aopt.memory  = 0;        % incorporate previous gradients when recomputing
+aopt.memory  = gradmemory;% incorporate previous gradients when recomputing
 aopt.fixedstepderiv  = 1;% fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.smoothfun       = smoothfun; % auto smooth the error function
+aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
@@ -1066,7 +1067,11 @@ end
 
 % Free Energy Objective Function: F(p) = log evidence - divergence
 %--------------------------------------------------------------------------
-Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %Q  = {AGenQ(spm_vec(Y))};
+Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %
+
+if aopt.mimo
+    Q  = {AGenQ(spm_vec(Y))};
+end
 
 if ~isfield(aopt,'h');
     h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
@@ -1077,13 +1082,16 @@ end
 % If the system output >1D (e.g. a power spectum), prioritise shifts along x
 % using an auto-generated smooth precision operator
 %----------------------------------------------------------------------------
-% ny    = length(spm_vec(y));
-% [~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
-% FS    = ones(ny,1)./ny;
-% %FS    = linspace(1,4,length(y))';
-% %FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
-% FS(l) = 4;
-% FS    = AGenQ(FS);
+% if aopt.mimo
+%     ny    = length(spm_vec(y));
+%     [~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
+%     FS    = ones(ny,1)./ny;
+%     %FS    = linspace(1,4,length(y))';
+%     %FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
+%     FS(l) = 4;
+%     FS    = AGenQ(FS);
+%     Q     = {FS};
+% end
 % 
 % for i = 1:ny
 %     Q{i} = sparse(i,i,FS(i,i),ny,ny);
@@ -1257,7 +1265,14 @@ if nargout == 2
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     aopt.updateh = 0;
     
-    [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
+    if ~aopt.mimo
+        [J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
+    else
+        nout   = 4;
+        [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout);
+        J0     = cat(2,J{:,1})';
+        J      = cat(2,J{:,nout})';
+    end
     
     aopt.updateh = 1;
     
@@ -1270,12 +1285,18 @@ if nargout == 2
     % accumulate gradients / memory of gradients
     if aopt.memory
         try
-            J       = J + (aopt.pJ/2) ;
+            %J       = J + (aopt.pJ/2) ;
+            J       = ( J + aopt.pJ ) ./2;
             aopt.pJ = J;
         catch
             aopt.pJ = J;
         end
     end
+    
+    if aopt.mimo
+        J = spm_vec(J0);
+    end
+    
     
     %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
     %J = repmat(V,[1 size(J,2)])./J;
@@ -1443,6 +1464,8 @@ X.BTLineSearch = 1;
 X.force_ls     = 0;
 X.doplot       = 1;
 X.smoothfun    = 0;
+X.ismimo       = 0;
+X.gradmemory   = 0;
 end
 
 function parseinputstruct(opts)

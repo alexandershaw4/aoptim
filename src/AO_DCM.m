@@ -85,7 +85,9 @@ switch lower(method)
     opts.step_method = sm;
     
     opts.force_ls=0;
-        
+    
+    %opts.ismimo = 1;
+    
     [X,F,CP,Pp,History] = AO(opts);       
     
     
@@ -113,6 +115,7 @@ switch lower(method)
     opts.step_method = sm;
     
     opts.force_ls=0;    
+    %opts.hyperparams=1;
     
     %[X,F,CP,Pp,History] = AO(opts);        
         
@@ -145,6 +148,8 @@ switch lower(method)
     opts.step_method = sm;
     
     opts.force_ls=0;
+    %opts.ismimo = 1;
+    %opts.gradmemory = 1;
     
     %[X,F,CP,Pp,History] = AO(opts);        
         

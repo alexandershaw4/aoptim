@@ -9,11 +9,10 @@ function Q = AGenQ(x)
 
 
 % % Peak points as regions of importance
-% x     = x ./ max(x);
-% [v,I] = findpeaks(x);
-% 
-% x(I)  = 8;
-% 
+x     = x ./ max(x);
+[v,I] = findpeaks(x);
+x(I)  = 8;
+ 
 % Get features
 a  = diag( x );
 

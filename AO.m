@@ -837,26 +837,44 @@ fprintf(loc,'|---------------|----------|-------------------|-------------------
 
 end
 
-function prinfo(loc,it,nfun,nc,ncs)
+function s = prinfo(loc,it,nfun,nc,ncs)
 
+s = sprintf(loc,'| Main It: %04i | nf: %04i | Selecting components: %01i of %01i\n',it,nfun,nc,ncs);
 fprintf(loc,'| Main It: %04i | nf: %04i | Selecting components: %01i of %01i\n',it,nfun,nc,ncs);
 
 end
 
-function pupdate(loc,it,nfun,err,best,action,varargin)
-
+function s = pupdate(loc,it,nfun,err,best,action,varargin)
+persistent tx
 if nargin >= 7
     n = varargin{1};
     fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
+    st=sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main Iteration: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n| Time: %d\n',it,nfun,err,best,action,n);
+
 else
     fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
+    st = sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main It: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n\n',it,nfun,err,best,action);
 end
+
+s = subplot(4,3,3);
+delete(tx);
+tx = text(0,.5,st,'FontSize',18,'Color','w');
+ax = gca;
+set(ax,'visible',0);
+ax.XGrid = 'off';
+ax.YGrid = 'on';
+s.YColor = [1 1 1];
+s.XColor = [1 1 1];
+s.Color  = [.3 .3 .3];
+drawnow;
+
 
 end
 
 function setfig()
 
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
+%figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
+figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1116 140 1310 809]);
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -966,15 +984,18 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
 %     drawnow;
 else
 %if iscell(Y)
-    s(1) = subplot(411);
+    %s(1) = subplot(411);
+    s(1) = subplot(4,3,[1 2]);
+    
     plot(spm_cat(Y),'w:','linewidth',3); hold on;
     plot(spm_cat(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
-    grid on;grid minor;title('AO: System Identification','color','w','fontsize',18);
+    grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
     s(1).YColor = [1 1 1];
     s(1).XColor = [1 1 1];
     s(1).Color  = [.3 .3 .3];
 
-    s(2) = subplot(412);
+    %s(2) = subplot(412);
+    s(2) = subplot(4,3,[4]);
     %bar([former_error new_error]);
     plot(former_error,'w--','linewidth',3); hold on;
     plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -984,7 +1005,8 @@ else
     s(2).Color  = [.3 .3 .3];
     
     
-    s(3) = subplot(413);
+    %s(3) = subplot(413);
+    s(3) = subplot(4,3,5);
     bar(real([ x(:)-ox(:) ]),'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
     ax = gca;
@@ -994,6 +1016,22 @@ else
     s(3).XColor = [1 1 1];
     s(3).Color  = [.3 .3 .3];
     drawnow;
+    
+    s(4) = subplot(4,3,[7 8]);
+    plot(spm_vec(Y),'w:','linewidth',3);
+    hold on;
+    plot(spm_vec(Y)-aopt.oerror,'linewidth',3,'Color',[1 .7 .7]); hold off;
+    grid on;grid minor;
+    title('Last Best','color','w','fontsize',18);
+    ax = gca;
+    ax.XGrid = 'off';
+    ax.YGrid = 'on';
+    s(4).YColor = [1 1 1];
+    s(4).XColor = [1 1 1];
+    s(4).Color  = [.3 .3 .3];
+    drawnow;
+    
+    
 %end
 end
 
@@ -1096,6 +1134,8 @@ end
 % for i = 1:ny
 %     Q{i} = sparse(i,i,FS(i,i),ny,ny);
 % end
+
+%Q  = {AGenQ(atcm.fun.aenvelope(spm_vec(Y),30))};
 
 if isinf(h)
     h = 1/8;

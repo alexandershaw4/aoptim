@@ -90,4 +90,7 @@ if xa(2), Qu=Q; else Qu=1; end
 if xa(3), Qv=Q; else Qv=1; end
 
 %-Compute
+x = real(x);
+u = real(u);
+v = real(v);
 F(Q) = 0.5 + 0.5*erf((x(Qx)-u(Qu))./sqrt(2*v(Qv)));

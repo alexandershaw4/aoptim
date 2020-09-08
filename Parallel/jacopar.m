@@ -2,7 +2,15 @@ function [j,ip,j1] = jacopar(fun,x0,V,verbose,order,params)
 % Compute the 1st or 2nd order partial numerical derivates of a function
 % - parameter version: i.e. dp/dx - using symmetric finite difference methods
 %
-% usage: [j,ip] = jaco(fun,x0,V,verbose,order)
+% usage: [j,ip] = jaco(fun,x0,V,verbose,order,nout,{params})
+%
+%  fun = function
+%  x0  = params, e.g. fun(x0)
+%  V   = step for each param (e.g. 1/8 ... ) [can be vector: 1 for each x0]
+%  verbose = print progress
+%  order = method/derivate order, see below
+%  nout = number of outputs of the function to diff w r t
+%  params = any req. additional function inputs in cell, e.g. fun(x0,params{:})
 %
 % Order/options flags:
 % ----------------------------------------------------------------------
@@ -43,19 +51,30 @@ function [j,ip,j1] = jacopar(fun,x0,V,verbose,order,params)
 % 
 % AS2019
 
+
 if nargin < 6 || isempty(params);  params = []; end
 if nargin < 5 || isempty(order)  ; order   = 1; end
 if nargin < 4 || isempty(verbose); verbose = 0; end
 
-IS = fun;
-P  = x0(:);
+%IS = fun;
+%P  = x0(:);
+
+P = x0(:);
+
+if isempty(params)
+    IS = fun;
+    P  = x0(:);
+else
+    IS = @(P) fun(P,params{:});
+    P  = x0(:) ;
+end
 
 if nargin >= 3; ip = ~~(V(:));
 else;           ip = 1:length(x0);
 end
 
 % The subfunction -
-[j,j1]  = jacf(IS,P,ip,verbose,V,order,params);
+[j,j1]  = jacf(IS,P,ip,verbose,V,order);
 
 j(isnan(j)) = 0;
 %j(isinf(j)) = 0;
@@ -64,7 +83,7 @@ end
 
 
 
-function [j,j1] = jacf(IS,P,ip,verbose,V,order,params)
+function [j,j1] = jacf(IS,P,ip,verbose,V,order)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
@@ -79,7 +98,7 @@ if verbose
 end
 
 %f0    = feval(IS,P);
-f0    = spm_cat( feval(IS,P,params) );
+f0    = spm_cat( feval(IS,P) );
 fx    = f0(:);
 j     = zeros(length(P),length(f0(:))); % n param x n output
 %j     = gpuArray(full(j));
@@ -108,8 +127,8 @@ if ismember(order,[1 2 3 4])
             P0(i)  = P0(i) + d  ;
             P1(i)  = P1(i) - d  ;
 
-            f0     = full( spm_vec(spm_cat(feval(IS,P0,params))) );
-            f1     = full( spm_vec(spm_cat(feval(IS,P1,params))) );
+            f0     = full( spm_vec(spm_cat(feval(IS,P0))) );
+            f1     = full( spm_vec(spm_cat(feval(IS,P1))) );
             j(i,:) = ( (f0 - f1) / (2 * d) );
             
             if order == 3 || order == 4

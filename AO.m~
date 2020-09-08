@@ -181,7 +181,6 @@ aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.smoothfun       = smoothfun; % auto smooth the error function
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
-aopt.parallel        = parallel;
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
@@ -1332,12 +1331,9 @@ if nargout == 2 || nargout == 7
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     aopt.updateh = 0;
     
-    if ~aopt.mimo 
-        if ~aopt.parallel
-            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
-        else
-            [J,ip] = jacopar(@obj,x0,V,0,Ord,{params});   ... df[e]   /dx [MISO] 
-        end
+    if ~aopt.mimo
+        %[J,ip] = jaco(@obj,x0,V,0,Ord);   ... df[e]   /dx [MISO]
+         [J,ip] = jacopar(@obj,x0,V,0,Ord,params);   ... df[e]   /dx [MISO] 
     else
         nout   = 4;
         [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout);
@@ -1538,7 +1534,6 @@ X.doplot       = 1;
 X.smoothfun    = 0;
 X.ismimo       = 0;
 X.gradmemory   = 0;
-X.parallel     = 0;
 end
 
 function parseinputstruct(opts)

@@ -90,6 +90,7 @@ switch lower(method)
     
     [X,F,CP,Pp,History] = AO(opts);       
     
+    CP = atcm.fun.reembedreducedcovariancematrix(DCM,CP);
     
     case 'fe'
     % minimise free energy:
@@ -114,12 +115,15 @@ switch lower(method)
     opts.im          = 1;
     opts.step_method = sm;
     
-    opts.force_ls=0;    
+    opts.force_ls=1;    
+    opts.parallel = 0;
     %opts.hyperparams=1;
     
     %[X,F,CP,Pp,History] = AO(opts);        
         
     [X,F,CP,Pp,History] = AO(opts);   
+    
+    CP = atcm.fun.reembedreducedcovariancematrix(DCM,CP);
     
     %[X,F,CP,Pp,History]  = AO(@fakeDM,p(:),c,DCM.xY.y,niter,12*4,[],-inf,1e-12,2,0,'fe',1,1,sm);
     %[X,F,CP,History]  = AOm(@fakeDM,p(:),c,DCM.xY.y);
@@ -155,7 +159,7 @@ switch lower(method)
         
     [X,F,CP,Pp,History] = AO(opts);       
     
-    
+    CP = atcm.fun.reembedreducedcovariancematrix(DCM,CP);
     
     case {'sample_fe' 'sampler_fe' 'fe_sampler' 'fe_sample' 'sample'}
     % sampling routine

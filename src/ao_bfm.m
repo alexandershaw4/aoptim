@@ -53,7 +53,16 @@ b(end-nb+1:end)= bx(2:end);
 b(ne+1:ne+ne)  = 1./bx(1)/3;
 b(1:ne)        = 0.1;
 
-[b,F,Cp] = AO(@fun,b,V,x,inf,10);
+op = AO('options');
+op.fun = @fun;
+op.x0 = b;
+op.V = V;
+op.y = x;
+op.maxit=10;
+
+[b,F,Cp] = AO(op);
+
+%[b,F,Cp] = AO(@fun,b,V,x,inf,10);
 
 % compute betas on the non-orthongal predictors
 %----------------------------------------------------

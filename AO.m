@@ -315,7 +315,7 @@ while iterate
     
     % Track the variance of the partial derivatives over iterations
     if n >= 3
-        switchoff = find( var(squeeze(cat(3,Hist.J{:}))')*Vv < 1e-8 );
+        switchoff = find( var(squeeze(cat(3,Hist.J{:}))')*Vv < 1e-12 );
         if any(switchoff)
             offvec = ones(1,size(Vv,2));
             offvec(switchoff) = 0;

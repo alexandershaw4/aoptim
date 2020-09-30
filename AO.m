@@ -175,7 +175,7 @@ aopt.pp      = x0(:);    % starting parameters
 aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
 aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.memory  = gradmemory;% incorporate previous gradients when recomputing
-aopt.fixedstepderiv  = 1;% fixed or adjusted step for derivative calculation
+aopt.fixedstepderiv  = fsd;% fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
@@ -1330,7 +1330,7 @@ if nargout == 2 || nargout == 7
         V = (~~V)*1e-3;
        %V = (~~V)*exp(-8);
     else
-        V = V*1e-2;
+        %V = V*1e-2;
     end
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
@@ -1542,7 +1542,8 @@ X.doplot       = 1;
 X.smoothfun    = 0;
 X.ismimo       = 0;
 X.gradmemory   = 0;
-X.doparallel     = 0;
+X.doparallel   = 0;
+X.fsd          = 1;
 end
 
 function parseinputstruct(opts)

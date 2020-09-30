@@ -1,4 +1,4 @@
-function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,method,sm)
+function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,method,sm,hyper)
 % A wrapper for fitting DCMs with AO.m curvature optimisation routine.
 % 
 % Input parameter structure, P and a fully specified DCM structure:
@@ -25,6 +25,10 @@ function [EP,F,CP,Pp,History] = AO_DCM(P,DCM,niter,method,sm)
 % AS
 
 global DD
+
+if nargin < 6 || isempty(hyper)
+    hyper = 1;
+end
 
 if nargin < 5 || isempty(sm) % search_method option (1,2 or 3)
     sm = 3;
@@ -115,9 +119,10 @@ switch lower(method)
     opts.im          = 1;
     opts.step_method = sm;
     
-    opts.force_ls=1;    
-    opts.parallel = 0;
-    %opts.hyperparams=1;
+    opts.BTLineSearch=0;
+    opts.force_ls=0;
+    %opts.parallel=1;
+    opts.hyperparams=hyper; % the third FE term - an ascent on the noise
     
     %[X,F,CP,Pp,History] = AO(opts);        
         

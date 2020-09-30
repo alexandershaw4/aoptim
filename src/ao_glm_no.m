@@ -29,7 +29,8 @@ opts.x0  = b;
 opts.V   = V;
 opts.y   = x;
 opts.maxit = inf;
-opts.step_method = 1;
+opts.step_method = 3;
+opts.hyperparams = 1;
 [b,F,Cp] = AO(opts);
 
 

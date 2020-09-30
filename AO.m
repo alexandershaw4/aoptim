@@ -181,7 +181,7 @@ aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.smoothfun       = smoothfun; % auto smooth the error function
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
-aopt.parallel        = parallel;
+aopt.parallel        = doparallel;
 
 BayesAdjust = ba; % Bayes-esque adjustment (constraint) of the GD-predicted parameters
                   % (converges slower but might be more careful)
@@ -257,8 +257,9 @@ fprintf('User fun has %d varying parameters\n',length(find(red)));
 refdate(loc);pupdate(loc,n,0,e0,e0,'start:');
 
 % gen & store smoothing vec
-smoothvec = round(linspace(6,1,maxit).^2);
-
+if smoothfun
+    smoothvec = round(linspace(6,1,maxit).^2);
+end
 % start optimisation loop
 %==========================================================================
 while iterate
@@ -281,9 +282,8 @@ while iterate
     aopt.updatej = true;
     aopt.updateh = true;
     params.aopt  = aopt;
-    [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
+    [e0,df0]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
-    aopt      = params.aopt;
     
     % Second order partial derivates w.r.t parameters, x[i], using:
     %
@@ -356,7 +356,6 @@ while iterate
         % because a is also the variance term on the parameters
         % distributions, this is also optimising the variance...
         OptimiseStepSize = BTLineSearch;
-        params.aopt      = aopt;
                 
         if OptimiseStepSize && nfun == 1 && obj(dx,params) < obj(x1,params) && step_method ~= 4
             
@@ -482,7 +481,7 @@ while iterate
 
         else
             % Assess each new parameter estimate (step) individually
-            parfor nip = 1:length(dx)
+            for nip = 1:length(dx)
                 XX     = V*x0;
                 if red(nip)
                     XX(nip)  = dx(nip);
@@ -1010,8 +1009,8 @@ else
     %s(1) = subplot(411);
     s(1) = subplot(4,3,[1 2]);
     
-    plot(spm_cat(Y),'w:','linewidth',3); hold on;
-    plot(spm_cat(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
+    plot(spm_vec(Y),'w:','linewidth',3); hold on;
+    plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
     grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
     s(1).YColor = [1 1 1];
     s(1).XColor = [1 1 1];
@@ -1088,8 +1087,11 @@ function [e,J,er,mp,Cp,L,params] = obj(x0,params)
 % (vector) and covariance
 %
 
-%global aopt
-aopt=params.aopt;
+if ~params.aopt.parallel
+    global aopt;
+else
+    aopt=params.aopt;
+end
 
 % if ~isfield(aopt,'computeiCp')
 %     % Compute inverse covariance - on first call trigger this, but it gets 
@@ -1227,8 +1229,10 @@ if aopt.hyperparameters
 
     % update ReML estimate
     %------------------------------------------------------------------
+    warning off;
     dh    = spm_dx(dFdhh,dFdh,{4});
     dh    = min(max(dh,-1),1);
+    warning on;
     h     = h  + dh;
 
     if aopt.updateh
@@ -1306,7 +1310,7 @@ end
 er = ( spm_vec(y) - spm_vec(Y) ).^2;
 mp = spm_vec(y);
 
-params.aopt = aopt;
+%params.aopt = aopt;
 
 % this wraps obj to return only the third output for MIMOs
 % when we want the derivatives w.r.t. each output 
@@ -1538,7 +1542,7 @@ X.doplot       = 1;
 X.smoothfun    = 0;
 X.ismimo       = 0;
 X.gradmemory   = 0;
-X.parallel     = 0;
+X.doparallel     = 0;
 end
 
 function parseinputstruct(opts)

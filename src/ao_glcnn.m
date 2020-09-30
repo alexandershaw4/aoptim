@@ -50,9 +50,22 @@ V  = [10*ones(length(m),1) ; (0*spm_vec(m))+1/8];
 
 %[b,F,Cp] = AO(@fun,b(:),V,x,inf);
 
-obj = @(b) sum(spm_vec(x)-spm_vec(fun(b))).^2;
-[b,F]=COA(obj,[b-1 b+1]',100000,10,10);
-Cp = [];
+%obj = @(b) sum(spm_vec(x)-spm_vec(fun(b))).^2;
+
+
+opts     = AO('options');      
+opts.fun = @fun;
+opts.x0  = b;
+opts.V   = V;
+opts.y   = x;
+opts.maxit = inf;
+opts.step_method = 1;
+[b,F,Cp] = AO(opts);
+
+
+
+%[b,F]=COA(obj,[b-1 b+1]',100000,10,10);
+%Cp = [];
 
 b = spm_unvec(b,m);
 

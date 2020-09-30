@@ -126,10 +126,12 @@ classdef AODCM < handle
             
             [X,F,CP,Pp,History] = AO(obj.opts);   
             
+            [~, P] = wrapdm(spm_vec(X));
+            
             obj.X  = X;
             obj.F  = F;
             obj.CP = CP;
-            obj.Ep = spm_unvec(spm_vec(X),obj.DD.P);
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
             
             obj.history = History;
             

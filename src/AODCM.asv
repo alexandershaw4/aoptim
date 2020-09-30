@@ -23,7 +23,7 @@ classdef AODCM < handle
         CP      % posterior parameter covariance in reduced space
         history % history from the optimisation (steps, partial derivatives)
         DD      % a helper structure for the embedded wrapdm function
-        Y       % the stored data from D
+        Y       % the stored data from DCM.xY.y
     end
     
     methods
@@ -84,6 +84,7 @@ classdef AODCM < handle
             obj.pE   = p(:);
             obj.pC   = c(:);
             obj.DD   = DD;
+            obj.Y    = DCM.xY.y;
             
             % Begin optimisation if flagged
             if nargin == 2 && do_optimise == 1
@@ -124,6 +125,8 @@ classdef AODCM < handle
             %
             
             [X,F,CP,Pp,History] = AO(obj.opts);   
+            
+            [~, P] = wrapdm(
             
             obj.X  = X;
             obj.F  = F;

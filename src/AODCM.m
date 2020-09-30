@@ -24,6 +24,7 @@ classdef AODCM < handle
         history % history from the optimisation (steps, partial derivatives)
         DD      % a helper structure for the embedded wrapdm function
         Y       % the stored data from DCM.xY.y
+        V       % maps between full (parameter) space and reduced
     end
     
     methods
@@ -98,6 +99,11 @@ classdef AODCM < handle
             % wraps the DCM/SPM integrator function into a f(P)
             % anonymous-like function accepting a reduced parameter vector
             % and returning the model output
+            %
+            % Constructs the model:
+            %     log( M.V*M.X.*exp(M.DD.P) ) == M.V'*M.Ep
+            %
+            % so that AO.m actually optimises X
             
             DD   = obj.DD;
             P    = DD.P;
@@ -126,12 +132,13 @@ classdef AODCM < handle
             
             [X,F,CP,Pp,History] = AO(obj.opts);   
             
-            [~, P] = wrapdm(spm_vec(X));
+            [~, P] = obj.wrapdm(spm_vec(X));
             
             obj.X  = X;
             obj.F  = F;
             obj.CP = CP;
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+            obj.V  = obj.DD.cm;
             
             obj.history = History;
             

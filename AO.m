@@ -1451,15 +1451,11 @@ global aopt
 if search_method == 1
     dx    = x1 + (a*J');                 % When a is a matrix
 elseif search_method == 2
-    
     dFdp  = a;
     dFdpp = J;
     ddx   = spm_dx(dFdpp,dFdp,{-4})';    % The SPM way
     ddx   = ddx(:);
-    dx    = x1 + ddx;
-    
-    %dx    = spm_vec(aopt.pp) + p;
-    
+    dx    = x1 + ddx;    
 elseif search_method == 3                % Rasmussen w/ varying p steps
     dx    = x1 + (a.*J);                 
 elseif search_method == 4                % Flat/generic descent

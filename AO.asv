@@ -1416,12 +1416,15 @@ switch search_method
     case 2
         
         J     = -df0';
-        dFdp  = -real(aopt.J*aopt.iS*repmat(e0,[ length(aopt.iS),1]) ) - aopt.ipC*aopt.pp;
-        dFdpp = -real(aopt.J*aopt.iS*aopt.J')  - aopt.ipC;
+        %dFdp  = -real(J'*e0);
+        %dFdpp = -real(J'*J);
         
-        % bit hacky but means i don't have to change the function
-        x3 = dFdp;
-        J  = dFdpp;
+        dFdp  = -real(aopt.J*aopt.iS*e0) - aopt.ipC*aopt.pp;
+        dFdpp = -real(aopt.J*aopt.iS*)  - aopt.ipC;
+        
+        % bit hacky but means i dono't have to change the function
+        a = dFdp;
+        J = dFdpp;
 
     case 3
         
@@ -1446,19 +1449,19 @@ function dx = compute_dx(x1,a,J,red,search_method)
 % dx = x1 + a*J
 %
 % (note gradient has already been negative signed)
-global aopt
 
 if search_method == 1
     dx    = x1 + (a*J');                 % When a is a matrix
 elseif search_method == 2
     
-    dFdp  = a;
+    dFdp = a;
     dFdpp = J;
-    ddx   = spm_dx(dFdpp,dFdp,{-4})';    % The SPM way
-    ddx   = ddx(:);
-    dx    = x1 + ddx;
     
-    %dx    = spm_vec(aopt.pp) + p;
+    ddx   = spm_dx(dFdpp,dFdp,{red})';   % The SPM way
+    %dx    = x1 - ddx;
+    
+    p     = x1 + ddx;
+    dx    = spm_unvec(spm_vec(pE) + p,pE);
     
 elseif search_method == 3                % Rasmussen w/ varying p steps
     dx    = x1 + (a.*J);                 

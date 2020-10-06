@@ -882,7 +882,7 @@ s = subplot(4,3,3);
 delete(tx);
 tx = text(0,.5,st,'FontSize',18,'Color','w');
 ax = gca;
-set(ax,'visible',0);
+set(ax,'visible','off');
 ax.XGrid = 'off';
 ax.YGrid = 'on';
 s.YColor = [1 1 1];

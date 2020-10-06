@@ -1453,7 +1453,7 @@ if search_method == 1
 elseif search_method == 2
     dFdp  = a;
     dFdpp = J;
-    ddx   = spm_dx(dFdpp,dFdp,{-4})';    % The SPM way
+    ddx   = spm_dx(dFdpp,dFdp,{red})';    % The SPM way
     ddx   = ddx(:);
     dx    = x1 + ddx;    
 elseif search_method == 3                % Rasmussen w/ varying p steps

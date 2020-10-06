@@ -132,6 +132,8 @@ classdef AODCM < handle
             
             [X,F,CP,Pp,History] = AO(obj.opts);   
             
+            close; drawnow;
+            
             [~, P] = obj.wrapdm(spm_vec(X));
             
             obj.X  = X;

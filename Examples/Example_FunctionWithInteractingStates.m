@@ -3,6 +3,7 @@ clear global ; clear; close all;
 % Example function with interacting states (params)...
 %-------------------------------------------------------------
 f  = @(x) ( sum(toeplitz(x)) )' ;
+f  = @(x) (pinv(toeplitz(x)*toeplitz(x)')*toeplitz(x)) ;
 
 x  = 2:12; % actual optimsed values to find
 y  = f(x); % data given correct parameters
@@ -23,6 +24,10 @@ op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
 op.step_method = 3;   % aggressive steps = 1, careful = 3, vanilla = 4.
 op.maxit       = 128; % maximum number of iterations
+
+op.inner_loop = 30;
+op.BTLineSearch = 0;
+op.fsd=0;
 
 [X,F,CV] = AO(op);    % RUN IT
 

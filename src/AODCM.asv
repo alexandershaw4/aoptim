@@ -150,50 +150,29 @@ classdef AODCM < handle
         function default_optimise(obj,meths,its)
             % this gets a bit meta...
             
-            if nargin < 3 || isempty(its)
-                its = [12 4 8];
-            end
+            if nargin < 3
             
-            if nargin < 2 || isempty(meths)
-                meths = [3 1 3];
-            end
-            
-            obj.opts.BTLineSearch = 0;
+            % initial fitting options
+            obj.opts.maxit        = 12;
             obj.opts.hyperparams  = 1;
+            obj.opts.BTLineSearch = 0;
+            obj.opts.step_method  = 3;
             
-            % Begin iterative optimisation loop
-            for i = 1:length(meths)
-                obj.opts.maxit       = its(i);
-                obj.opts.step_method = meths(i);
-                obj.optimise();
-                
-                if i ~= length(meths)
-                    obj.update_parameters(obj.Ep);
-                end
-                
-            end
-                
-%             % initial fitting options
-%             obj.opts.maxit        = 12;
-%             obj.opts.hyperparams  = 1;
-%             obj.opts.BTLineSearch = 0;
-%             obj.opts.step_method  = 3;
-%             
-%             obj.optimise();
-%             
-%             % posteriors->priors for a re-run with extrapolation steps
-%             obj.update_parameters(obj.Ep);
-%             obj.opts.step_method = 1;
-%             obj.opts.maxit       = 4;
-%             
-%             obj.optimise();
-%             
-%             % And a final re-run again using normal
-%             obj.update_parameters(obj.Ep);
-%             obj.opts.step_method = 3;
-%             obj.opts.maxit       = 8;
-%             
-%             obj.optimise();
+            obj.optimise();
+            
+            % posteriors->priors for a re-run with extrapolation steps
+            obj.update_parameters(obj.Ep);
+            obj.opts.step_method = 1;
+            obj.opts.maxit       = 4;
+            
+            obj.optimise();
+            
+            % And a final re-run again using normal
+            obj.update_parameters(obj.Ep);
+            obj.opts.step_method = 3;
+            obj.opts.maxit       = 8;
+            
+            obj.optimise();
             
         end
         

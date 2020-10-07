@@ -667,8 +667,10 @@ while iterate
             % loop the good params in selected (PO) order
             %--------------------------------------------------------------
             improve1 = 1;
+            nimp = 0 ;
             while improve1
                 thisgood = gp*0; % tracks which params are updated below
+                nimp     = nimp + 1;
                 % evaluate the 'good' parameters
                 for i  = 1:length(gpi)
                     %xnew             = real(V*x0);
@@ -676,7 +678,7 @@ while iterate
                     xnew(gpi(PO(i))) = dx(gpi(PO(i)));
                     enew             = obj(xnew,params);
                     % accept new error and parameters and continue
-                    if enew < e0
+                    if enew < e0 && nimp < inner_loop && (e0-enew) >= dff(end)
                         dff = [dff (e0-enew)];
                         x0  = V'*(xnew);
                         e0  = enew;

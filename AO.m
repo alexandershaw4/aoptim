@@ -678,10 +678,7 @@ while iterate
                     xnew(gpi(PO(i))) = dx(gpi(PO(i)));
                     enew             = obj(xnew,params);
                     % accept new error and parameters and continue
-                    if isempty(dff(end))
-                        dff(end)=0;
-                    end
-                    if enew < e0 && nimp < inner_loop && (e0-enew) >= (dff(end)*.4)
+                    if enew < e0 && nimp < round(inner_loop/4)
                         dff = [dff (e0-enew)];
                         x0  = V'*(xnew);
                         e0  = enew;

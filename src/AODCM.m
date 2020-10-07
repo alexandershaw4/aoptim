@@ -146,6 +146,33 @@ classdef AODCM < handle
             
         end
         
+        function default_optimise(obj)
+            % this gets a bit meta...
+            
+            % initial fitting options
+            obj.opts.maxit        = 12;
+            obj.opts.hyperparams  = 1;
+            obj.opts.BTLineSearch = 0;
+            obj.opts.step_method  = 3;
+            
+            obj.optimise();
+            
+            % posteriors->priors for a re-run with extrapolation steps
+            obj.update_parameters(obj.Ep);
+            obj.opts.step_method = 1;
+            obj.opts.maxit       = 4;
+            
+            obj.optimise();
+            
+            % And a final re-run again using normal
+            obj.update_parameters(obj.Ep);
+            obj.opts.step_method = 3;
+            obj.opts.maxit       = 8;
+            
+            obj.optimise();
+            
+        end
+        
     end
     
 end

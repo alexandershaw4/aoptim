@@ -1407,8 +1407,10 @@ switch search_method
         J      = -df0';
         dFdpp  = -(J'*J);
         
-        %Initial step
+        %Initial step (red is expected reduction in obj fun)
         %x3  = red./(1-dFdpp);
+        
+        % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
         %Leading (gradient) components
@@ -1437,7 +1439,8 @@ switch search_method
     case 4
         
         J  = -df0;
-        x3 = (1/64);
+        %x3 = (1/64);
+        x3 = red(:);
         
 end
 

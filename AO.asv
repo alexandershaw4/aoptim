@@ -1409,7 +1409,8 @@ switch search_method
         
         %Initial step
         %x3  = red./(1-dFdpp);
-        x3  = diag(red)/(1-dFdpp);
+        
+        x3  = repmat(1./red,[1 length(red)])./(1-dFdpp);
         
         %Leading (gradient) components
         [uu,ss,vv] = spm_svd(x3);
@@ -1437,7 +1438,8 @@ switch search_method
     case 4
         
         J  = -df0;
-        x3 = (1/64);
+        %x3 = (1/64);
+        x3 = red(:);
         
 end
 
@@ -1465,6 +1467,12 @@ elseif search_method == 4                % Flat/generic descent
     dx    = x1 + (a.*J);
 end
 
+
+end
+
+function y = rescale(x)
+% for older matlabs where rescale function isn't a built in
+y =  (x - min(x) ) / ( max(x) - min(x) );
 
 end
 

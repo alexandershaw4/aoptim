@@ -12,17 +12,6 @@ function [M] = ao_nn(y,x,nh,niter,nc,W)
 
 rng default;
 
-% sort class order, just for visualisation consistency
-[~,ii] = sort(y,'ascend');
-
-% V = sparse(length(y),length(y));
-% for i = 1:length(y)
-%     V(i,ii(i)) = 1;
-% end
-% 
-% y = V*y;
-% x = V*x;
-
 % reduce x using an svd pca (ish)
 if nargin == 5 && ~isempty(nc)
     [u,s,v] = spm_svd(x);
@@ -53,9 +42,9 @@ end
 
 p  = real(spm_vec(m)) ;
 c  = (~~p)/32;
-c  = [spm_vec(m{1})/32;
-      spm_vec(m{2})*4;
-      spm_vec(m{3})/32 ];
+c  = [spm_vec(ones(size(m{1})))/32;
+      spm_vec(ones(size(m{2})))/32;
+      spm_vec(ones(size(m{3})))/32 ];
   
 %g  = @(p) gen(p,m,x);
 

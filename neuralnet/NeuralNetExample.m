@@ -33,6 +33,11 @@ pred = M.fun(spm_unvec(M.weightvec,M.modelspace),data(test_index,:));
 test_prediction = [id(test_index) pred]
 test = predictive(test_prediction)
 
+% to visualise the network as matrices
+%visualisenn(M.modelspace);
 
 % to train the same network further:
 %[M] = ao_nn(id(train_index),data(train_index,:),numneuron,numiter,M.weightvec);
+
+% to turn this into a GAN for generating a set of patient parameters:
+%GAN = ao_generator(M,[0 1]);

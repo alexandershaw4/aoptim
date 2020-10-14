@@ -39,5 +39,7 @@ test = predictive(test_prediction)
 % to train the same network further:
 %[M] = ao_nn(id(train_index),data(train_index,:),numneuron,numiter,M.weightvec);
 
+clear global
+
 % to turn this into a GAN for generating a set of patient parameters:
 %GAN = ao_generator(M,[0 1]);

@@ -108,7 +108,7 @@ switch lower(method)
     opts.y   = DCM.xY.y;
     
     opts.maxit       = niter;
-    opts.inner_loop  = 12*4;
+    opts.inner_loop  = 8;
     opts.Q           = [];
     opts.criterion   = -inf;%-500;%-inf;
     opts.min_df      = 1e-12;

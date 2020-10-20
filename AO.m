@@ -203,7 +203,12 @@ pC  = diag(V);
 
 % variance (in reduced space)
 %--------------------------------------------------------------------------
-Vv    = spm_svd(pC);
+if length(find(diag(pC))) == length(pC)
+    Vv = sparse(eye(length(pC)));
+else
+    Vv    = spm_svd(pC);
+end
+
 V     = eye(length(x0));    %turn off svd 
 pC    = V'*pC*V;
 ipC   = spm_inv(spm_cat(spm_diag({pC})));
@@ -695,7 +700,7 @@ while iterate
                     if doplot; makeplot(V*x0,x1,params); end
 
                     % update step size for these params
-                    red = red(:) + ( red(:).*thisgood(:) );      
+                    %red = red(:) + ( red(:).*thisgood(:) );      
                    
                     % reset rejection counter
                     n_reject_consec = 0;

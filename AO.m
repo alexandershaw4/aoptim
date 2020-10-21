@@ -319,7 +319,7 @@ while iterate
         if n < 3; 
             search_method = 1;
         else
-           % auto switch the step size (method) based on error steps
+           % auto switch the step size (method) based on mean negative error growth rate
            if (e0 ./ Hist.e(n-1)) > .9*mean([Hist.e e0] ./ [Hist.e(2:end) e0 e0])
                 search_method = 3; 
            else search_method = 1;
@@ -703,7 +703,7 @@ while iterate
                     xnew(gpi(PO(i))) = dx(gpi(PO(i)));
                     enew             = obj(xnew,params);
                     % accept new error and parameters and continue
-                    if enew < e0 && nimp < round(inner_loop/4)
+                    if enew < e0 ;%&& nimp < round(inner_loop/4)
                         dff = [dff (e0-enew)];
                         x0  = V'*(xnew);
                         e0  = enew;

@@ -16,7 +16,7 @@ V  = ones(size(x0))/512; % variances/step sizes
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 0;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = y(:);       % data we're fitting (for computation of objective fun)

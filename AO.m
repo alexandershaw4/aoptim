@@ -265,6 +265,13 @@ refdate(loc);pupdate(loc,n,0,e0,e0,'start:');
 if smoothfun
     smoothvec = round(linspace(6,1,maxit).^2);
 end
+
+if step_method == 0
+    % step method can switch between 1 (big) and 3 (small) automatcically
+     autostep = 1;
+else autostep = 0;
+end
+
 % start optimisation loop
 %==========================================================================
 while iterate
@@ -308,10 +315,23 @@ while iterate
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------  
-    search_method = step_method;
+    if autostep
+        if n < 3; 
+            search_method = 1;
+        else
+           % auto switch the step size (method) based on error steps
+           if (e0 ./ Hist.e(n-1)) > .9*mean([Hist.e e0] ./ [Hist.e(2:end) e0 e0])
+                search_method = 3; 
+           else search_method = 1;
+           end
+        end
+        
+    else
+        search_method = step_method;
+    end
     
     % compute step, a, in scheme: dx = x0 + a*-J
-    [a,J] = compute_step(df0,red,e0,step_method); % a = (1/64) / J = -df0;
+    [a,J] = compute_step(df0,red,e0,search_method); % a = (1/64) / J = -df0;
                
     % Log start of iteration (these are returned)
     Hist.e(n) = e0;
@@ -362,7 +382,7 @@ while iterate
         % distributions, this is also optimising the variance...
         OptimiseStepSize = BTLineSearch;
                 
-        if OptimiseStepSize && nfun == 1 && obj(dx,params) < obj(x1,params) && step_method ~= 4
+        if OptimiseStepSize && nfun == 1 && obj(dx,params) < obj(x1,params) && search_method ~= 4
             
             pupdate(loc,n,0,e1,e1,'grdstp',toc); 
             aopt.updateh = false;
@@ -371,7 +391,7 @@ while iterate
             
             % Optimise a!
             % - Do a gradient descent on the step size!        
-            afun = @(red) obj( compute_dx(x1,compute_step(df0,red,e0,step_method),...
+            afun = @(red) obj( compute_dx(x1,compute_step(df0,red,e0,search_method),...
                                     J,red,search_method),params );
 
             % Compute the gradient w.r.t steps sizes
@@ -398,7 +418,7 @@ while iterate
                 red        = d_red;
 
                 % Final ddx
-                [da,~]  = compute_step(df0,red,e0,step_method);
+                [da,~]  = compute_step(df0,red,e0,search_method);
                 ddx     = compute_dx(x1,da,J,red,search_method);
                 
                 if obj(ddx,params) < obj(dx,params)

@@ -70,14 +70,10 @@ classdef AONN < handle
                     [N,EDGES,BIN] = histcounts(y,round(3*log(length(y))));
                     UB = unique(BIN);
                     
-                    yy = zeros(length(y),round(3*log(length(y))));
+                    yy = zeros(length(y),length(UB));
                     
-                    for i = 1:length(y)
-                        yy(i,BIN(i)) = 1;
-                    end
                     
-                    obj.yy = yy;
-                    ny     = round(3*log(length(y)));
+                    
                     
                 end
                  

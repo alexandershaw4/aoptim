@@ -67,7 +67,7 @@ classdef AODCM < handle
             opts.V   = c(:);
             opts.y   = spm_vec(obj.DCM.xY.y);
             
-            opts.inner_loop  = 12*4;
+            opts.inner_loop  = 10;
             opts.Q           = [];
             opts.criterion   = -inf;
             opts.min_df      = 1e-12;

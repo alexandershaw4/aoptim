@@ -38,8 +38,8 @@ classdef AONN < handle
     
         function obj = AONN(y,x,nh,niter) 
             
-            obj.yscale = 1./max(abs(y(:)));
-            y = y*obj.yscale;
+            %obj.yscale = 1./max(abs(y(:)));
+            %y = y*obj.yscale;
                         
             obj.x = x;
             obj.y = y;

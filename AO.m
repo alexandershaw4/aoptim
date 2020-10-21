@@ -703,7 +703,7 @@ while iterate
                     xnew(gpi(PO(i))) = dx(gpi(PO(i)));
                     enew             = obj(xnew,params);
                     % accept new error and parameters and continue
-                    if enew < e0 ;%&& nimp < round(inner_loop/4)
+                    if enew < e0 && nimp < round(inner_loop)
                         dff = [dff (e0-enew)];
                         x0  = V'*(xnew);
                         e0  = enew;
@@ -1275,8 +1275,11 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-aopt.Cp = Cp;
-aopt.iS = iS;
+try aopt.Cp = aopt.Cp + Cp;
+catch
+    aopt.Cp = Cp;
+end
+    aopt.iS = iS;
               
        
 switch lower(method)

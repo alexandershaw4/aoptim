@@ -732,6 +732,7 @@ while iterate
                     % If we made it to here, then neither the full gradient
                     % predicted update, nore the selective search, managed
                     % to improve the objective. So:
+                    pupdate(loc,n,nfun,e0,e0,'reject',toc);
                     
                     % reduce param steps (vars) and go back to main loop
                     red = red*.8;

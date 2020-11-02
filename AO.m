@@ -394,16 +394,16 @@ while iterate
                 pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
             end
             j  = J(:)*er';
-            b  = ( pinv(j'*diag(pt)*j)*j'*diag(pt) )'*y;
+            %b  = ( pinv(j'*diag(pt)*j)*j'*diag(pt) )'*spm_vec(y);
 
             % or include a Marquardt/regularisation parameter l
-            %l = exp(-32);
-            %b  = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*y;
+            l = exp(-32);
+            b = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*spm_vec(y);
             
             if isvector(a)
                 dx = x1 - a.*b;
             else
-                dx = x1 - a*b; % recompose dx including step (a)
+                dx = x1 - a*b; % recompose dx including step matrix (a)
             end
         end
         

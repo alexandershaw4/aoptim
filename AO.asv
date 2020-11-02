@@ -62,11 +62,11 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %   dx[p]  = x[p] + a[p]*-dFdx
 %
 % Under default settings, the probability of each predicted dx[p] coming 
-% from x[p] is computed (Pp) and incorporated into a WLS implementation of 
+% from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
 %
-%   j      = J*error_vector';                  % approx full derivtv matrix
-%   b      = pinv(j'*diag(Pp)*j)*j'*diag(Pp)*y
+%   j0     = J*error_vector';                  % approx full derivtv matrix
+%   b      = pinv(j0'*diag(Pp)*j0)*j0'*diag(Pp)*y
 %   dx     = x - (a*b)
 %  
 % Usage: to minimise a model fitting problem of the form:
@@ -85,14 +85,14 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %
 % INPUTS:
 %-------------------------------------------------------------------------
-% To call this function using an options structure (recommended), do this:
+% To call this function using an options structure:
 %-------------------------------------------------------------------------
 % opts = AO('options');     % get the options struct
 % opts.fun = @myfun         % fill in what you want...
 % opts.x0  = [0 1];         % start param value
 % opts.V   = [1 1]/8;       % variances for each param
 % opts.y   = [...];         % data to fit - .e.g y = f(p) + e
-% opts.macit       = 125;   % max num iterations 
+% opts.maxit       = 125;   % max num iterations 
 % opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla).
 % opts.im    = 1;           % flag to include momentum of parameters
 % opts.order = 2;           % partial derivate fun option (see jaco.m)
@@ -122,9 +122,17 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % "The free energy principal: a rough guide to the brain?" Friston
 % https://www.fil.ion.ucl.ac.uk/~karl/The%20free-energy%20principle%20-%20a%20rough%20guide%20to%20the%20brain.pdf
 %
-% 
+% "Likelihood and Bayesian Inference And Computation" Gelman & Hill 
+% http://www.stat.columbia.edu/~gelman/arm/chap18.pdf
 %
+% For the nonlinear least squares MLE:
+% https://en.wikipedia.org/wiki/Gauss%E2%80%93Newton_algorithm
 %
+% For an explanation of momentum in gradient methods:
+% https://distill.pub/2017/momentum/
+%
+% Approximation of derivaives by finite difference methods:
+% https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
 %
 % AS2019
 % alexandershaw4@gmail.com
@@ -371,10 +379,20 @@ while iterate
             if red(i)
                 vv     = real(sqrt( red(i) ));
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                 pd(i)  = makedist('normal','mu', real(x1(i)),'sigma', vv);
-                 pdx(i) = 1 - ( pdf(pd(i),x1(i)) - pdf(pd(i),dx(i))) ./ pdf(pd(i),x1(i));
+                 pd(i)  = makedist('normal','mu', real(XX0(i)),'sigma', vv);
+                 pdx(i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),x1(i))) ./ pdf(pd(i),XX0(i));
             end
         end    
+        
+%         % For params with p(dx) == 0, replace with 2*std
+%         zerop     = find(pt==0);
+%         dx(zerop) = 2*sqrt(red(zerop));
+%         
+%         for ik = 1:length(zerop)
+%             pdx(zerop(ik)) = 1 - ( pdf(pd(zerop(ik)),XX0(zerop(ik))) - ...
+%                 pdf(pd(zerop(ik)),x1(zerop(ik)))) ./ pdf(pd(zerop(ik)),XX0(zerop(ik)));
+%         end
+        
         pt = pdx(:);
         
         % This is a variation on the Gauss-Newton algorithm.
@@ -386,16 +404,22 @@ while iterate
                 pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
             end
             j  = J(:)*er';
-            b  = ( pinv(j'*diag(pt)*j)*j'*diag(pt) )'*y;
+            
+            j  = [j; repmat(red,[1 length(y)]) ]; % augment 
+            pt = [pt;pt];
+            
+            b  = ( pinv(j'*diag(pt)*j)*j'*diag(pt) )'*spm_vec(y0);
 
-            % or include a Marquardt/regularisation parameter l
-            %l = exp(-32);
-            %b  = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*y;
+            % % or include a Marquardt/regularisation parameter l
+            % l = exp(-32);
+            % b = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*spm_vec(y);
             
             if isvector(a)
-                dx = x1 - a.*b;
+                dx  = x1 - a.*b(1:np);
+                red = red - a.*b(np+1:end); 
             else
-                dx = x1 - a*b; % recompose dx including step (a)
+                dx = x1 - a*b(1:np); % recompose dx including step matrix (a)
+                red = red - a*b(np+1:end); 
             end
         end
         

@@ -125,7 +125,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % "Likelihood and Bayesian Inference And Computation" Gelman & Hill 
 % http://www.stat.columbia.edu/~gelman/arm/chap18.pdf
 %
-% For the nonlinear least squares MLE:
+% For the nonlinear least squares MLE / Gauss Newton:
 % https://en.wikipedia.org/wiki/Gauss%E2%80%93Newton_algorithm
 %
 % For an explanation of momentum in gradient methods:
@@ -180,7 +180,6 @@ aopt.fixedstepderiv  = fsd;% fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
-aopt.smoothfun       = smoothfun; % auto smooth the error function
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel;
 
@@ -256,11 +255,6 @@ fprintf('User fun has %d varying parameters\n',length(find(red)));
 % print start point - to console or logbook (loc)
 refdate(loc);pupdate(loc,n,0,e0,e0,'start: ');
 
-% gen & store smoothing vec
-if smoothfun
-    smoothvec = round(linspace(6,1,maxit).^2);
-end
-
 if step_method == 0
     % step method can switch between 1 (big) and 3 (small) automatcically
      autostep = 1;
@@ -278,12 +272,7 @@ while iterate
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
     aopt.pp = x0;
-    
-    %  compute & store the smoothing function for this iteration
-    if smoothfun
-        aopt.R = @(x) spm_unvec(smooth(spm_vec(x),smoothvec(n)),x);
-    end
-    
+        
     % compute gradients & search directions
     %----------------------------------------------------------------------
     aopt.updatej = true;
@@ -314,7 +303,7 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------  
     if autostep
-        if n < 3; 
+        if n < 3
             search_method = 1;
         else
            % auto switch the step size (method) based on mean negative error growth rate
@@ -335,17 +324,6 @@ while iterate
     Hist.e(n) = e0;
     Hist.p{n} = x0;
     Hist.J{n} = df0;
-    
-    % Track the variance of the partial derivatives over iterations
-    if n >= 3
-        switchoff = find( var(squeeze(cat(3,Hist.J{:}))')*Vv < 1e-12 );
-        if any(switchoff)
-            offvec = ones(1,size(Vv,2));
-            offvec(switchoff) = 0;
-            red = red.*(Vv*offvec');
-            aopt.ipC = spm_inv(spm_diag(red));
-        end
-    end
     
     % make copies of error and param set for inner while loops
     x1  = x0;
@@ -379,10 +357,11 @@ while iterate
             if red(i)
                 vv     = real(sqrt( red(i) ));
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                 pd(i)  = makedist('normal','mu', real(x1(i)),'sigma', vv);
-                 pdx(i) = 1 - ( pdf(pd(i),x1(i)) - pdf(pd(i),dx(i))) ./ pdf(pd(i),x1(i));
+                 pd(i)  = makedist('normal','mu', real(XX0(i)),'sigma', vv);
+                 pdx(i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),x1(i))) ./ pdf(pd(i),XX0(i));
             end
         end    
+        
         pt = pdx(:);
         
         % This is a variation on the Gauss-Newton algorithm.
@@ -394,11 +373,12 @@ while iterate
                 pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
             end
             j  = J(:)*er';
-            %b  = ( pinv(j'*diag(pt)*j)*j'*diag(pt) )'*spm_vec(y);
+            w  = pt.*x1;
+            b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*spm_vec(y);
 
-            % or include a Marquardt/regularisation parameter l
-            l = exp(-32);
-            b = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*spm_vec(y);
+            % % or include a Marquardt/regularisation parameter l
+            % l = exp(-32);
+            % b = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*spm_vec(y);
             
             if isvector(a)
                 dx = x1 - a.*b;
@@ -1064,12 +1044,6 @@ warning on;
 % Data & precision
 Y  = aopt.y;
 Q  = aopt.Q;
-
-% Apply smoothing operator if supplied
-if isfield(aopt,'smoothfun') && isfield(aopt,'R') && aopt.smoothfun
-    y = aopt.R(y);
-    Y = aopt.R(Y);
-end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------

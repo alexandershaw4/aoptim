@@ -28,6 +28,7 @@ op.maxit       = 128; % maximum number of iterations
 op.inner_loop = 30;
 op.BTLineSearch = 0;
 op.fsd=0;
+op.DoMLE = 0;
 
 [X,F,CV] = AO(op);    % RUN IT
 

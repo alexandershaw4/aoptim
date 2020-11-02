@@ -19,8 +19,7 @@ classdef AONN < handle
         p
         c
         covariance 
-        fun        = @(m,x) imax( (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3})' )-1;
-        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3});
+        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*(1./(1 + exp(-m{4}))));
         g          = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),x);
         prediction
         pred_raw  
@@ -52,10 +51,11 @@ classdef AONN < handle
             obj.yy = zeros(length(y),ny);
             
             if all(values == round(values))
-                for i = 1:ny
-                    obj.yy(find(y==i-1),i)=1;
+                obj.yy = y;
+                %for i = 1:ny
+                    %obj.yy(find(y==i-1),i)=1;
                     %obj.yy(find(y==values(i)),i)=1;%values(i);
-                end
+                %end
             else
                 % model the whole confusion matrix - i.e. i don't just want
                 % to optimise TP and TN, but also FP and FN
@@ -89,15 +89,22 @@ classdef AONN < handle
             HL = zeros(nh,1);
             W1 = ones(np,nh)/np*nh;
             W2 = ones(nh,ny)/nh.^2;
-
-            % accessible parameters to f
-            obj.modelspace  = {W1 HL W2};
+            OA = zeros(ny,1);
+            
+            %HL = rand(nh,1);
+            %W1 = rand(np,nh)/np*nh;
+            %W2 = rand(nh,ny)/nh.^2;
+            %OA = rand(ny,1);
+            
+            % accessible parameters to f - now we can refer to state space
+            obj.modelspace  = {W1 HL W2 OA};
 
             obj.p  = real(spm_vec(obj.modelspace)) ;
             obj.c  = (~~obj.p)/32;
             obj.c  = [spm_vec(ones(size(obj.modelspace{1})))/32;
                   spm_vec(ones(size(obj.modelspace{2})))/32;
-                  spm_vec(ones(size(obj.modelspace{3})))/32 ];
+                  spm_vec(ones(size(obj.modelspace{3})))/32;
+                  spm_vec(ones(size(obj.modelspace{4})))/32;];
 
             % note I'm optimisming using f_nr - i.e. on a continuous, scalar
             % prediction landscape rather than binary (f)
@@ -126,7 +133,7 @@ classdef AONN < handle
             obj.op.V  = obj.c;
             
             [X,F,CP,Pp]    = AO(obj.op);
-            obj.prediction = obj.fun(spm_unvec(X,obj.modelspace),obj.x);
+            %obj.prediction = obj.fun(spm_unvec(X,obj.modelspace),obj.x);
             obj.pred_raw   = obj.fun_nr(spm_unvec(X,obj.modelspace),obj.x);
             obj.weightvec  = X(:);
             obj.F          = F;
@@ -134,9 +141,20 @@ classdef AONN < handle
             
         end
         
-        
+        function obj = train_bp(obj)
+            
+            f = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
+            g = @(p) sum( (spm_vec(obj.truth - f(p) )).^2);
+            [X,F] = fminsearch(g,obj.p);
+            
+            obj.weightvec = X;
+            obj.F = F;
+            
+            obj.pred_raw = NN.fun_nr(spm_unvec(NN.weightvec,NN.modelspace),NN.x);
+            obj.prediction = round(...
+                    NN.fun_nr(spm_unvec(NN.weightvec,NN.modelspace),NN.x));
+            
+        end
     end
-
-
 end
 

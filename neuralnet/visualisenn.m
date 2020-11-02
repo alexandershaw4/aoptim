@@ -3,7 +3,7 @@ function visualisenn(m)
 figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off',...
     'position',[706         380        1226         486]);
 
-s(1) = subplot(131); imagesc(m{1});
+s(1) = subplot(141); imagesc(m{1});
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -15,7 +15,7 @@ s(1).Color  = [.3 .3 .3];
 ylabel('Inputs','fontsize',18);xlabel('Hidden Layer: Neurons','fontsize',18);
 title('MAPPING','color','w','fontsize',18);
 
-s(2) = subplot(132); imagesc(diag(1./(1+exp(-m{2}))));
+s(2) = subplot(142); imagesc(diag(1./(1+exp(-m{2}))));
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -28,7 +28,7 @@ axis square;
 xlabel('Diagonals','fontsize',18);
 title('Neuron Activation Functions','color','w','fontsize',18);
 
-s(3) = subplot(133); imagesc(m{3});
+s(3) = subplot(143); imagesc(m{3});
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -40,6 +40,17 @@ s(3).Color  = [.3 .3 .3];
 ylabel('Hidden Layer: Neurons','fontsize',18);xlabel('OUTPUTS','fontsize',18);
 title('MAPPING','color','w','fontsize',18);
 
+s(4) = subplot(144); imagesc(diag(1./(1+exp(-m{4}))));
+ax = gca;
+ax.XGrid = 'off';
+ax.YGrid = 'on';
+ax.XTick = [];
+ax.YTick = [];
+s(4).YColor = [1 1 1];
+s(4).XColor = [1 1 1];
+s(4).Color  = [.3 .3 .3];
+ylabel('Diagonals','fontsize',18);xlabel('OUTPUTS','fontsize',18);
+title('Ouput Activation Functions','color','w','fontsize',18);
 
 
 

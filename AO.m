@@ -194,6 +194,8 @@ V   = full(V(:));
 v   = V;
 pC  = diag(V);
 
+crit = [0 0 0 0];
+
 % variance (in reduced space)
 %--------------------------------------------------------------------------
 if length(find(diag(pC))) == length(pC)
@@ -483,7 +485,9 @@ while iterate
                 
             end            
         end
-                
+           
+        % print the full (un-filtered / line searched prediction)
+        pupdate(loc,n,0,de,e1,'predict',toc);
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
@@ -501,7 +505,6 @@ while iterate
             df  = e1 - de;
             e1  = de;
             x1  = V'*dx;
-            dff = [dff df];
         else
             % If it hasn't improved, flag to stop this loop...
             improve = false;            
@@ -525,9 +528,9 @@ while iterate
         
         % compute deltas & accept new parameters and error
         %------------------------------------------------------------------
-        df =  e0 - e1;
-        dp =  x0 - x1;
-        x0 = -dp + x0;
+        df =  e1 - e0;
+        dp =  x1 - x0;
+        x0 =  dp + x0;
         e0 =  e1;
                 
         % Extrapolate...
@@ -542,7 +545,8 @@ while iterate
         while exploit
             % local linear extrapolation
             %extrapx = V*(x1+(-dp./-df));
-            extrapx = V*(x1 + ((-dp).*((df-e1)./e1)).^(1+nexpl) );
+            %extrapx = V*(x1 + ((-dp).*((df-e1)./e1)).^(1+nexpl) );
+            extrapx = V*(x1 + dp.*(df./e1).^(1+nexpl) );
             if obj(extrapx,params) < e1
                 %dp    = dp + (extrapx-x1);
                 x1    = extrapx(:);
@@ -572,7 +576,6 @@ while iterate
         if doplot; makeplot(V*x0(ip),aopt.pp,params); end   % update plots
         
         n_reject_consec = 0;              % monitors consec rejections
-        dff             = [dff df];       % monitors change in f over itrs
         JPDtol          = Initial_JPDtol; % resets prob threshold for update
 
     else
@@ -606,8 +609,8 @@ while iterate
                     enew             = obj(xnew,params);
                     % accept new error and parameters and continue
                     if enew < e0 && nimp < round(inner_loop)
-                        dff = [dff (e0-enew)];
                         x0  = V'*(xnew);
+                        df  = enew - e0;
                         e0  = enew;
                         thisgood(gpi(PO(i))) = 1;
                     end
@@ -640,6 +643,8 @@ while iterate
                     red = red*.8;
                     %red = red * 1.2;
                     
+                    df = 0;
+                    
                     % halt this while loop
                     improve1 = 0;
                     
@@ -667,6 +672,8 @@ while iterate
             % keep counting rejections
             n_reject_consec = n_reject_consec + 1;
             
+            df = 0;
+            
             % loosen inclusion threshold on param probability (temporarily)
             % i.e. specified variances aren't making sense.
             % (applies to Bayes option only)
@@ -680,32 +687,13 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    if min_df == -1
-        ldf   = inf;
-        dftol = inf;
-    elseif min_df ~= 0
-        % user can define minimum DF
-        ldf = 100; dftol = min_df;
-    else
-        % otherwise invoke some defaults
-        if aopt.order == 1; ldf = 30; dftol = 0.002;  end
-        if aopt.order == 2; ldf = 800; dftol = 0.0001; end
-        if aopt.order == 0; ldf = 30; dftol = 0.002; end
-        if aopt.order <  0; ldf = 30; dftol = 0.002; end
-        if aopt.order >  2; ldf = 800; dftol = 0.0001; end
-    end
-    
-    if length(dff) > ldf
-        if var( dff(end-ldf:end) ) < dftol
-            localminflag = 3;            
-        end
-    end
-    if length(dff) > 31
-        dff = dff(end-30:end);
+    crit = [ (df < 1e-1) crit(1:end - 1)];
+    if all(crit)
+        localminflag = 3;            
     end
         
     if localminflag == 3
-        fprintf(loc,'I think we''re stuck...stopping.\n');
+        fprintf(loc,'We''re either stuck or converged...stopping.\n');
         
         % return current best
         X = V*(x0(ip));

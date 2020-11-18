@@ -688,7 +688,7 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    crit = [ (df < 1e-3) crit(1:end - 1)];
+    crit = [ (abs(df) < 1e-3) crit(1:end - 1)];
     if all(crit)
         localminflag = 3;            
     end

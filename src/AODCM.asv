@@ -181,22 +181,22 @@ classdef AODCM < handle
             
         end
         
-%         function obj = nlls_optimise(obj)
-%             
-%             options = statset;
-%             options.Display = 'iter';
-%             options.TolFun  = 1e-6;
-%             options.MaxIter = 128;
-%             options.FunValCheck = 'on';
-%             options.DerivStep = 1e-8;
-% 
-%             funfun = @(b,p) obj.opts.fun(b.*p);
-%             
-%             [BETA,R,J,COVB,MSE] = atcm.optim.nlinfit(obj.opts.x0,...
-%                             obj.opts.y,funfun,obj.opts.x0,options);
-%             
-%             
-%         end
+        function obj = nlls_optimise(obj)
+            
+            options = statset;
+            options.Display = 'iter';
+            options.TolFun  = 1e-6;
+            options.MaxIter = 128;
+            options.FunValCheck = 'on';
+            options.DerivStep = 1e-8;
+
+            funfun = @(b,p) obj.opts.fun(b.*p);
+            
+            [BETA,R,J,COVB,MSE] = atcm.optim.nlinfit(obj.opts.x0,...
+                            obj.opts.y,funfun,obj.opts.x0,options);
+            
+            
+        end
         
     end
     

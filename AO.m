@@ -488,7 +488,7 @@ while iterate
         end
            
         % print the full (un-filtered / line searched prediction)
-        pupdate(loc,n,0,de,e1,'predict',toc);
+        pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima

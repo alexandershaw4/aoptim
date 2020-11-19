@@ -368,20 +368,20 @@ while iterate
         
         % This is a variation on the Gauss-Newton algorithm.
         % - Using (J'*er') as a crude version of the full (matrix) derivatives,
-        % compute MLE via WLS - where the weights are the probabilities, pt
+        % compute MLE via WLS - where the weights are the priors
         %------------------------------------------------------------------
         if DoMLE                           % note - this could be iterated
             if nfun == 1
                 pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
             end
             j  = J(:)*er';
-            w  = pt.*x1;
+            w  = pt;
+            %w  = x1.^0;
             r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1));
-            b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;%spm_vec(y);
+            b  = ( pinv(j'*diag(w)*j)*aopt.iS*j'*diag(w) )'*r0;
 
-            % % or include a Marquardt/regularisation parameter l
-            % l = exp(-32);
-            % b = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*spm_vec(y);
+            % inclusion of a weight essentially makes this a Marquardt/
+            % regularisation parameter
             
             if isvector(a)
                 dx = x1 - a.*b;
@@ -488,7 +488,7 @@ while iterate
         end
            
         % print the full (un-filtered / line searched prediction)
-        pupdate(loc,n,0,de,e1,'predict',toc);
+        pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
@@ -688,7 +688,7 @@ while iterate
     
     % stopping criteria, rules etc.
     %======================================================================
-    crit = [ (df < 1e-1) crit(1:end - 1)];
+    crit = [ (abs(df) < 1e-3) crit(1:end - 1)];
     if all(crit)
         localminflag = 3;            
     end
@@ -1053,6 +1053,7 @@ end
 
 if ~isfield(aopt,'precisionQ')
     Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %
+    
 elseif isfield(aopt,'precisionQ')
     Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); 
     
@@ -1060,7 +1061,6 @@ elseif isfield(aopt,'precisionQ')
     for i = 1:length(Q)
         Q{i} = Q{i} .* aopt.precisionQ;
     end
-    
 end
 
 if aopt.mimo
@@ -1073,25 +1073,6 @@ else
     h = aopt.h;
 end
 
-% If the system output >1D (e.g. a power spectum), prioritise shifts along x
-% using an auto-generated smooth precision operator
-%----------------------------------------------------------------------------
-% if aopt.mimo
-%     ny    = length(spm_vec(y));
-%     [~,l] = findpeaks(spm_vec(Y),'NPeaks',12);
-%     FS    = ones(ny,1)./ny;
-%     %FS    = linspace(1,4,length(y))';
-%     %FS    = FS .* rescale(( (1 - cos(2*pi*[1:ny]'/(ny + 1)))/2 ),.5,1);
-%     FS(l) = 4;
-%     FS    = AGenQ(FS);
-%     Q     = {FS};
-% end
-% 
-% for i = 1:ny
-%     Q{i} = sparse(i,i,FS(i,i),ny,ny);
-% end
-
-%Q  = {AGenQ(atcm.fun.aenvelope(spm_vec(Y),30))};
 
 if isinf(h)
     h = 1/8;

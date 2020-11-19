@@ -368,20 +368,20 @@ while iterate
         
         % This is a variation on the Gauss-Newton algorithm.
         % - Using (J'*er') as a crude version of the full (matrix) derivatives,
-        % compute MLE via WLS - where the weights are the probabilities, pt
+        % compute MLE via WLS - where the weights are the priors
         %------------------------------------------------------------------
         if DoMLE                           % note - this could be iterated
             if nfun == 1
                 pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
             end
             j  = J(:)*er';
-            w  = pt.*x1;
+            w  = pt;
+            %w  = x1.^0;
             r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1));
-            b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;%spm_vec(y);
+            b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
 
-            % % or include a Marquardt/regularisation parameter l
-            % l = exp(-32);
-            % b = ( pinv((j'*diag(pt)*j) + (l*eye(length(y))) )*j'*diag(pt) )'*spm_vec(y);
+            % inclusion of a weight essentially makes this a Marquardt/
+            % regularisation parameter
             
             if isvector(a)
                 dx = x1 - a.*b;

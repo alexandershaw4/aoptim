@@ -700,6 +700,8 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                 
+        if doparallel; aopt = params.aopt; end
+        
         % covariance estimation
         Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
@@ -723,7 +725,9 @@ while iterate
         % return current best
         X = V*(x0(ip));
         F = e0;
-                
+               
+        if doparallel; aopt = params.aopt; end
+        
         % covariance estimation
         Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
@@ -740,6 +744,8 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                 
+        if doparallel; aopt = params.aopt; end
+        
         % covariance estimation
         Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
@@ -756,6 +762,8 @@ while iterate
             X = V*(x0(ip));
             F = e0;
 
+            if doparallel; aopt = params.aopt; end
+            
             % covariance estimation
             Cp = aopt.Cp;
             PP = BayesInf(x0,Ep,diag(red));

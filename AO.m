@@ -283,8 +283,9 @@ while iterate
     [e0,df0]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
     
-    aopt.er = er;
+    aopt.er      = er;
     aopt.updateh = false;
+    params.aopt  = aopt;
     
     % Second order partial derivates w.r.t parameters, x[i], using:
     %
@@ -422,6 +423,9 @@ while iterate
         % (2) update all parameters whose updated value improves obj
         % (3) update only parameters whose probability exceeds a threshold
         %------------------------------------------------------------------
+        aopt.updatej = false;
+        aopt.updateh = false;
+        params.aopt  = aopt;
         if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
             
             % Don't perform checks, assume all f(dx[i]) <= e1

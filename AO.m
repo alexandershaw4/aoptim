@@ -434,16 +434,29 @@ while iterate
 
         else
             % Assess each new parameter estimate (step) individually
-            for nip = 1:length(dx)
-                XX     = V*x0;
-                if red(nip)
-                    XX(nip)  = dx(nip);
-                    DFE(nip) = obj(XX,params); % FE
-                else
-                    DFE(nip) = e0;
+            if ~doparallel
+                for nip = 1:length(dx)
+                    XX     = V*x0;
+                    if red(nip)
+                        XX(nip)  = dx(nip);
+                        DFE(nip) = obj(XX,params); % FE
+                    else
+                        DFE(nip) = e0;
+                    end
                 end
-            end
-            
+            else
+                parfor nip = 1:length(dx)
+                    XX     = V*x0;
+                    if red(nip)
+                        XX(nip)  = dx(nip);
+                        DFE(nip) = obj(XX,params); % FE
+                    else
+                        DFE(nip) = e0;
+                    end
+                end
+            end                
+                
+                
             DFE  = real(DFE(:));
            
             % Identify improver-parameters

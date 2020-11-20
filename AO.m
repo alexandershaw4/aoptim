@@ -704,10 +704,13 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                 
-        if doparallel; aopt = params.aopt; end
+        if doparallel
+            aopt = params.aopt;
+            Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
+        else
+            Cp = aopt.Cp;
+        end
         
-        % covariance estimation
-        Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
         
         if writelog;fclose(loc);end
@@ -730,10 +733,13 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                
-        if doparallel; aopt = params.aopt; end
+        if doparallel
+            aopt = params.aopt;
+            Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
+        else
+            Cp = aopt.Cp;
+        end
         
-        % covariance estimation
-        Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
                 
         if writelog;fclose(loc);end
@@ -748,10 +754,13 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                 
-        if doparallel; aopt = params.aopt; end
+        if doparallel
+            aopt = params.aopt;
+            Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
+        else
+            Cp = aopt.Cp;
+        end
         
-        % covariance estimation
-        Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
         
         if writelog;fclose(loc);end
@@ -766,10 +775,13 @@ while iterate
             X = V*(x0(ip));
             F = e0;
 
-            if doparallel; aopt = params.aopt; end
-            
-            % covariance estimation
-            Cp = aopt.Cp;
+            if doparallel
+                aopt = params.aopt;
+                Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
+            else
+                Cp = aopt.Cp;
+            end
+
             PP = BayesInf(x0,Ep,diag(red));
 
             if writelog;fclose(loc);end

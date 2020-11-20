@@ -378,7 +378,7 @@ while iterate
             w  = pt;
             %w  = x1.^0;
             r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1));
-            b  = ( pinv(j'*diag(w)*j)*aopt.iS*j'*diag(w) )'*r0;
+            b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
 
             % inclusion of a weight essentially makes this a Marquardt/
             % regularisation parameter
@@ -488,7 +488,7 @@ while iterate
         end
            
         % print the full (un-filtered / line searched prediction)
-        pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
+        %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
@@ -700,6 +700,8 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                 
+        if doparallel; aopt = params.aopt; end
+        
         % covariance estimation
         Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
@@ -723,7 +725,9 @@ while iterate
         % return current best
         X = V*(x0(ip));
         F = e0;
-                
+               
+        if doparallel; aopt = params.aopt; end
+        
         % covariance estimation
         Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
@@ -740,6 +744,8 @@ while iterate
         X = V*(x0(ip));
         F = e0;
                 
+        if doparallel; aopt = params.aopt; end
+        
         % covariance estimation
         Cp = aopt.Cp;
         PP = BayesInf(x0,Ep,diag(red));
@@ -756,6 +762,8 @@ while iterate
             X = V*(x0(ip));
             F = e0;
 
+            if doparallel; aopt = params.aopt; end
+            
             % covariance estimation
             Cp = aopt.Cp;
             PP = BayesInf(x0,Ep,diag(red));
@@ -815,7 +823,7 @@ end
 function setfig()
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1116 140 1310 809]);
+figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1716,254,710,695]);
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -1259,7 +1267,7 @@ if nargout == 2 || nargout == 7
         end
     else
         nout   = 4;
-        [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout);
+        [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
     end

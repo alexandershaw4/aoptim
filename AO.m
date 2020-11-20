@@ -374,7 +374,11 @@ while iterate
             if nfun == 1
                 pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
             end
-            j  = J(:)*er';
+            if ~ismimo
+                j  = J(:)*er';
+            else
+                j = aopt.J;
+            end
             w  = pt;
             %w  = x1.^0;
             r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1));
@@ -488,7 +492,7 @@ while iterate
         end
            
         % print the full (un-filtered / line searched prediction)
-        pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
+        %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
         
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
@@ -823,7 +827,7 @@ end
 function setfig()
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1116 140 1310 809]);
+figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1716,254,710,695]);
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -1071,9 +1075,9 @@ elseif isfield(aopt,'precisionQ')
     end
 end
 
-if aopt.mimo
-    Q  = {AGenQ(spm_vec(Y))};
-end
+% if aopt.mimo
+%     Q  = {AGenQ(spm_vec(Y))};
+% end
 
 if ~isfield(aopt,'h');
     h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
@@ -1267,9 +1271,12 @@ if nargout == 2 || nargout == 7
         end
     else
         nout   = 4;
-        [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout);
+        [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
+
+        J(isnan(J))=0;
+        J(isinf(J))=0;
     end
     
     aopt.updateh = 1;

@@ -81,7 +81,9 @@ classdef AODCM < handle
             opts.writelog    = 0;
             opts.objective   = 'fe';
             opts.step_method = 1;
-
+            
+            opts.BTLineSearch = 0;
+            opts.hyperparams  = 1;
             %if ~isempty(obj.n_it)
             %    opts.maxit = obj.n_it;
             %end
@@ -163,8 +165,6 @@ classdef AODCM < handle
                 meths = [3 1 3];
             end
             
-            obj.opts.BTLineSearch = 0;
-            obj.opts.hyperparams  = 1;
             
             % Begin iterative optimisation loop
             for i = 1:length(meths)

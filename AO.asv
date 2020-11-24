@@ -604,8 +604,7 @@ while iterate
         
         % *if didn't improve: perform much more selective parameter update
         %==================================================================
-        pupdate(loc,n,nfun,e1,e0,'parslct',toc);    
-        e_orig = e0;
+        pupdate(loc,n,nfun,e1,e0,'parslct',toc);             
         
         % select only parameters whose steps improved the objective
         %------------------------------------------------------------------
@@ -633,7 +632,7 @@ while iterate
                     % accept new error and parameters and continue
                     if enew < e0 && nimp < round(inner_loop)
                         x0  = V'*(xnew);
-                        df  = enew - e_orig;
+                        df  = enew - e0;
                         e0  = enew;
                         thisgood(gpi(PO(i))) = 1;
                     end
@@ -666,7 +665,7 @@ while iterate
                     red = red*.8;
                     %red = red * 1.2;
                     
-                    try df; catch df = 0; end
+                    df = 0;
                     
                     % halt this while loop
                     improve1 = 0;
@@ -695,7 +694,7 @@ while iterate
             % keep counting rejections
             n_reject_consec = n_reject_consec + 1;
             
-            try df; catch df = 0; end
+            df = 0;
             
             % loosen inclusion threshold on param probability (temporarily)
             % i.e. specified variances aren't making sense.
@@ -711,7 +710,6 @@ while iterate
     % stopping criteria, rules etc.
     %======================================================================
     crit = [ (abs(df) < 1e-6) crit(1:end - 1) ];
-    clear df;
     if all(crit)
         localminflag = 3;            
     end
@@ -1295,12 +1293,11 @@ if nargout == 2 || nargout == 7
     
     if ~aopt.mimo 
         if ~aopt.parallel
-            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
+            %[J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
             %[J,ip] = jaco(@inter,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
             
-            %objfunn = @(x) obj(x,params);
-            %[J,~] = spm_diff(objfunn,x0,1);
-            %J = full(J(:));
+            objfunn = @(x) obj(x,params);
+            [df0,e0] = spm_diff(objfunn,x0,1);
         else
             [J,ip] = jacopar(@obj,x0,V,0,Ord,{params});   ... df[e]   /dx [MISO] 
         end

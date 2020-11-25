@@ -52,39 +52,39 @@ classdef AONN < handle
             
             obj.yy = y;
             
-%             if all(values == round(values))
-%                 obj.yy = y;
-%                 %for i = 1:ny
-%                     %obj.yy(find(y==i-1),i)=1;
-%                     %obj.yy(find(y==values(i)),i)=1;%values(i);
-%                 %end
-%             else
-%                 % model the whole confusion matrix - i.e. i don't just want
-%                 % to optimise TP and TN, but also FP and FN
-%                 ny = size(y,1);
-%                 obj.yy = diag(y);
-%                 
-%                 if numel(obj.yy) > 5000
-%                     % model only accuracy
-%                     %ny     = 1;
-%                     %obj.yy = y;
-%                     
-%                     [N,EDGES,BIN] = histcounts(y,round(3*log(length(y))));
-%                     UB = unique(BIN);
-%                     
-%                     yy = zeros(length(y),round(3*log(length(y))));
-%                     
-%                     for i = 1:length(y)
-%                         yy(i,BIN(i)) = 1;
-%                     end
-%                     
-%                     obj.yy = yy;
-%                     ny     = round(3*log(length(y)));
-%                     
-%                 end
-%                  
-%                 
-%             end
+            if all(values == round(values))
+                obj.yy = y;
+                %for i = 1:ny
+                    %obj.yy(find(y==i-1),i)=1;
+                    %obj.yy(find(y==values(i)),i)=1;%values(i);
+                %end
+            else
+                % model the whole confusion matrix - i.e. i don't just want
+                % to optimise TP and TN, but also FP and FN
+                ny = size(y,1);
+                obj.yy = diag(y);
+                
+                if numel(obj.yy) > 5000
+                    % model only accuracy
+                    %ny     = 1;
+                    %obj.yy = y;
+                    
+                    [N,EDGES,BIN] = histcounts(y,round(3*log(length(y))));
+                    UB = unique(BIN);
+                    
+                    yy = zeros(length(y),round(3*log(length(y))));
+                    
+                    for i = 1:length(y)
+                        yy(i,BIN(i)) = 1;
+                    end
+                    
+                    obj.yy = yy;
+                    ny     = round(3*log(length(y)));
+                    
+                end
+                 
+                
+            end
             
             obj.truth = obj.yy;
 
@@ -117,7 +117,7 @@ classdef AONN < handle
             obj.op.fun       = obj.g;
             obj.op.x0        = obj.p(:);
             obj.op.V         = obj.c(:);
-            obj.op.y         = {obj.yy};
+            obj.op.y         = {obj.y};
             obj.op.maxit     = niter;
             obj.op.criterion = -500;
             obj.op.step_method  = 1;
@@ -147,7 +147,7 @@ classdef AONN < handle
         function obj = train_bp(obj)
             
             f = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
-            g = @(p) sum( (spm_vec(obj.truth - f(p) )).^2);
+            g = @(p) sum( (spm_vec(obj.y(:) - f(p) )).^2);
             [X,F] = fminsearch(g,obj.p);
             
             obj.weightvec = X;
@@ -157,6 +157,10 @@ classdef AONN < handle
             obj.prediction = round(...
                     obj.fun_nr(spm_unvec(obj.weightvec,obj.modelspace),obj.x));
             
+        end
+        
+        function obj = updateweights(obj,w)
+                 obj.p = spm_unvec(spm_vec(w),obj.p);
         end
     end
 end

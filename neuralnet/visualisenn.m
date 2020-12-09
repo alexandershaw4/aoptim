@@ -1,5 +1,9 @@
 function visualisenn(m)
 
+if isa(m,'AONN') && any(strcmp(properties(m),'modelspace'))
+    m = m.modelspace;
+end
+
 figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off',...
     'position',[706         380        1226         486]);
 

@@ -169,6 +169,7 @@ end
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
 %aopt         = [];      % reset
+aopt.x0x0    = x0;
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
 aopt.y       = y(:);     % truth / data to fit
@@ -187,6 +188,7 @@ BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
 params.aopt = aopt;      % Need to move form global aopt to a structure
 
+
 % parameter and step vectors
 x0  = full(x0(:));
 XX0 = x0;
@@ -194,18 +196,18 @@ V   = full(V(:));
 v   = V;
 pC  = diag(V);
 
-crit = [0 0 0 0];
+crit = [0 0 0 0 0 0 0 0];
 
 % variance (in reduced space)
 %--------------------------------------------------------------------------
-if length(find(diag(pC))) == length(pC)
-    Vv = sparse(eye(length(pC)));
-else
-    Vv    = spm_svd(pC);
-end
+% if length(find(diag(pC))) == length(pC)
+%     V = sparse(eye(length(pC)));
+% else
+%     V = spm_svd(diag(V));
+% end
 
 V     = eye(length(x0));    %turn off svd 
-pC    = V'*pC*V;
+pC    = V'*(pC)*V;
 ipC   = spm_inv(spm_cat(spm_diag({pC})));
 red   = diag(pC);
 
@@ -362,10 +364,11 @@ while iterate
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                  pd(i)  = makedist('normal','mu', real(XX0(i)),'sigma', vv);
                  pdx(i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),x1(i))) ./ pdf(pd(i),XX0(i));
+            else
             end
         end    
         
-        pt = pdx(:);
+        pt(find(red)) = pdx(:);
         
         % This is a variation on the Gauss-Newton algorithm.
         % - Using (J'*er') as a crude version of the full (matrix) derivatives,
@@ -1036,7 +1039,7 @@ aopt = params.aopt;
 IS = aopt.fun;
 P  = x(:)';
 
-try    y  = IS(P); 
+try    y  = IS(spm_unvec(P,aopt.x0x0)); 
 catch; y  = spm_vec(aopt.y)*0;
 end
 Y  = aopt.y;
@@ -1068,7 +1071,7 @@ P  = x0(:)';
 
 % Evalulate f(X)
 warning off
-try    y  = IS(P); 
+try    y  = IS(spm_unvec(P,aopt.x0x0)); 
 catch; y  = spm_vec(aopt.y)*0+inf;
 end
 warning on;
@@ -1193,7 +1196,23 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
+% % Compute peak distances
+p1 = spm_vec(Y);
+p0 = spm_vec(y);
+[~,Pk1] = findpeaks(p1,'NPeaks',3);
+[~,Pk0] = findpeaks(p0,'NPeaks',3);
+
+i = min([length(Pk1) length(Pk0)]);
+if any(i)
+    D  = cdist(Pk1(i),Pk0(i)) - abs(Pk1(i)-Pk1(i)');
+else
+    D = 0;
+end
+
+L(4) = -(sum(D(:)));
+
 %L(1) = spm_logdet(iS)*nq/2  - sum( sum(real(e'.*iS.*e)/2) ) - ny*log(8*atan(1))/2;
+
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
@@ -1312,7 +1331,17 @@ if nargout == 2 || nargout == 7
 
         J(isnan(J))=0;
         J(isinf(J))=0;
+        
+        % Put J0 in full space
+        JI = zeros(length(ip),1);
+        JI(find(ip)) = J0;
+        J0  = JI;
     end
+    
+    % Embed J in full parameter space
+    IJ = zeros(length(ip),size(J,2));
+    IJ(find(ip),:) = J;
+    J  = IJ;
     
     aopt.updateh = 1;
     
@@ -1374,6 +1403,7 @@ switch search_method
         
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        %x3  = ( red+red' )./(1-dFdpp);
         
         %Leading (gradient) components
         [uu,ss,vv] = spm_svd(x3);

@@ -517,7 +517,7 @@ while iterate
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
-        etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
+        etol = e1 * ( ( 0.5./(n*2) ) ./(nfun.^2) );
         %etol = 0; % none
         
         if etol ~= 0

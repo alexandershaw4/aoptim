@@ -466,7 +466,7 @@ while iterate
                 
             DFE  = real(DFE(:));
            
-            % Identify improver-parameters
+            % Identify improver-parameters            
             gp  = double(DFE < e0); % e0
             gpi = find(gp);
             
@@ -517,10 +517,14 @@ while iterate
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
-        %etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
-        etol = 0; % none
+        etol = e1 * ( ( 0.5./n ) ./(nfun.^2) );
+        %etol = 0; % none
         
-        if de  < ( obj(x1,params) + etol )
+        if etol ~= 0
+            inner_loop=2;
+        end
+        
+        if de  < ( obj(x1,params) + abs(etol) )
             
             % If the objective function has improved...
             if nfun == 1; pupdate(loc,n,0,de,e1,'improve',toc); end
@@ -572,7 +576,7 @@ while iterate
             %extrapx = V*(x1+(-dp./-df));
             %extrapx = V*(x1 + ((-dp).*((df-e1)./e1)).^(1+nexpl) );
             extrapx = V*(x1 + dp.*(df./e1).^(1+nexpl) );
-            if obj(extrapx,params) < e1
+            if obj(extrapx,params) < (e1+abs(etol))
                 %dp    = dp + (extrapx-x1);
                 x1    = extrapx(:);
                 e1    = obj(x1,params);
@@ -634,7 +638,7 @@ while iterate
                     xnew(gpi(PO(i))) = dx(gpi(PO(i)));
                     enew             = obj(xnew,params);
                     % accept new error and parameters and continue
-                    if enew < e0 && nimp < round(inner_loop)
+                    if enew < (e0+abs(etol)) && nimp < round(inner_loop)
                         x0  = V'*(xnew);
                         df  = enew - e_orig;
                         e0  = enew;
@@ -1407,8 +1411,10 @@ switch search_method
         
         %Leading (gradient) components
         [uu,ss,vv] = spm_svd(x3);
-        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        
+        %nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        %x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        %x3 = uu(:,1)'*x3;
         
     case 2
         
@@ -1447,7 +1453,8 @@ function dx = compute_dx(x1,a,J,red,search_method)
 global aopt
 
 if search_method == 1
-    dx    = x1 + (a*J');                 % When a is a matrix
+    %dx    = x1 + (a*J');                 % When a is a matrix
+    dx  = x1 + (sum(a)'.*J');
 elseif search_method == 2
     dFdp  = a;
     dFdpp = J;

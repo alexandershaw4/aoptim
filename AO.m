@@ -1406,11 +1406,11 @@ switch search_method
         %x3  = red./(1-dFdpp);
         
         % Compatibility with older matlabs
-        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
-        %x3  = ( red+red' )./(1-dFdpp);
+        %x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        x3  = ( red+red' )./(1-dFdpp);
         
         %Leading (gradient) components
-        [uu,ss,vv] = spm_svd(x3);
+        %[uu,ss,vv] = spm_svd(x3);
         
         %nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
         %x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');

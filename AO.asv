@@ -420,10 +420,10 @@ while iterate
         end
         
         % NEW: Check variance of dx's in attempt to curb wild parameters
-        %curb   = dx > (2*std(dx));
-        %deltax = dx - x1;
-        %offset = abs(dx - (2*std(dx)))./(2*std(dx));
-        %dx(curb) = x1(curb) + ( deltax(curb) - (offset(curb)) );
+        curb   = dx > (2*std(dx));
+        deltax = dx-x1;
+        offset = dx - (2*std(dx));
+        
 
         % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
         % Either by:
@@ -522,8 +522,7 @@ while iterate
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
-        %etol = e1 * ( ( 0.5./(n*2) ) ./(nfun.^2) );
-        etol = e1 * ( ( 0.5./(n*2) )  );
+        etol = e1 * ( ( 0.5./(n*2) ) ./(nfun.^2) );
         %etol = 0; % none
         
         if etol ~= 0

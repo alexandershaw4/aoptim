@@ -187,7 +187,7 @@ aopt.parallel        = doparallel;
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
 params.aopt = aopt;      % Need to move form global aopt to a structure
-
+givetol     = allow_worsen;
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -420,10 +420,10 @@ while iterate
         end
         
         % NEW: Check variance of dx's in attempt to curb wild parameters
-        %curb   = dx > (2*std(dx));
-        %deltax = dx - x1;
-        %offset = abs(dx - (2*std(dx)))./(2*std(dx));
-        %dx(curb) = x1(curb) + ( deltax(curb) - (offset(curb)) );
+%         curb   = dx > (2*std(dx));
+%         deltax = dx - x1;
+%         offset = abs(dx - (2*std(dx)))./(2*std(dx));
+%         dx(curb) = x1(curb) + ( deltax(curb) - (offset(curb)) );
 
         % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
         % Either by:
@@ -523,8 +523,12 @@ while iterate
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./(n*2) ) ./(nfun.^2) );
-        etol = e1 * ( ( 0.5./(n*2) )  );
-        %etol = 0; % none
+        
+        if givetol
+            etol = e1 * ( ( 0.5./(n*2) )  ); % this one
+        else
+            etol = 0; % none
+        end
         
         if etol ~= 0
             inner_loop=2;
@@ -1583,6 +1587,7 @@ X.ismimo       = 0;
 X.gradmemory   = 0;
 X.doparallel   = 0;
 X.fsd          = 1;
+X.allow_worsen = 0;
 end
 
 function parseinputstruct(opts)

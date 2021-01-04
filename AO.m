@@ -1211,25 +1211,31 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
-% % Compute peak distances
-p1 = spm_vec(Y);
-p0 = spm_vec(y);
-[~,Pk1] = findpeaks(p1,'NPeaks',3);
-[~,Pk0] = findpeaks(p0,'NPeaks',3);
-
-i = min([length(Pk1) length(Pk0)]);
-if any(i)
-    D  = cdist(Pk1(i),Pk0(i)) - abs(Pk1(i)-Pk1(i)');
-else
-    D = 0;
-end
-
-L(4) = -(sum(D(:)));
-
-%L(1) = spm_logdet(iS)*nq/2  - sum( sum(real(e'.*iS.*e)/2) ) - ny*log(8*atan(1))/2;
+% % % Compute peak distances
+% p1 = spm_vec(Y);
+% p0 = spm_vec(y);
+% [~,Pk1] = findpeaks(p1,'NPeaks',4);
+% [~,Pk0] = findpeaks(p0,'NPeaks',4);
+% 
+% i = min([length(Pk1) length(Pk0)]);
+% i=1:i;
+% if any(i)
+%     D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
+% else
+%     D = 0;
+% end
+% 
+% %L(4) = -(sum(D(:))) * 4;
+% PkAc = (sum(D(:))) * 4;
 
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+
+% if L(1) < 0; L(1) = L(1)*PkAc;
+% else
+%     L(1) = L(1)+PkAc;
+% end
+
 
 if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters

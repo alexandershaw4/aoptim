@@ -172,6 +172,7 @@ end
 aopt.x0x0    = x0;
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
+aopt.yshape  = y;
 aopt.y       = y(:);     % truth / data to fit
 aopt.pp      = x0(:);    % starting parameters
 aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
@@ -183,6 +184,7 @@ aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel;
+aopt.doimagesc       = doimagesc;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -375,7 +377,16 @@ while iterate
         if n >= 3
             % start to integrate previous parameter estimates into the
             % parameter distribution estimatation
-            pt;
+            for in = 1:(n-1)
+                for i = 1:length(x1)
+                    if red(i);
+                        vv     = real(sqrt( red(i) ));
+                        if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+                        pdxo(in,i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),Hist.p{in}(i))) ./ pdf(pd(i),XX0(i));
+                    end
+                end
+            end
+            pdx = (sum(pdxo)+pdx )./n;
         end
             
         % This is a variation on the Gauss-Newton algorithm.
@@ -1009,14 +1020,35 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
 else
 %if iscell(Y)
     %s(1) = subplot(411);
-    s(1) = subplot(4,3,[1 2]);
-    
-    plot(spm_vec(Y),'w:','linewidth',3); hold on;
-    plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
-    grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
-    s(1).YColor = [1 1 1];
-    s(1).XColor = [1 1 1];
-    s(1).Color  = [.3 .3 .3];
+    if ~aopt.doimagesc
+        s(1) = subplot(4,3,[1 2]);
+
+        plot(spm_vec(Y),'w:','linewidth',3); hold on;
+        plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
+        grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
+        s(1).YColor = [1 1 1];
+        s(1).XColor = [1 1 1];
+        s(1).Color  = [.3 .3 .3];
+    else
+        s(1) = subplot(4,3,1);
+        %imagesc(spm_unvec(spm_vec(Y),aopt.yshape));
+        surf(spm_unvec(spm_vec(Y),aopt.yshape),'EdgeColor','none');
+        
+        title('DATA','color','w','fontsize',18);
+        s(1).YColor = [1 1 1];
+        s(1).XColor = [1 1 1];
+        s(1).ZColor = [1 1 1];
+        s(1).Color  = [.3 .3 .3];
+        s(6) = subplot(4,3,2);
+        %imagesc(spm_unvec(spm_vec(y),aopt.yshape));
+        surf(spm_unvec(spm_vec(y),aopt.yshape),'EdgeColor','none');
+        
+        title('PREDICTION','color','w','fontsize',18);
+        s(6).YColor = [1 1 1];
+        s(6).XColor = [1 1 1];
+        s(1).ZColor = [1 1 1];
+        s(6).Color  = [.3 .3 .3];
+    end
 
     %s(2) = subplot(412);
     s(2) = subplot(4,3,[4]);
@@ -1616,6 +1648,7 @@ X.gradmemory   = 0;
 X.doparallel   = 0;
 X.fsd          = 1;
 X.allow_worsen = 0;
+X.doimagesc    = 0;
 end
 
 function parseinputstruct(opts)

@@ -172,6 +172,7 @@ end
 aopt.x0x0    = x0;
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
+aopt.yshape  = y;
 aopt.y       = y(:);     % truth / data to fit
 aopt.pp      = x0(:);    % starting parameters
 aopt.Q       = Q;        % precision matrix: e = Q*(ey*ey')
@@ -183,6 +184,7 @@ aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel;
+aopt.doimagesc       = doimagesc;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -276,6 +278,7 @@ while iterate
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
     aopt.pp = x0;
+    XX0 = x0;
         
     % compute gradients & search directions
     %----------------------------------------------------------------------
@@ -370,6 +373,22 @@ while iterate
         
         pt(find(red)) = pdx(:);
         
+        
+        if n >= 3
+            % start to integrate previous parameter estimates into the
+            % parameter distribution estimatation
+            for in = 1:(n-1)
+                for i = 1:length(x1)
+                    if red(i);
+                        vv     = real(sqrt( red(i) ));
+                        if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+                        pdxo(in,i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),Hist.p{in}(i))) ./ pdf(pd(i),XX0(i));
+                    end
+                end
+            end
+            pdx = (sum(pdxo)+pdx )./n;
+        end
+            
         % This is a variation on the Gauss-Newton algorithm.
         % - Using (J'*er') as a crude version of the full (matrix) derivatives,
         % compute MLE via WLS - where the weights are the priors
@@ -612,8 +631,8 @@ while iterate
             
         % print & plots success
         %------------------------------------------------------------------
-        nupdate = [length(find(x0 - aopt.pp)) length;
-        pupdate(loc,n,nfun,e1,e0,'accept ',toc);      % print update
+        nupdate = [length(find(x0 - aopt.pp)) length(x0)];
+        pupdate(loc,n,nfun,e1,e0,'accept ',toc,nupdate);      % print update
         if doplot; makeplot(V*x0(ip),aopt.pp,params); end   % update plots
         
         n_reject_consec = 0;              % monitors consec rejections
@@ -663,7 +682,8 @@ while iterate
                 if any(thisgood)
 
                     % print & plot update
-                    pupdate(loc,n,nfun,e0,e0,'accept ',toc);
+                    nupdate = [length(find(x0 - aopt.pp)) length(x0)];
+                    pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
                     if doplot; makeplot(V*x0,x1,params); end
 
                     % update step size for these params
@@ -850,10 +870,22 @@ end
 function s = pupdate(loc,it,nfun,err,best,action,varargin)
 persistent tx
 if nargin >= 7
-    n = varargin{1};
-    fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
-    st=sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main Iteration: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n| Time: %d\n',it,nfun,err,best,action,n);
-
+    if length(varargin)==2
+        nupdate = varargin{2};
+    else
+        nupdate = [];
+    end
+    
+    if isempty(nupdate)
+        n = varargin{1};
+        fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
+        st=sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main Iteration: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n| Time: %d\n',it,nfun,err,best,action,n);
+    else
+        n = varargin{1};
+        fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s | %d\n',it,nfun,err,best,action,n);
+        fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | N-p Updated: %d / %d\n',it,nfun,err,nupdate(1),nupdate(2));
+        st=sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main Iteration: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n| Time: %d\n',it,nfun,err,best,action,n);
+    end
 else
     fprintf(loc,'| Main It: %04i | nf: %04i | Err: %04i | Best: %04i | %s |\n',it,nfun,err,best,action);
     st = sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main It: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n\n',it,nfun,err,best,action);
@@ -988,14 +1020,28 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
 else
 %if iscell(Y)
     %s(1) = subplot(411);
-    s(1) = subplot(4,3,[1 2]);
-    
-    plot(spm_vec(Y),'w:','linewidth',3); hold on;
-    plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
-    grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
-    s(1).YColor = [1 1 1];
-    s(1).XColor = [1 1 1];
-    s(1).Color  = [.3 .3 .3];
+    if ~aopt.doimagesc
+        s(1) = subplot(4,3,[1 2]);
+
+        plot(spm_vec(Y),'w:','linewidth',3); hold on;
+        plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
+        grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
+        s(1).YColor = [1 1 1];
+        s(1).XColor = [1 1 1];
+        s(1).Color  = [.3 .3 .3];
+    else
+        s(1) = subplot(4,3,1);imagesc(spm_unvec(spm_vec(Y),aopt.yshape));
+        
+        title('DATA','color','w','fontsize',18);
+        s(1).YColor = [1 1 1];
+        s(1).XColor = [1 1 1];
+        s(1).Color  = [.3 .3 .3];
+        s(6) = subplot(4,3,2);imagesc(spm_unvec(spm_vec(y),aopt.yshape));
+        title('PREDICTION','color','w','fontsize',18);
+        s(6).YColor = [1 1 1];
+        s(6).XColor = [1 1 1];
+        s(6).Color  = [.3 .3 .3];
+    end
 
     %s(2) = subplot(412);
     s(2) = subplot(4,3,[4]);
@@ -1595,6 +1641,7 @@ X.gradmemory   = 0;
 X.doparallel   = 0;
 X.fsd          = 1;
 X.allow_worsen = 0;
+X.doimagesc    = 0;
 end
 
 function parseinputstruct(opts)

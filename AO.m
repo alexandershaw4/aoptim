@@ -1046,7 +1046,7 @@ else
         title('PREDICTION','color','w','fontsize',18);
         s(6).YColor = [1 1 1];
         s(6).XColor = [1 1 1];
-        s(1).ZColor = [1 1 1];
+        s(6).ZColor = [1 1 1];
         s(6).Color  = [.3 .3 .3];
     end
 

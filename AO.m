@@ -190,6 +190,7 @@ BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
 params.aopt = aopt;      % Need to move form global aopt to a structure
 givetol     = allow_worsen;
+EnforcePriorProb = EnforcePriorProb;
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -277,7 +278,7 @@ while iterate
    
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
-    aopt.pp = x0;
+    %aopt.pp = x0;
     XX0 = x0;
         
     % compute gradients & search directions
@@ -363,32 +364,40 @@ while iterate
         pt  = zeros(1,length(x1));
         for i = 1:length(x1)
             if red(i)
-                vv     = real(sqrt( red(i) ));
+                %vv     = real(sqrt( red(i) ));
+                vv     = real(sqrt( red(i) ))*2;
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                 pd(i)  = makedist('normal','mu', real(XX0(i)),'sigma', vv);
-                 pdx(i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),x1(i))) ./ pdf(pd(i),XX0(i));
+                 pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
             else
             end
         end    
         
-        pt(find(red)) = pdx(:);
-        
-        
-        if n >= 3
-            % start to integrate previous parameter estimates into the
-            % parameter distribution estimatation
-            for in = 1:(n-1)
-                for i = 1:length(x1)
-                    if red(i);
-                        vv     = real(sqrt( red(i) ));
-                        if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                        pdxo(in,i) = 1 - ( pdf(pd(i),XX0(i)) - pdf(pd(i),Hist.p{in}(i))) ./ pdf(pd(i),XX0(i));
+        if EnforcePriorProb
+            odx = dx;
+            for i = 1:length(x1)
+                if red(i)
+                    if dx(i) < ( pd(i).mu - (2*pd(i).sigma) )
+                       dx(i) = pd(i).mu - (2*pd(i).sigma);
+                    elseif dx(i) > ( pd(i).mu + (2*pd(i).sigma) )
+                           dx(i) = pd(i).mu + (2*pd(i).sigma);
                     end
                 end
             end
-            pdx = (sum(pdxo)+pdx )./n;
         end
-            
+        
+        for i = 1:length(x1)
+            if red(i)
+                %vv     = real(sqrt( red(i) ));
+                vv     = real(sqrt( red(i) ))*2;
+                if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+                 pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+                 pdx(i) = 1 - cdf(pd(i),dx(i));
+            else
+            end
+        end    
+        pt(find(red)) = pdx(:);
+        
+        
         % This is a variation on the Gauss-Newton algorithm.
         % - Using (J'*er') as a crude version of the full (matrix) derivatives,
         % compute MLE via WLS - where the weights are the priors
@@ -438,11 +447,6 @@ while iterate
             end
         end
         
-        % NEW: Check variance of dx's in attempt to curb wild parameters
-%         curb   = dx > (2*std(dx));
-%         deltax = dx - x1;
-%         offset = abs(dx - (2*std(dx)))./(2*std(dx));
-%         dx(curb) = x1(curb) + ( deltax(curb) - (offset(curb)) );
 
         % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
         % Either by:
@@ -1649,6 +1653,7 @@ X.doparallel   = 0;
 X.fsd          = 1;
 X.allow_worsen = 0;
 X.doimagesc    = 0;
+X.EnforcePriorProb = 0;
 end
 
 function parseinputstruct(opts)

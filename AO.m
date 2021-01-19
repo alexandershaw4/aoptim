@@ -391,7 +391,7 @@ while iterate
                 vv     = real(sqrt( red(i) ))*2;
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                  pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                 pdx(i) = 1 - cdf(pd(i),dx(i));
+                 pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
             else
             end
         end    

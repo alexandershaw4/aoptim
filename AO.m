@@ -396,7 +396,9 @@ while iterate
             end
         end    
         pt(find(red)) = pdx(:);
-        
+
+        % Save for computing gradient ascent on probabilities
+        p_hist(n,:) = pt;
         
         % This is a variation on the Gauss-Newton algorithm.
         % - Using (J'*er') as a crude version of the full (matrix) derivatives,
@@ -413,7 +415,7 @@ while iterate
             end
             w  = pt;
             %w  = x1.^0;
-            r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1));
+            r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1)); % residuals
             b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
 
             % inclusion of a weight essentially makes this a Marquardt/
@@ -512,7 +514,13 @@ while iterate
                 % MSort of maximum likelihood - opimise p(dx) according to 
                 % initial conditions (priors; a,b) and error
                 % arg max: p(dx | a,b & e)
-                thresh = 0.7;
+                thresh = 1 - 0.95 ;
+                
+                if n>1
+                    thresh = 1 - (0.95 - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
+                end
+                                
+                thresh
                 
                 pupdate(loc,n,0,e1,e1,'mleslct',toc);
                 

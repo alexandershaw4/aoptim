@@ -125,7 +125,11 @@ classdef AODCM < handle
             X0(isinf(X0)) = 0;
             
             PP = spm_unvec(X0,DD.SP);
-            PP.J(PP.J==0)=-1000;
+            
+            if isfield(PP,'J')
+                % neural masses with a J parameter
+                PP.J(PP.J==0)=-1000;
+            end
             
             IS   = spm_funcheck(DD.M.IS);       % Integrator
             y    = IS(PP,DD.M,DD.xU);           % Prediction

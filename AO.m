@@ -166,6 +166,12 @@ else
     loc = 1;
 end
 
+% If a feature selection function was passed, append it to the user fun
+if ~isempty(FS) && isa(FS,'function_handle')
+    fun = @(x) FS(fun(x));
+    y   = FS(y);
+end
+
 % check functions, inputs, options...
 %--------------------------------------------------------------------------
 %aopt         = [];      % reset
@@ -189,8 +195,8 @@ aopt.doimagesc       = doimagesc;
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
 params.aopt = aopt;      % Need to move form global aopt to a structure
-givetol     = allow_worsen;
-EnforcePriorProb = EnforcePriorProb;
+givetol     = allow_worsen; % Allow bad updates within a tolerance
+EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -514,10 +520,11 @@ while iterate
                 % MSort of maximum likelihood - opimise p(dx) according to 
                 % initial conditions (priors; a,b) and error
                 % arg max: p(dx | a,b & e)
-                thresh = 1 - 0.95 ;
+                alpha = 0.95;
+                thresh = 1 - alpha ;
                 
                 if n>1
-                    thresh = 1 - (0.95 - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
+                    thresh = 1 - (alpha - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
                 end
                                 
                 thresh
@@ -1662,6 +1669,7 @@ X.fsd          = 1;
 X.allow_worsen = 0;
 X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
+X.FS = [];
 end
 
 function parseinputstruct(opts)

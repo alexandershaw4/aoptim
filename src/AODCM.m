@@ -100,7 +100,7 @@ classdef AODCM < handle
             % Flag erp during construction
             if nargin == 3 && iserp == 1
                 obj.iserp = 1;
-                opts.fun  = @obj.wraperp;
+                obj.opts.fun  = @obj.wraperp;
             else
                 obj.iserp = 0;
             end

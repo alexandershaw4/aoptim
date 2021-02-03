@@ -97,12 +97,12 @@ classdef AODCM < handle
             obj.DD   = DD;
             obj.Y    = DCM.xY.y;
             
-            % Flag erp during construction
+            % Flag ERP during construction
             if nargin == 3 && iserp == 1
-                obj.iserp = 1;
+                obj.iserp     = 1;
                 obj.opts.fun  = @obj.wraperp;
             else
-                obj.iserp = 0;
+                obj.iserp     = 0;
             end
             
             % Begin optimisation if flagged

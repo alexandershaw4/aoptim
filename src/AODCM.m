@@ -31,6 +31,7 @@ classdef AODCM < handle
         DD      % a helper structure for the embedded wrapdm function
         Y       % the stored data from DCM.xY.y
         V       % maps between full (parameter) space and reduced
+        iserp   % switch to ERP models rather than spectral
         
     end
     
@@ -42,7 +43,7 @@ classdef AODCM < handle
             obj.DD.P = spm_vec(P);
         end
         
-        function obj = AODCM(DCM,do_optimise)
+        function obj = AODCM(DCM,do_optimise,iserp)
             % Class constructor - initates the options structure for the
             % optimisation
             obj.DCM = DCM;
@@ -96,6 +97,14 @@ classdef AODCM < handle
             obj.DD   = DD;
             obj.Y    = DCM.xY.y;
             
+            % Flag erp during construction
+            if nargin == 3 && iserp == 1
+                obj.iserp = 1;
+                opts.fun  = @obj.wraperp;
+            else
+                obj.iserp = 0;
+            end
+            
             % Begin optimisation if flagged
             if nargin == 2 && do_optimise == 1
                 obj.optimise();
@@ -138,6 +147,48 @@ classdef AODCM < handle
             
         end
         
+        function [y,PP] = wraperp(obj,Px,varargin)
+            % an intermediary function to make ERP models of the form
+            % { y  = g(x,P)
+            % { dx = f(x,u,P,M)
+
+            DD   = obj.DD;
+            P    = DD.P;
+            cm   = DD.cm;
+            
+            X0 = cm*Px(:);
+            X0(X0==0)=1;
+            X0 = full(X0.*exp(P(:)));
+            X0 = log(X0);
+            X0(isinf(X0)) = 0;
+            
+            PP = spm_unvec(X0,DD.SP);
+            
+            if isfield(PP,'J')
+                % neural masses with a J parameter
+                PP.J(PP.J==0)=-1000;
+            end
+            
+            IS = spm_funcheck(DD.M.IS);
+            
+            % evaluate neural function
+            [yy] = IS(PP,DD.M,DD.xU);
+
+            % evaluate oberver func
+            L = feval( DD.M.G , PP , DD.M);
+            R = DD.M.R;
+            
+            for i = 1:length(yy)
+                y{i} = R*yy{i}*L';
+            end
+            
+            y    = spm_vec(y);
+            y    = real(y);
+            
+        end
+        
+        
+        
         function [X,F,CP,Pp] = optimise(obj)
             % calls AO.m optimisation routine and returns outputs
             %
@@ -146,7 +197,7 @@ classdef AODCM < handle
             
             close; drawnow;
             
-            [~, P] = obj.wrapdm(spm_vec(X));
+            [~, P] = obj.opts.fun(spm_vec(X));
             
             obj.X  = X;
             obj.F  = F;

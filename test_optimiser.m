@@ -20,6 +20,8 @@ rng default;
 x0 = randn(size(x));     % random start positions for optimiser
 V  = ones(size(x0))/128; % corresponding variances/step sizes
 
+V(find(V)) = 1./V(find(V));
+
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
@@ -36,7 +38,9 @@ op.hyperparams = 0; % switch off hyperparameter estimation/ascent
 op.criterion   = -12000; 
 op.ismimo      = 1;
 
+
 %op.EnforcePriorProb=1;
+%op.DoMLE=1;
 %op.mleselect=1;
 
 [X,F,CV] = AO(op);    % RUN IT

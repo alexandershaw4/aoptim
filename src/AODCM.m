@@ -72,7 +72,7 @@ classdef AODCM < handle
             opts.fun = @obj.wrapdm;
             opts.x0  = p(:);
             opts.V   = c(:);
-            opts.y   = spm_vec(obj.DCM.xY.y);
+            opts.y   = (obj.DCM.xY.y);
             
             opts.inner_loop  = 10;
             opts.Q           = [];
@@ -182,8 +182,10 @@ classdef AODCM < handle
                 y{i} = R*yy{i}*L';
             end
             
-            y    = spm_vec(y);
-            y    = real(y);
+            y = spm_unvec( real(spm_vec(y)), y);
+            
+            %y    = spm_vec(y);
+            %y    = real(y);
             
         end
         

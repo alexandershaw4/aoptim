@@ -987,7 +987,7 @@ global aopt
 % Restrict plots to real values only - just for clarity really
 % (this doesn't mean the actual model output is not complex)
 Y = spm_unvec( real(spm_vec(Y)), Y);
-y = spm_unvec( real(spm_vec(y)), y);
+y = spm_unvec( real(spm_vec(y)), Y);
 
 if ~isfield(aopt,'oerror')
     aopt.oerror = spm_vec(Y) - spm_vec(y);
@@ -1051,7 +1051,11 @@ else
     else
         s(1) = subplot(4,3,1);
         %imagesc(spm_unvec(spm_vec(Y),aopt.yshape));
-        surf(spm_unvec(spm_vec(Y),aopt.yshape),'EdgeColor','none');
+        if iscell(aopt.yshape)
+            surf(spm_unvec(spm_vec(Y),spm_cat(aopt.yshape)),'EdgeColor','none');
+        else
+            surf(spm_unvec(spm_vec(Y),aopt.yshape),'EdgeColor','none');
+        end
         
         title('DATA','color','w','fontsize',18);
         s(1).YColor = [1 1 1];
@@ -1060,7 +1064,11 @@ else
         s(1).Color  = [.3 .3 .3];
         s(6) = subplot(4,3,2);
         %imagesc(spm_unvec(spm_vec(y),aopt.yshape));
-        surf(spm_unvec(spm_vec(y),aopt.yshape),'EdgeColor','none');
+        if iscell(aopt.yshape)
+            surf(spm_unvec(spm_vec(y),spm_cat(aopt.yshape)),'EdgeColor','none');
+        else
+            surf(spm_unvec(spm_vec(y),aopt.yshape),'EdgeColor','none');
+        end
         
         title('PREDICTION','color','w','fontsize',18);
         s(6).YColor = [1 1 1];

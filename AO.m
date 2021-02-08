@@ -724,7 +724,9 @@ while iterate
                     red = red*.8;
                     %red = red * 1.2;
                     
+                    warning off;
                     try df; catch df = 0; end
+                    warning on;
                     
                     % halt this while loop
                     improve1 = 0;

@@ -753,7 +753,9 @@ while iterate
             % keep counting rejections
             n_reject_consec = n_reject_consec + 1;
             
+            warning off;
             try df; catch df = 0; end
+            warning on;
             
             % loosen inclusion threshold on param probability (temporarily)
             % i.e. specified variances aren't making sense.

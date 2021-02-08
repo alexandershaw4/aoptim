@@ -48,30 +48,6 @@ classdef AODCM < handle
             % optimisation
             obj.DCM = DCM;
             
-            
-            % Flag switch to ERP model during construction
-            if nargin == 3 && iserp == 1
-                obj.iserp = 1;
-                fun       = @obj.wraperp;
-                
-                % ERP convention is to separate neural and forward parameters
-                if ~isfield(obj.DCM.M.pE,'J') && isfield(obj.DCM.M,'gE')
-                    fprintf('Copying gE into pE for ERP model\n');
-                    obj.DCM.M.pE.J    = obj.DCM.M.gE.J;
-                    obj.DCM.M.pE.L    = obj.DCM.M.gE.L;
-                    obj.DCM.M.pE.Lpos = obj.DCM.M.gE.Lpos;
-                    obj.DCM.M.pC.J    = obj.DCM.M.gC.J;
-                    obj.DCM.M.pC.L    = obj.DCM.M.gC.L;
-                    obj.DCM.M.pC.Lpos = obj.DCM.M.gC.Lpos;
-                end 
-                
-            else
-                % Use default spectral response function
-                obj.iserp = 0;
-                fun       = @obj.wrapdm;
-            end
-            
-            
             DD    = obj.DCM;
             DD.SP = obj.DCM.M.pE;
             P     = spm_vec(obj.DCM.M.pE);
@@ -93,7 +69,7 @@ classdef AODCM < handle
             
             % Essential inputs for optimisation
             opts     = AO('options');
-            opts.fun = fun;
+            opts.fun = @obj.wrapdm;
             opts.x0  = p(:);
             opts.V   = c(:);
             opts.y   = (obj.DCM.xY.y);
@@ -115,11 +91,26 @@ classdef AODCM < handle
             
             % save this read for inversion
             obj.opts = opts;
+            obj.DCM  = DCM;
             obj.pE   = p(:);
             obj.pC   = c(:);
             obj.DD   = DD;
             obj.Y    = DCM.xY.y;
             
+            % Flag ERP during construction
+            if nargin == 3 && iserp == 1
+                obj.iserp     = 1;
+                obj.opts.fun  = @obj.wraperp;
+                
+                % ERP convention is to separate neural and forward parameters
+                if ~isfield(obj.DCM.M.pE,'J') && isfield(obj.DCM.M,'gE')
+                    obj.DCM.M.pE.J = obj.DCM.M.gE.J;
+                    obj.DCM.M.pE.L = obj.DCM.M.gE.J;
+                    obj.DCM.M.pE.J = obj.DCM.M.gE.J;
+                end                
+            else
+                obj.iserp     = 0;
+            end
             
             % Begin optimisation if flagged
             if nargin == 2 && do_optimise == 1

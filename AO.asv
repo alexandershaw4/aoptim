@@ -1446,19 +1446,9 @@ if nargout == 2 || nargout == 7
         
     elseif aopt.mimo == 2
         
-        % dpdxdx[i]
-        jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jaco(@obj,x0,V,0,Ord,[],{params}),V,0,Ord,4,{params});
-        [J,ip] = jfun(x0,V);
-        J0     = cat(2,J{:,1})';
-        J      = cat(2,J{:,4})';
-
-        J(isnan(J))=0;
-        J(isinf(J))=0;
+        jfun = @(x0,V) jaco_mimo(@obj,x0,V,0,Ord,2,{params});
         
-        % Put J0 in full space
-        JI = zeros(length(ip),1);
-        JI(find(ip)) = J0;
-        J0  = JI;        
+        [J,ip] = jfun(x0,V);
         
     end
     
@@ -1488,7 +1478,7 @@ if nargout == 2 || nargout == 7
         end
     end
     
-    if aopt.mimo
+    if aopt.mimo==1
         J = spm_vec(J0);
     end
     

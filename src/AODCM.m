@@ -78,7 +78,7 @@ classdef AODCM < handle
             V     = spm_vec(obj.DCM.M.pC);
             
             % Create mapping (cm) between full and reduced space
-            cm = spm_svd(diag(V));
+            cm = spm_svd(diag(V),0);
             ip = find(V);
             
             % to pass to f(ßx)
@@ -96,7 +96,10 @@ classdef AODCM < handle
             opts.fun = fun;
             opts.x0  = p(:);
             opts.V   = c(:);
-            opts.y   = (obj.DCM.xY.y);
+            
+            if obj.iserp; opts.y   = spm_cat(obj.DCM.xY.y);
+            else;         opts.y   = spm_vec(obj.DCM.xY.y);
+            end
             
             opts.inner_loop  = 10;
             opts.Q           = [];

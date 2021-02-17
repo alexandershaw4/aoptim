@@ -2,6 +2,13 @@ function [j,ip,j1] = jaco_mimo(fun,x0,V,verbose,order,nout,params)
 % Compute the 1st or 2nd order partial numerical derivates of a function
 % - parameter version: i.e. dp/dx - using symmetric finite difference methods
 %
+% - this version (jaco_mimo) is a variant on jaco (jaco.m) that computes
+% the partial derivatives of a multiple output function by catching all
+% outputs of the function into a cell and vectorising them - i.e. for a
+% model of the form:
+%
+%     [y1,y2] = fun(p),  it would compute dpdy1 and dpdy2 simultaneously
+%
 % usage: [j,ip] = jaco(fun,x0,V,verbose,order,nout,{params})
 %
 %  fun = function

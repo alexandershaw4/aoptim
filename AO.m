@@ -136,7 +136,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %
 % AS2019
 % alexandershaw4@gmail.com
-global aopt
+% global aopt
 
 % Print the description of steps and exit
 %--------------------------------------------------------------------------
@@ -184,6 +184,7 @@ aopt.pp      = x0(:);    % starting parameters
 aopt.Q       = Q;        % precision matrix
 aopt.history = [];       % error history when y=e & arg min y = f(x)
 aopt.memory  = gradmemory;% incorporate previous gradients when recomputing
+
 aopt.fixedstepderiv  = fsd;% fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
@@ -209,12 +210,6 @@ crit = [0 0 0 0 0 0 0 0];
 
 % variance (in reduced space)
 %--------------------------------------------------------------------------
-% if length(find(diag(pC))) == length(pC)
-%     V = sparse(eye(length(pC)));
-% else
-%     V = spm_svd(diag(V));
-% end
-
 V     = eye(length(x0));    %turn off svd 
 pC    = V'*(pC)*V;
 ipC   = spm_inv(spm_cat(spm_diag({pC})));
@@ -235,7 +230,7 @@ Vb         = V;
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
-    setfig(); makeplot(x0,x0,params);
+    setfig(); params = makeplot(x0,x0,params);
 end
 
 % initialise counters
@@ -289,12 +284,12 @@ while iterate
         
     % compute gradients & search directions
     %----------------------------------------------------------------------
-    aopt.updatej = true;
-    aopt.updateh = true;
-    params.aopt  = aopt;
-    [e0,df0]  = obj( V*x0(ip),params );
+    aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
+    
+    [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
     
+    aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
     params.aopt  = aopt;
@@ -315,25 +310,16 @@ while iterate
     % print end of gradient computation (just so we know it's finished)
     pupdate(loc,n,0,e0,e0,'grd-fin',toc); 
     
-    % initial search direction (steepest) and slope
-    %----------------------------------------------------------------------  
-    if autostep
-        if n < 3
-            search_method = 1;
-        else
-           % auto switch the step size (method) based on mean negative error growth rate
-           if (e0 ./ Hist.e(n-1)) > .9*mean([Hist.e e0] ./ [Hist.e(2:end) e0 e0])
-                search_method = 3; 
-           else search_method = 1;
-           end
-        end
-        
-    else
-        search_method = step_method;
+
+    if autostep; search_method = autostepswitch(n,e0,Hist);
+    else;        search_method = step_method;
     end
     
+    % initial search direction (steepest) and slope
+    %----------------------------------------------------------------------    
+    
     % compute step, a, in scheme: dx = x0 + a*-J
-    [a,J] = compute_step(df0,red,e0,search_method); % a = (1/64) / J = -df0;
+    [a,J] = compute_step(df0,red,e0,search_method,params); % a = (1/64) / J = -df0;
                
     % Log start of iteration (these are returned)
     Hist.e(n) = e0;
@@ -358,7 +344,7 @@ while iterate
         % Compute The Parameter Step (from gradients and step sizes):
         % % x[p,t+1] = x[p,t] + a[p]*-dfdx[p] 
         %------------------------------------------------------------------
-        dx = compute_dx(x1,a,J,red,search_method);  % dx = x1 + ( a * J );  
+        dx = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );  
         
         % The following options are essentially 'E-steps' in an Expectation
         % Maximisation routine - i.e. they estimate the missing variables
@@ -652,7 +638,7 @@ while iterate
         %------------------------------------------------------------------
         nupdate = [length(find(x0 - aopt.pp)) length(x0)];
         pupdate(loc,n,nfun,e1,e0,'accept ',toc,nupdate);      % print update
-        if doplot; makeplot(V*x0(ip),aopt.pp,params); end   % update plots
+        if doplot; params = makeplot(V*x0(ip),aopt.pp,params); end   % update plots
         
         n_reject_consec = 0;              % monitors consec rejections
         JPDtol          = Initial_JPDtol; % resets prob threshold for update
@@ -703,7 +689,7 @@ while iterate
                     % print & plot update
                     nupdate = [length(find(x0 - aopt.pp)) length(x0)];
                     pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
-                    if doplot; makeplot(V*x0,x1,params); end
+                    if doplot; params = makeplot(V*x0,x1,params); end
 
                     % update step size for these params
                     %red = red(:) + ( red(:).*thisgood(:) );      
@@ -929,6 +915,21 @@ drawnow;
 
 end
 
+function search_method = autostepswitch(n,e0,Hist)
+
+if n < 3
+    search_method = 1;
+else
+    % auto switch the step size (method) based on mean negative error growth rate
+    if (e0 ./ Hist.e(n-1)) > .9*mean([Hist.e e0] ./ [Hist.e(2:end) e0 e0])
+        search_method = 3;
+    else
+        search_method = 1;
+    end
+end
+end
+        
+
 function setfig()
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
@@ -980,11 +981,13 @@ drawnow;hold off;
 
 end
 
-function makeplot(x,ox,params)
+function params = makeplot(x,ox,params)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
 %
-global aopt
+% global aopt
+
+aopt = params.aopt;
 
 [Y,y] = GetStates(x,params);
 
@@ -1123,6 +1126,7 @@ else
 end
 
 aopt.oerror = new_error;
+params.aopt = aopt;
 
 end
 
@@ -1152,11 +1156,11 @@ function [e,J,er,mp,Cp,L,params] = obj(x0,params)
 % (vector) and covariance
 %
 
-if ~params.aopt.parallel
-    global aopt;
-else
+%if ~params.aopt.parallel
+%    global aopt;
+%else
     aopt=params.aopt;
-end
+%end
 
 % if ~isfield(aopt,'computeiCp')
 %     % Compute inverse covariance - on first call trigger this, but it gets 
@@ -1331,7 +1335,8 @@ catch
     aopt.Cp = Cp;
 end
     aopt.iS = iS;
-              
+
+params.aopt = aopt;
        
 switch lower(method)
     case {'free_energy','fe','freeenergy','logevidence'};
@@ -1421,7 +1426,6 @@ if nargout == 2 || nargout == 7
     if ~aopt.mimo 
         if ~aopt.parallel
             [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
-            %[J,ip] = jaco(@inter,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
             
             %objfunn = @(x) obj(x,params);
             %[J,~] = spm_diff(objfunn,x0,1);
@@ -1501,12 +1505,12 @@ end
 
 end
 
-function J = compute_step_J(df0,red,e0,step_method)
+function J = compute_step_J(df0,red,e0,step_method,params)
 % wrapper on the function below to just return the second output!
-    [x3,J] = compute_step(df0,red,e0,step_method);
+    [x3,J] = compute_step(df0,red,e0,step_method,params);
 end
 
-function [x3,J] = compute_step(df0,red,e0,step_method)
+function [x3,J] = compute_step(df0,red,e0,step_method,params)
 % Given the gradients (df0) & parameter variances (red)
 % compute the step, 'a' , in:
 %
@@ -1514,7 +1518,9 @@ function [x3,J] = compute_step(df0,red,e0,step_method)
 %
 % in most cases this is some linear transform of red.
 %
-global aopt
+aopt = params.aopt;
+
+%global aopt
 
 search_method = step_method;
 
@@ -1524,12 +1530,19 @@ switch search_method
         J      = -df0';
         dFdpp  = -(J'*J);
         
-        %Initial step (red is expected reduction in obj fun)
-        %x3  = red./(1-dFdpp);
-        
         % Compatibility with older matlabs
         %x3  = repmat(red,[1 length(red)])./(1-dFdpp);
-        x3  = ( red+red' )./(1-dFdpp);
+        
+        if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
+
+            % penalise the step by the covariance among params
+            [V,D] = eig((aopt.Cp));
+            st = (red+red') - (V*D*V'); 
+            x3 = st./(1-dFdpp);
+            
+        else
+            x3  = ( red+red' )./(1-dFdpp);
+        end
         
         %Leading (gradient) components
         %[uu,ss,vv] = spm_svd(x3);
@@ -1566,13 +1579,15 @@ end
 
 end
 
-function dx = compute_dx(x1,a,J,red,search_method)
+function dx = compute_dx(x1,a,J,red,search_method,params)
 %  given start point x1, step a and (directional) gradient J, compute dx:
 %
 % dx = x1 + a*J
 %
 % (note gradient has already been negative signed)
-global aopt
+%global aopt
+
+aopt = params.aopt;
 
 if search_method == 1
     %dx    = x1 + (a*J');                 % When a is a matrix

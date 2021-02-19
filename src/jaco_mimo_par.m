@@ -113,31 +113,20 @@ if verbose
     end
 end
 
-%f0    = feval(IS,P);
-
-% mimo code
+%initialise things
 f0{1} = cell(1,nout);
 [f0{1}{:}] = feval(IS,P);
 fx = f0{1};
 f1 = f0;
 
-%f0    = spm_cat( feval(IS,P) );
-%fx    = f0(:);
-
-%j     = zeros(length(P),length(f0(:))); % n param x n output
-%c     = zeros(length(P),length(f0(:))); % n param x n output
+f0 = repmat(f0,[length(P),1]);
+f1 = f0;
+j = cell(length(P),nout);
+j1=j;
 
 if ismember(order,[1 2 3 4])
     parfor i = 1:length(P)
         if ip(i)
-
-            % Print progress
-      %      n = n + 1;
-%             if verbose
-%                 if n > 1; fprintf(repmat('\b',[1,length(str)])); end
-%                 str  = sprintf('Computing Gradients [ip %d / %d]',n,length(find(ip)));
-%                 fprintf(str);
-%             end
 
             % Compute Jacobi: A(j,:) = ( f(x+h) - f(x-h) ) / (2 * h)
             P0     = P;
@@ -154,19 +143,12 @@ if ismember(order,[1 2 3 4])
             f0{i} = cell(1,nout);
             f1{i} = cell(1,nout);
             
-            % This would be the mimo equivalent code
             [f0{i}{:}] = feval(IS,P0);
             [f1{i}{:}] = feval(IS,P1);
             j(i,:) = spm_unvec( ( spm_vec(f0{i}) - spm_vec(f1{i}) ) / (2 * d) , fx );
             
-            %f0     = spm_vec(spm_cat(feval(IS,P0)));
-            %f1     = spm_vec(spm_cat(feval(IS,P1)));
-            %j(i,:) = (f0 - f1) / (2 * d);
             
             if order == 3 || order == 4
-             %   j(i,:) = ( ( (f0 - fx) / (2*d) ) + ...
-             %              ( (fx - f1) / (2*d) ) ) ./2;
-                       
                        
                 j(i,:) = spm_unvec( ((spm_vec(f0{i}) - spm_vec(fx{i})) ./ (2*d) ) + ...        
                                     ((spm_vec(fx{i}) - spm_vec(f1{i})) ./ (2*d) ) ./2 , fx);  
@@ -175,30 +157,17 @@ if ismember(order,[1 2 3 4])
             
             if order == 2 
                 j1(i,:) = j(i,:); % keep first order
-                
-                % Alternatively, include curvature
-                %deriv1 = (f0 - f1) / 2 / d;
-                %deriv2 = (f0 - 2 * fx + f1) / d ^ 2; % 2nd ORDER
-                %j(i,:) = deriv1 ./ deriv2;
-                
-                % This would be the mimo equivalent
+                                
                 deriv1 = spm_unvec( ( spm_vec(f0{i}) - spm_vec(f1{i}) ) / 2 / d , fx );
                 deriv2 = spm_unvec( (spm_vec(f0{i}) - 2 * spm_vec(fx) + spm_vec(f1{i})) / d.^2 , fx);
                 j(i,:) = spm_unvec( spm_vec(deriv1)./spm_vec(deriv2) , fx);
                 
             elseif order == 4
                 % curvature using the 3-point routine
-                %deriv1a = (f0 - fx) / (2*d);
-                %deriv1b = (fx - f1) / (2*d);
-                %deriv2a = (f0 - 2 * fx + f1) / d ^ 2;
-                %j(i,:)  = ( (deriv1a + deriv1b)./2 ) ./ deriv2a;
-                
-                % This would be the mimo equivalent
                 deriv1a = spm_unvec( (spm_vec(f0{i}) - spm_vec(fx)) / (2*d), fx);
                 deriv1b = spm_unvec( (spm_vec(fx) - spm_vec(f1{i})) / (2*d), fx);
                 deriv2a = spm_unvec( (spm_vec(f0{i}) - 2 * spm_vec(fx) + spm_vec(f1{i})) / d ^ 2, fx);
                 j(i,:)  = spm_unvec( ( (spm_vec(deriv1a) + spm_vec(deriv1b))./2 ) ./ spm_vec(deriv2a), fx);
-                
                 
             end
         end

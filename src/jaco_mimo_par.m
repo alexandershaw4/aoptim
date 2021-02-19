@@ -1,4 +1,4 @@
-function [j,ip,j1] = jaco_mimo(fun,x0,V,verbose,order,nout,params)
+function [j,ip,j1] = jaco_mimo_par(fun,x0,V,verbose,order,nout,params)
 % Compute the 1st or 2nd order partial numerical derivates of a function
 % - parameter version: i.e. dp/dx - using symmetric finite difference methods
 %
@@ -116,9 +116,9 @@ end
 %f0    = feval(IS,P);
 
 % mimo code
-f0 = cell(1,nout);
-[f0{:}] = feval(IS,P);
-fx = f0;
+f0{1} = cell(1,nout);
+[f0{1}{:}] = feval(IS,P);
+fx = f0{1};
 f1 = f0;
 
 %f0    = spm_cat( feval(IS,P) );
@@ -128,7 +128,7 @@ f1 = f0;
 %c     = zeros(length(P),length(f0(:))); % n param x n output
 
 if ismember(order,[1 2 3 4])
-    for i = 1:length(P)
+    parfor i = 1:length(P)
         if ip(i)
 
             % Print progress
@@ -150,11 +150,14 @@ if ismember(order,[1 2 3 4])
 
             P0(i)  = P0(i) + d  ;
             P1(i)  = P1(i) - d  ;
+
+            f0{i} = cell(1,nout);
+            f1{i} = cell(1,nout);
             
             % This would be the mimo equivalent code
-            [f0{:}] = feval(IS,P0);
-            [f1{:}] = feval(IS,P1);
-            j(i,:) = spm_unvec( ( spm_vec(f0) - spm_vec(f1) ) / (2 * d) , fx );
+            [f0{i}{:}] = feval(IS,P0);
+            [f1{i}{:}] = feval(IS,P1);
+            j(i,:) = spm_unvec( ( spm_vec(f0{i}) - spm_vec(f1{i}) ) / (2 * d) , fx );
             
             %f0     = spm_vec(spm_cat(feval(IS,P0)));
             %f1     = spm_vec(spm_cat(feval(IS,P1)));
@@ -165,8 +168,8 @@ if ismember(order,[1 2 3 4])
              %              ( (fx - f1) / (2*d) ) ) ./2;
                        
                        
-                j(i,:) = spm_unvec( ((spm_vec(f0) - spm_vec(fx)) ./ (2*d) ) + ...        
-                                    ((spm_vec(fx) - spm_vec(f1)) ./ (2*d) ) ./2 , fx);  
+                j(i,:) = spm_unvec( ((spm_vec(f0{i}) - spm_vec(fx{i})) ./ (2*d) ) + ...        
+                                    ((spm_vec(fx{i}) - spm_vec(f1{i})) ./ (2*d) ) ./2 , fx);  
                 
             end
             
@@ -179,8 +182,8 @@ if ismember(order,[1 2 3 4])
                 %j(i,:) = deriv1 ./ deriv2;
                 
                 % This would be the mimo equivalent
-                deriv1 = spm_unvec( ( spm_vec(f0) - spm_vec(f1) ) / 2 / d , fx );
-                deriv2 = spm_unvec( (spm_vec(f0) - 2 * spm_vec(fx) + spm_vec(f1)) / d.^2 , fx);
+                deriv1 = spm_unvec( ( spm_vec(f0{i}) - spm_vec(f1{i}) ) / 2 / d , fx );
+                deriv2 = spm_unvec( (spm_vec(f0{i}) - 2 * spm_vec(fx) + spm_vec(f1{i})) / d.^2 , fx);
                 j(i,:) = spm_unvec( spm_vec(deriv1)./spm_vec(deriv2) , fx);
                 
             elseif order == 4
@@ -191,9 +194,9 @@ if ismember(order,[1 2 3 4])
                 %j(i,:)  = ( (deriv1a + deriv1b)./2 ) ./ deriv2a;
                 
                 % This would be the mimo equivalent
-                deriv1a = spm_unvec( (spm_vec(f0) - spm_vec(fx)) / (2*d), fx);
-                deriv1b = spm_unvec( (spm_vec(fx) - spm_vec(f1)) / (2*d), fx);
-                deriv2a = spm_unvec( (spm_vec(f0) - 2 * spm_vec(fx) + spm_vec(f1)) / d ^ 2, fx);
+                deriv1a = spm_unvec( (spm_vec(f0{i}) - spm_vec(fx)) / (2*d), fx);
+                deriv1b = spm_unvec( (spm_vec(fx) - spm_vec(f1{i})) / (2*d), fx);
+                deriv2a = spm_unvec( (spm_vec(f0{i}) - 2 * spm_vec(fx) + spm_vec(f1{i})) / d ^ 2, fx);
                 j(i,:)  = spm_unvec( ( (spm_vec(deriv1a) + spm_vec(deriv1b))./2 ) ./ spm_vec(deriv2a), fx);
                 
                 

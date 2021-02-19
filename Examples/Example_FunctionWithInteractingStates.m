@@ -19,7 +19,7 @@ op = AO('options');  % this returns the optimiser input options structure
 op.step_method = 0;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
-op.y   = y(:);       % data we're fitting (for computation of objective fun)
+op.y   = y;%(:);       % data we're fitting (for computation of objective fun)
 op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
 op.step_method = 3;   % aggressive steps = 1, careful = 3, vanilla = 4.
@@ -29,6 +29,7 @@ op.inner_loop = 30;
 op.BTLineSearch = 0;
 op.fsd=0;
 op.DoMLE = 0;
+op.doimagesc=1;
 
 [X,F,CV] = AO(op);    % RUN IT
 

@@ -230,7 +230,7 @@ Vb         = V;
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
-    setfig(); makeplot(x0,x0,params);
+    setfig(); params = makeplot(x0,x0,params);
 end
 
 % initialise counters
@@ -638,7 +638,7 @@ while iterate
         %------------------------------------------------------------------
         nupdate = [length(find(x0 - aopt.pp)) length(x0)];
         pupdate(loc,n,nfun,e1,e0,'accept ',toc,nupdate);      % print update
-        if doplot; makeplot(V*x0(ip),aopt.pp,params); end   % update plots
+        if doplot; params = makeplot(V*x0(ip),aopt.pp,params); end   % update plots
         
         n_reject_consec = 0;              % monitors consec rejections
         JPDtol          = Initial_JPDtol; % resets prob threshold for update
@@ -689,7 +689,7 @@ while iterate
                     % print & plot update
                     nupdate = [length(find(x0 - aopt.pp)) length(x0)];
                     pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
-                    if doplot; makeplot(V*x0,x1,params); end
+                    if doplot; params = makeplot(V*x0,x1,params); end
 
                     % update step size for these params
                     %red = red(:) + ( red(:).*thisgood(:) );      
@@ -981,7 +981,7 @@ drawnow;hold off;
 
 end
 
-function makeplot(x,ox,params)
+function params = makeplot(x,ox,params)
 % plot the function output (f(x)) on top of the thing we're ditting (Y)
 %
 %
@@ -1126,6 +1126,7 @@ else
 end
 
 aopt.oerror = new_error;
+params.aopt = aopt;
 
 end
 
@@ -1243,6 +1244,11 @@ warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
+
+[V,D] = eig(Cp);
+Cp = V*D*V';
+
+
 
 p   = ( x0(:) - aopt.pp(:) );
 
@@ -1434,7 +1440,12 @@ if nargout == 2 || nargout == 7
         end
     elseif aopt.mimo == 1
         nout   = 4;
-        [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+        
+        if ~aopt.parallel
+            [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+        else
+            [J,ip] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
+        end
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
 
@@ -1449,8 +1460,12 @@ if nargout == 2 || nargout == 7
         
     elseif aopt.mimo == 2
         
-        % dpdxdx[i]
-        jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jaco(@obj,x0,V,0,Ord,[],{params}),V,0,Ord,4,{params});
+        % dpdxdxdx
+        if ~aopt.parallel
+            jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jaco(@obj,x0,V,0,Ord,[],{params}),V,0,Ord,4,{params});
+        else
+            jfun = @(x0,V) jaco_mimo_par(@obj,x0-exp(V).*jacopar(@obj,x0,V,0,Ord,{params}),V,0,Ord,4,{params});
+        end
         [J,ip] = jfun(x0,V);
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,4})';
@@ -1533,17 +1548,21 @@ switch search_method
         %x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
         if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
-            %x3  = ((red+red').*pinv(aopt.Cp))./(1-dFdpp);
-            %x3 = (red'*aopt.Cp)./(1-dFdpp);
+
+            % rescue unstable covariance estimation
+            Cp = aopt.Cp;
+            if any(isnan(Cp(:))) || any(isinf(Cp(:)))
+                Cp = zeros(size(aopt.Cp));
+            end
             
-            [V,D] = eig((aopt.Cp));
-            x3 = ( abs(V*diag(red)*V') )./(1-dFdpp);
+            % penalise the step by the covariance among params
+            [V,D] = eig((Cp));
+            st = (red+red') - (V*D*V'); 
+            x3 = st./(1-dFdpp);
+            
         else
-        
             x3  = ( red+red' )./(1-dFdpp);
         end
-        
-    %    x3  = ( red+red' )./(1-dFdpp);
         
         %Leading (gradient) components
         %[uu,ss,vv] = spm_svd(x3);

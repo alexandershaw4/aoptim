@@ -230,7 +230,7 @@ Vb         = V;
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
-    setfig(); params = makeplot(x0,x0,params);
+    setfig(); params = makeplot(x0,x0,params); aopt.oerror = params.aopt.oerror;
 end
 
 % initialise counters
@@ -638,7 +638,7 @@ while iterate
         %------------------------------------------------------------------
         nupdate = [length(find(x0 - aopt.pp)) length(x0)];
         pupdate(loc,n,nfun,e1,e0,'accept ',toc,nupdate);      % print update
-        if doplot; params = makeplot(V*x0(ip),aopt.pp,params); end   % update plots
+        if doplot; params = makeplot(V*x0(ip),aopt.pp,params);aopt.oerror = params.aopt.oerror; end   % update plots
         
         n_reject_consec = 0;              % monitors consec rejections
         JPDtol          = Initial_JPDtol; % resets prob threshold for update
@@ -689,7 +689,7 @@ while iterate
                     % print & plot update
                     nupdate = [length(find(x0 - aopt.pp)) length(x0)];
                     pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
-                    if doplot; params = makeplot(V*x0,x1,params); end
+                    if doplot; params = makeplot(V*x0,x1,params);aopt.oerror = params.aopt.oerror; end
 
                     % update step size for these params
                     %red = red(:) + ( red(:).*thisgood(:) );      
@@ -1245,7 +1245,10 @@ Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
 
-p   = ( x0(:) - aopt.pp(:) );
+[V,D] = eig(Cp);
+Cp = V*D*V';
+
+p  = ( x0(:) - aopt.pp(:) );
 
 if any(isnan(Cp(:))) 
     Cp = Cp;
@@ -1544,8 +1547,14 @@ switch search_method
         
         if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
 
+            % rescue unstable covariance estimation
+            Cp = aopt.Cp;
+            if any(isnan(Cp(:))) || any(isinf(Cp(:)))
+                Cp = zeros(size(aopt.Cp));
+            end
+            
             % penalise the step by the covariance among params
-            [V,D] = eig((aopt.Cp));
+            [V,D] = eig((Cp));
             st = (red+red') - (V*D*V'); 
             x3 = st./(1-dFdpp);
             

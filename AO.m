@@ -1450,8 +1450,12 @@ if nargout == 2 || nargout == 7
         
     elseif aopt.mimo == 2
         
-        % dpdxdx[i]
-        jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jaco(@obj,x0,V,0,Ord,[],{params}),V,0,Ord,4,{params});
+        % dpdxdxdx
+        if ~aopt.parallel
+            jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jaco(@obj,x0,V,0,Ord,[],{params}),V,0,Ord,4,{params});
+        else
+            jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jacopar(@obj,x0,V,0,Ord,{params}),V,0,Ord,4,{params});
+        end
         [J,ip] = jfun(x0,V);
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,4})';

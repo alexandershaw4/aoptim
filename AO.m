@@ -1243,8 +1243,8 @@ Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
 
-[V,D] = eig(Cp);
-Cp=V*D*V';
+%[V,D] = eig(Cp); % dont factorise it, it messes up F
+%Cp=V*D*V';
 
 p  = ( x0(:) - aopt.pp(:) );
 

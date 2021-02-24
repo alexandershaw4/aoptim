@@ -168,9 +168,8 @@ end
 
 % If a feature selection function was passed, append it to the user fun
 if ~isempty(FS) && isa(FS,'function_handle')
-    %fun = @(x) FS(fun(x));
-    %y   = FS(y);
-    params.FS = FS;
+    fun = @(x) FS(fun(x));
+    y   = FS(y);
 end
 
 % check functions, inputs, options...
@@ -1157,14 +1156,24 @@ function [e,J,er,mp,Cp,L,params] = obj(x0,params)
 % (vector) and covariance
 %
 
-aopt = params.aopt;
+%if ~params.aopt.parallel
+%    global aopt;
+%else
+    aopt=params.aopt;
+%end
+
+% if ~isfield(aopt,'computeiCp')
+%     % Compute inverse covariance - on first call trigger this, but it gets 
+%     % switched off during objective calls during derivative calculation
+%     aopt.computeiCp = 1;
+% end
+
 method = aopt.ObjectiveMethod;
 
 IS = aopt.fun;
 P  = x0(:)';
 
 % Evalulate f(X)
-%--------------------------------------------------------------------------
 warning off
 try    y  = IS(spm_unvec(P,aopt.x0x0)); 
 catch; y  = spm_vec(aopt.y)*0+inf;
@@ -1172,16 +1181,8 @@ end
 warning on;
 
 % Data & precision
-%--------------------------------------------------------------------------
 Y  = aopt.y;
 Q  = aopt.Q;
-
-% Feature selection
-%--------------------------------------------------------------------------
-if isfield(params,'FS')
-    y = params.FS(y);
-    Y = params.FS(Y);
-end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
@@ -1222,6 +1223,7 @@ else
     h = aopt.h;
 end
 
+
 if isinf(h)
     h = 1/8;
 end
@@ -1242,9 +1244,6 @@ warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
-
-[V,D] = eig(Cp);
-Cp=V*D*V';
 
 p  = ( x0(:) - aopt.pp(:) );
 
@@ -1553,7 +1552,8 @@ switch search_method
             
             % penalise the step by the covariance among params
             [V,D] = eig((Cp));
-            st = (red+red') - (real(V*D*V')); % (toeplitz(red))?
+            %st = (red+red') - real(V*D*V'); 
+            st = exp(toeplitz(red)) - real(V*D*V'); 
             x3 = st./(1-dFdpp);
             
         else

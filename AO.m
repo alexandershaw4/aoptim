@@ -1650,7 +1650,7 @@ warning('on', 'SPM:negativeVariance');
 end
 
 function V = FindOptimumStep(x0,v)
-global aopt
+%global aopt
 
 fprintf('Auto computing parameter step sizes...(wait)\n');tic;
 

@@ -49,13 +49,7 @@ classdef AODCM < handle
             % optimisation
             obj.DCM = DCM;
             
-            if nargin == 4 && ~isempty(ftype)
-                % wrapped function
-                obj.ftype = ftype;
-            else
-                % straight function
-                obj.ftype = 1;
-            end
+            if nargin
             
             % Flag switch to ERP model during construction
             if nargin == 3 && iserp == 1
@@ -89,35 +83,21 @@ classdef AODCM < handle
             cm = spm_svd(diag(V),0);
             ip = find(V);
             
-            if obj.ftype == 1
-                % to pass to f(ßx)
-                DD.P  = P;
-                DD.V  = V;
-                DD.cm = cm;
-
-                % Reduced parameter vectors -
-                p = ones(length(ip),1);
-                c = V(ip);
-
-                % Essential inputs for optimisation
-                opts     = AO('options');
-                opts.fun = fun;
-                opts.x0  = p(:);
-                opts.V   = c(:);
-                
-            else
-                DD.P  = P;
-                DD.V  = V;
-                DD.cm = eye(length(P));
-                p     = P;
-                c     = V;
-                
-                % Essential inputs for optimisation
-                opts     = AO('options');
-                opts.fun = @(p) spm_vec( feval(DCM.M.IS,spm_unvec(p,DCM.M.pE),DCM.M,DCM.xU) );
-                opts.x0  = p(:);
-                opts.V   = c(:); 
-            end
+            % to pass to f(ßx)
+            DD.P  = P;
+            DD.V  = V;
+            DD.cm = cm;
+                        
+            % Reduced parameter vectors -
+            p = ones(length(ip),1);
+            c = V(ip);
+            
+            
+            % Essential inputs for optimisation
+            opts     = AO('options');
+            opts.fun = fun;
+            opts.x0  = p(:);
+            opts.V   = c(:);
             
             if obj.iserp; opts.y   = spm_cat(obj.DCM.xY.y);
             else;         opts.y   = spm_vec(obj.DCM.xY.y);

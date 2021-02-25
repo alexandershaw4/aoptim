@@ -1,12 +1,12 @@
-function Q = AGenQ(x)
-
-% nx = length(x);
-% x  = diag(x);
-% ux = -1*[zeros(nx,1) eye(nx,nx-1)];
-% lx = -1*[zeros(1,nx); eye(nx-1,nx)];
-% 
+function [Q,GL] = AGenQ(x)
+% Returns an auto smoothing matrix Q for the elements of x, and its
+% graph Laplacian
+%
+% [Q,GL] = AGenQ(x)
+%
+% AS
+ 
 % Q = x + (ux) + (lx);
-
 
 % % Peak points as regions of importance
 x     = x ./ max(x);
@@ -44,3 +44,10 @@ Q = a + at  + ab  + ...
         at3 + ab3 ;
     
 Q = smooth2(Q,4);
+
+if nargout == 2
+    %Q  = cdist(x,x) .* Q;
+    A  = Q .* ~eye(length(Q));
+    N  = size(A,1);
+    GL = speye(N,N) + (A - spdiags(sum(A,2),0,N,N))/4;
+end

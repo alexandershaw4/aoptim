@@ -289,13 +289,14 @@ while iterate
     
     [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
+    df0 = real(df0);
     
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
     params.aopt  = aopt;
     
-    % Second order partial derivates w.r.t parameters, x[i], using:
+    % Second order partial derivates w.r.t F using:
     %
     % f0 = f(x[i]+h) 
     % fx = f(x[i]  )
@@ -318,7 +319,6 @@ while iterate
     
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------    
-    
     % compute step, a, in scheme: dx = x0 + a*-J
     [a,J] = compute_step(df0,red,e0,search_method,params); % a = (1/64) / J = -df0;
                
@@ -347,23 +347,19 @@ while iterate
         %------------------------------------------------------------------
         dx = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );  
         
-        % The following options are essentially 'E-steps' in an Expectation
-        % Maximisation routine - i.e. they estimate the missing variables
-        % (parameter indices & values) that should be optimised in this iteration
+        % The following options are like 'E-steps' or line search options 
+        % - i.e. they estimate the missing variables (parameter indices & 
+        % values) that should be optimised in this iteration
         %==================================================================
-        
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)
         pt  = zeros(1,length(x1));
         for i = 1:length(x1)
-            if red(i)
-                %vv     = real(sqrt( red(i) ));
-                vv     = real(sqrt( red(i) ))*2;
-                if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                 pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-            else
-            end
-        end    
+            %vv     = real(sqrt( red(i) ));
+            vv     = real(sqrt( red(i) ))*2;
+            if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+            pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+        end
         
         if EnforcePriorProb
             odx = dx;
@@ -378,6 +374,7 @@ while iterate
             end
         end
         
+        pdx = pt*0;
         for i = 1:length(x1)
             if red(i)
                 %vv     = real(sqrt( red(i) ));
@@ -388,14 +385,13 @@ while iterate
             else
             end
         end    
-        pt(find(red)) = pdx(:);
-
+        pt = pdx;
+        
         % Save for computing gradient ascent on probabilities
         p_hist(n,:) = pt;
         
-        % This is a variation on the Gauss-Newton algorithm.
-        % - Using (J'*er') as a crude version of the full (matrix) derivatives,
-        % compute MLE via WLS - where the weights are the priors
+        % This is a variation on the Gauss-Newton algorithm
+        % - compute MLE via WLS - where the weights are the priors
         %------------------------------------------------------------------
         if DoMLE                           % note - this could be iterated
             if nfun == 1
@@ -410,14 +406,12 @@ while iterate
             %w  = x1.^0;
             r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1)); % residuals
             b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
-
             % inclusion of a weight essentially makes this a Marquardt/
             % regularisation parameter
-            
             if isvector(a)
                 dx = x1 - a.*b;
             else
-                dx = x1 - a*b; % recompose dx including step matrix (a)
+                dx = x1 - a*b; % recompose dx including cov-adjusted step matrix (a)
             end
         end
         
@@ -442,7 +436,6 @@ while iterate
             end
         end
         
-
         % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
         % Either by:
         % (1) just update all parameters
@@ -453,7 +446,6 @@ while iterate
         aopt.updateh = false;
         params.aopt  = aopt;
         if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
-            
             % Don't perform checks, assume all f(dx[i]) <= e1
             % i.e. full gradient prediction over parameters is good and we
             % don't want to be explicitly Bayesian about it ...
@@ -461,7 +453,6 @@ while iterate
             gpi = 1:length(x0);
             de  = obj(V*dx,params);
             DFE = ones(1,length(x0))*de; 
-
         else
             % Assess each new parameter estimate (step) individually
             if ~doparallel
@@ -486,7 +477,6 @@ while iterate
                 end
             end                
                 
-                
             DFE  = real(DFE(:));
            
             % Identify improver-parameters            
@@ -497,7 +487,6 @@ while iterate
                 % If the full gradient prediction over parameters did not
                 % improve, but the BayesAdjust option is not selected, then
                 % only update parameters showing improvements in objective func
-                
                 ddx        = V*x0;
                 ddx(gpi)   = dx(gpi);
                 dx         = ddx;
@@ -514,8 +503,6 @@ while iterate
                     thresh = 1 - (alpha - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
                 end
                                 
-                thresh
-                
                 pupdate(loc,n,0,e1,e1,'mleslct',toc);
                 
                 PP = pt(:) ;
@@ -548,7 +535,6 @@ while iterate
         % - this can be helpful in functions with lots of local minima
         % i.e. bad step required before improvement
         %etol = e1 * ( ( 0.5./(n*2) ) ./(nfun.^2) );
-        
         if givetol
             etol = e1 * ( ( 0.5./(n*2) )  ); % this one
         else
@@ -1416,43 +1402,50 @@ if nargout == 2 || nargout == 7
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
-       %V = (~~V)*exp(-8);
     else
         %V = V*1e-2;
     end
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
-    aopt.updateh = 0;
+    params.aopt.updateh = 0;
+    
+    % Switch the derivative function: There are 4: 
+    %
+    %           mimo | ~mimo
+    %           _____|_____
+    % parallel |  4     2
+    % ~ para   |  3     1
+    %
     
     if ~aopt.mimo 
         if ~aopt.parallel
-            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
-            
-            %objfunn = @(x) obj(x,params);
-            %[J,~] = spm_diff(objfunn,x0,1);
-            %J = full(J(:));
+            % option 1: dfdp, not parallel, 1 output
+            %----------------------------------------------------------
+            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});... df[e]   /dx [MISO]
+            %objfunn = @(x) obj(x,params);[J,~] = spm_diff(objfunn,x0,1);
         else
-            [J,ip] = jacopar(@obj,x0,V,0,Ord,{params});   ... df[e]   /dx [MISO] 
+            % option 2: dfdp, parallel, 1 output
+            %----------------------------------------------------------
+            [J,ip] = jacopar(@obj,x0,V,0,Ord,{params});
         end
     elseif aopt.mimo == 1
         nout   = 4;
-        
         if ~aopt.parallel
+            % option 3: dfdp, not parallel, ObjF has multiple outputs
+            %----------------------------------------------------------
             [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
         else
+            % option 4: dfdp, parallel, ObjF has multiple outputs
+            %----------------------------------------------------------
             [J,ip] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
         end
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
-
         J(isnan(J))=0;
         J(isinf(J))=0;
-        
-        % Put J0 in full space
-        JI = zeros(length(ip),1);
+        JI = zeros(length(ip),1);% Put J0 in full space
         JI(find(ip)) = J0;
         J0  = JI;
-        
         
     elseif aopt.mimo == 2
         
@@ -1465,15 +1458,11 @@ if nargout == 2 || nargout == 7
         [J,ip] = jfun(x0,V);
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,4})';
-
         J(isnan(J))=0;
         J(isinf(J))=0;
-        
-        % Put J0 in full space
         JI = zeros(length(ip),1);
         JI(find(ip)) = J0;
         J0  = JI;        
-        
     end
     
     % Embed J in full parameter space
@@ -1501,13 +1490,10 @@ if nargout == 2 || nargout == 7
             aopt.pJ = J;
         end
     end
-    
     if aopt.mimo
         J = spm_vec(J0);
     end
-    
     params.aopt = aopt;
-    
     %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
     %J = repmat(V,[1 size(J,2)])./J;
 end
@@ -1552,7 +1538,7 @@ switch search_method
             end
             
             % penalise the step by the covariance among params
-            [V,D] = eig((Cp));
+            [V,D] = eig((Cp));            
             st = (red+red') - (real(V*D*V')); % (toeplitz(red))?
             x3 = st./(1-dFdpp);
             
@@ -1562,7 +1548,7 @@ switch search_method
         
         %Leading (gradient) components
         %[uu,ss,vv] = spm_svd(x3);
-        
+                        
         %nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
         %x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
         %x3 = uu(:,1)'*x3;

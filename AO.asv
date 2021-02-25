@@ -168,8 +168,9 @@ end
 
 % If a feature selection function was passed, append it to the user fun
 if ~isempty(FS) && isa(FS,'function_handle')
-    fun = @(x) FS(fun(x));
-    y   = FS(y);
+    %fun = @(x) FS(fun(x));
+    %y   = FS(y);
+    params.FS = FS;
 end
 
 % check functions, inputs, options...
@@ -288,13 +289,14 @@ while iterate
     
     [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
+    df0 = real(df0);
     
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
     params.aopt  = aopt;
     
-    % Second order partial derivates w.r.t parameters, x[i], using:
+    % Second order partial derivates w.r.t F using:
     %
     % f0 = f(x[i]+h) 
     % fx = f(x[i]  )
@@ -355,13 +357,13 @@ while iterate
         % coming from the same distribution defined by the prior (last best)
         pt  = zeros(1,length(x1));
         for i = 1:length(x1)
-            if red(i)
+            %if red(i)
                 %vv     = real(sqrt( red(i) ));
                 vv     = real(sqrt( red(i) ))*2;
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                  pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-            else
-            end
+            %else
+            %end
         end    
         
         if EnforcePriorProb
@@ -377,6 +379,7 @@ while iterate
             end
         end
         
+        pdx = pt*0;
         for i = 1:length(x1)
             if red(i)
                 %vv     = real(sqrt( red(i) ));
@@ -387,8 +390,9 @@ while iterate
             else
             end
         end    
-        pt(find(red)) = pdx(:);
-
+        %pt(find(red)) = pdx(:);
+        pt = pdx;
+        
         % Save for computing gradient ascent on probabilities
         p_hist(n,:) = pt;
         
@@ -1156,24 +1160,14 @@ function [e,J,er,mp,Cp,L,params] = obj(x0,params)
 % (vector) and covariance
 %
 
-%if ~params.aopt.parallel
-%    global aopt;
-%else
-    aopt=params.aopt;
-%end
-
-% if ~isfield(aopt,'computeiCp')
-%     % Compute inverse covariance - on first call trigger this, but it gets 
-%     % switched off during objective calls during derivative calculation
-%     aopt.computeiCp = 1;
-% end
-
+aopt = params.aopt;
 method = aopt.ObjectiveMethod;
 
 IS = aopt.fun;
 P  = x0(:)';
 
 % Evalulate f(X)
+%--------------------------------------------------------------------------
 warning off
 try    y  = IS(spm_unvec(P,aopt.x0x0)); 
 catch; y  = spm_vec(aopt.y)*0+inf;
@@ -1181,8 +1175,16 @@ end
 warning on;
 
 % Data & precision
+%--------------------------------------------------------------------------
 Y  = aopt.y;
 Q  = aopt.Q;
+
+% Feature selection
+%--------------------------------------------------------------------------
+if isfield(params,'FS')
+    y = params.FS(y);
+    Y = params.FS(Y);
+end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
@@ -1223,7 +1225,6 @@ else
     h = aopt.h;
 end
 
-
 if isinf(h)
     h = 1/8;
 end
@@ -1244,6 +1245,9 @@ warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
+
+%[V,D] = eig(Cp); % dont factorise it, it messes up F
+%Cp=V*D*V';
 
 p  = ( x0(:) - aopt.pp(:) );
 
@@ -1415,18 +1419,27 @@ if nargout == 2 || nargout == 7
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
-       %V = (~~V)*exp(-8);
     else
         %V = V*1e-2;
     end
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
-    aopt.updateh = 0;
+    params.aopt.updateh = 0;
+    
+    % Switch the derivative function: There are 4: 
+    %
+    %           mimo | ~mimo
+    %           _____|_____
+    % parallel |  4     2
+    % not para |  3     1
+    %
+    %
     
     if ~aopt.mimo 
         if ~aopt.parallel
-            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
+            % option 1:
             
+            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});   ... df[e]   /dx [MISO]
             %objfunn = @(x) obj(x,params);
             %[J,~] = spm_diff(objfunn,x0,1);
             %J = full(J(:));
@@ -1552,8 +1565,7 @@ switch search_method
             
             % penalise the step by the covariance among params
             [V,D] = eig((Cp));
-            %st = (red+red') - real(V*D*V'); 
-            st = exp(toeplitz(red)) - real(V*D*V'); 
+            st = (red+red') - (real(V*D*V')); % (toeplitz(red))?
             x3 = st./(1-dFdpp);
             
         else

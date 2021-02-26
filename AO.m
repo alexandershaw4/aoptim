@@ -1539,7 +1539,8 @@ switch search_method
             
             % penalise the step by the covariance among params
             [V,D] = eig((Cp));            
-            st = (red+red') - (real(V*D*V')); % (toeplitz(red))?
+            %st = (red+red') - (real(V*D*V')); % (toeplitz(red))?
+            st = (red+red') - Cp;
             x3 = st./(1-dFdpp);
             
         else

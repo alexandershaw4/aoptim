@@ -1317,7 +1317,7 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-try aopt.Cp = Cp;
+try aopt.Cp = aopt.Cp + Cp;
 catch
     aopt.Cp = Cp;
 end
@@ -1515,6 +1515,9 @@ function [x3,J] = compute_step(df0,red,e0,step_method,params)
 % in most cases this is some linear transform of red.
 %
 aopt = params.aopt;
+
+%global aopt
+
 search_method = step_method;
 
 switch search_method

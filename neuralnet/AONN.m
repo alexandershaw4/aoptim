@@ -19,8 +19,8 @@ classdef AONN < handle
         p
         c
         covariance 
-        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*(1./(1 + exp(-m{4}))));
-        g          = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),x);
+        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*(1./(1 + exp(-m{4}))) ./ sum((1./(1 + exp(-m{4})))));
+        g          = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
         prediction
         pred_raw  
         truth     
@@ -92,7 +92,7 @@ classdef AONN < handle
             HL = zeros(nh,1);
             W1 = ones(np,nh)/np*nh;
             W2 = ones(nh,ny)/nh.^2;
-            OA = zeros(ny,1);
+            OA = ones(ny,1)/2;
             
             %HL = rand(nh,1);
             %W1 = rand(np,nh)/np*nh;
@@ -142,6 +142,8 @@ classdef AONN < handle
             obj.F          = F;
             obj.covariance = CP;
             
+            
+            
         end
         
         function obj = train_bp(obj)
@@ -157,6 +159,7 @@ classdef AONN < handle
             obj.prediction = round(...
                     obj.fun_nr(spm_unvec(obj.weightvec,obj.modelspace),obj.x));
             
+            [M,T] = confustionmat([obj.truth obj.prediction]);
         end
         
         function obj = updateweights(obj,w)

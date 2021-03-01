@@ -291,6 +291,8 @@ while iterate
     [e0,~,er] = obj( V*x0(ip),params );
     df0 = real(df0);
     
+    df0 = params.aopt.J*params.aopt.iS*(1 - (-params.aopt.h))./e0;
+    
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
@@ -1284,6 +1286,11 @@ if aopt.hyperparameters
 
     if aopt.updateh
         aopt.h = h;
+        
+        aopt.JPJ = JPJ;
+        aopt.Ch  = Ch;
+        aopt.d   = d;
+        aopt.ihC = ihC;
     end
 end % end of if hyperparams (from spm) ... 
 
@@ -1317,7 +1324,7 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-try aopt.Cp = aopt.Cp + Cp;
+try aopt.Cp = Cp;
 catch
     aopt.Cp = Cp;
 end
@@ -1515,9 +1522,6 @@ function [x3,J] = compute_step(df0,red,e0,step_method,params)
 % in most cases this is some linear transform of red.
 %
 aopt = params.aopt;
-
-%global aopt
-
 search_method = step_method;
 
 switch search_method
@@ -1525,22 +1529,24 @@ switch search_method
         
         J      = -df0';
         dFdpp  = -(J'*J);
-        
+                
         % Compatibility with older matlabs
-        %x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
-        if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
-            % rescue unstable covariance estimation
-            Cp = aopt.Cp;
-            if any(isnan(Cp(:))) || any(isinf(Cp(:)))
-                Cp = zeros(size(aopt.Cp));
-            end
-            % penalise the step by the covariance among params
-            st = (red+red') - Cp;
-            x3 = st./(1-dFdpp);
-        else
-            x3  = ( red+red' )./(1-dFdpp);
-        end
+        
+%         if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
+%             % rescue unstable covariance estimation
+%             Cp = aopt.Cp;
+%             if any(isnan(Cp(:))) || any(isinf(Cp(:)))
+%                 Cp = zeros(size(aopt.Cp));
+%             end
+%             % penalise the step by the covariance among params
+%             st = (red+red') - Cp;
+%             %st = (1-red-diag(Cp))./(1-dFdpp);
+%             x3 = st./(1-dFdpp);
+%         else
+%             x3  = ( red+red' )./(1-dFdpp);
+%         end
         
         %Leading (gradient) components
         %[uu,ss,vv] = spm_svd(x3);

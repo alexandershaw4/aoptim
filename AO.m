@@ -290,7 +290,7 @@ while iterate
     [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
     df0 = real(df0);
-    
+        
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
@@ -1284,6 +1284,11 @@ if aopt.hyperparameters
 
     if aopt.updateh
         aopt.h = h;
+        
+        aopt.JPJ = JPJ;
+        aopt.Ch  = Ch;
+        aopt.d   = d;
+        aopt.ihC = ihC;
     end
 end % end of if hyperparams (from spm) ... 
 
@@ -1522,22 +1527,24 @@ switch search_method
         
         J      = -df0';
         dFdpp  = -(J'*J);
-        
+                
         % Compatibility with older matlabs
-        %x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
-        if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
-            % rescue unstable covariance estimation
-            Cp = aopt.Cp;
-            if any(isnan(Cp(:))) || any(isinf(Cp(:)))
-                Cp = zeros(size(aopt.Cp));
-            end
-            % penalise the step by the covariance among params
-            st = (red+red') - Cp;
-            x3 = st./(1-dFdpp);
-        else
-            x3  = ( red+red' )./(1-dFdpp);
-        end
+        
+%         if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
+%             % rescue unstable covariance estimation
+%             Cp = aopt.Cp;
+%             if any(isnan(Cp(:))) || any(isinf(Cp(:)))
+%                 Cp = zeros(size(aopt.Cp));
+%             end
+%             % penalise the step by the covariance among params
+%             st = (red+red') - Cp;
+%             %st = (1-red-diag(Cp))./(1-dFdpp);
+%             x3 = st./(1-dFdpp);
+%         else
+%             x3  = ( red+red' )./(1-dFdpp);
+%         end
         
         %Leading (gradient) components
         %[uu,ss,vv] = spm_svd(x3);

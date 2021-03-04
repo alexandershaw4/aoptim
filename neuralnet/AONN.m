@@ -1,6 +1,6 @@
 classdef AONN < handle 
-% Super simple FF NN for classification, with a softmax output layer,
-% optimised by minimising free energy
+% Super simple FF NN for classification, with sigmoid activations and a 
+% softmax output layer, optimised by minimising free energy
 %
 % M = AONN(G,X,nh,niter).train
 %

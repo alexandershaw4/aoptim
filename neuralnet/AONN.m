@@ -1,13 +1,16 @@
-classdef AONN < handle
-    
-% Super simple FF NN for classification, optimised by minimising free energy
+classdef AONN < handle 
+% Super simple FF NN for classification, with a softmax output layer,
+% optimised by minimising free energy
 %
-% [X,F,CP,f] = ao_nn(y,x,nh,niter)
+% M = AONN(G,X,nh,niter).train
 %
-% y  = group identifier (0,1), size(n,1)
+% G  = group identifier (0,1), size(n,1)
 % x  = predictor variances, size(n,m)
 % nh = num neurons in hidden layer
 % niter = number of iterations for optimisation
+%
+% After training, assess accuracy:
+% 100*(M.confusion.T.TP + M.confusion.T.TN) ./ sum(M.confusion.M(:))
 %
 % AS
 
@@ -19,7 +22,7 @@ classdef AONN < handle
         p
         c
         covariance 
-        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*(1./(1 + exp(-m{4}))) ./ sum((1./(1 + exp(-m{4})))));
+        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*(exp(1./(1 + exp(-m{4}))) ./ sum(exp(1./(1 + exp(-m{4}))))));
         g          = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
         prediction
         pred_raw  
@@ -29,6 +32,7 @@ classdef AONN < handle
         x
         y
         yscale
+        confusion
     end
 
 
@@ -142,8 +146,9 @@ classdef AONN < handle
             obj.F          = F;
             obj.covariance = CP;
             
-            
-            
+            [M,T] = confustionmat([obj.truth obj.prediction]);
+            obj.confusion.M = M;
+            obj.confusion.T = T;
         end
         
         function obj = train_bp(obj)
@@ -160,6 +165,8 @@ classdef AONN < handle
                     obj.fun_nr(spm_unvec(obj.weightvec,obj.modelspace),obj.x));
             
             [M,T] = confustionmat([obj.truth obj.prediction]);
+            obj.confusion.M = M;
+            obj.confusion.T = T;
         end
         
         function obj = updateweights(obj,w)

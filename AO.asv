@@ -196,9 +196,10 @@ aopt.doimagesc       = doimagesc;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
-params.aopt = aopt;      % Need to move form global aopt to a structure
 givetol     = allow_worsen; % Allow bad updates within a tolerance
 EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
+
+params.aopt = aopt;      % Need to move form global aopt to a structure
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -290,9 +291,7 @@ while iterate
     [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
     df0 = real(df0);
-    
-    df0 = params.aopt.J*params.aopt.iS*(1 - (-params.aopt.h))./e0;
-    
+        
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
@@ -1470,6 +1469,32 @@ if nargout == 2 || nargout == 7
         JI = zeros(length(ip),1);
         JI(find(ip)) = J0;
         J0  = JI;        
+        
+        
+    elseif aopt.mimo == 3
+        
+        % derivatives dpdp(dx)
+        % normally we look at the covariance of the partial derivatives to
+        % see which parameters are having the effects wrt the error at a
+        % given point (compute_step takes this into account), however,
+        % really we'd like the partial derivatives w.r.t each other partial
+        % derivative - my thinking below is that incorporating covJ back into
+        % x kind of achieves a 'parameter-jacobian matrix'. subtracting the
+        % initial condition (x0) form this then leaves the residual parameter
+        % effects on each other
+        xx = x0;
+        for i = 1:length(xx)
+            j = jaco(@obj,xx,V,0,Ord,[],{params});
+            dx(:,i) = xx - (pinv(j*j') * xx);
+            xx = dx(:,i);
+        end
+        
+        PJ = dx - x0;
+        
+        [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});
+        
+        J0 = PJ*J;
+        
     end
     
     % Embed J in full parameter space

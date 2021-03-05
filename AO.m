@@ -196,9 +196,10 @@ aopt.doimagesc       = doimagesc;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
-params.aopt = aopt;      % Need to move form global aopt to a structure
 givetol     = allow_worsen; % Allow bad updates within a tolerance
 EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
+
+params.aopt = aopt;      % Need to move form global aopt to a structure
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -455,33 +456,35 @@ while iterate
             DFE = ones(1,length(x0))*de; 
         else
             % Assess each new parameter estimate (step) individually
-            if ~doparallel
-                for nip = 1:length(dx)
-                    XX     = V*x0;
-                    if red(nip)
-                        XX(nip)  = dx(nip);
-                        DFE(nip) = obj(XX,params); % FE
-                    else
-                        DFE(nip) = e0;
+            if nfun == 1 % only complete this search once per gradient computation
+                if ~doparallel
+                    for nip = 1:length(dx)
+                        XX     = V*x0;
+                        if red(nip)
+                            XX(nip)  = dx(nip);
+                            DFE(nip) = obj(XX,params); % FE
+                        else
+                            DFE(nip) = e0;
+                        end
                     end
-                end
-            else
-                parfor nip = 1:length(dx)
-                    XX     = V*x0;
-                    if red(nip)
-                        XX(nip)  = dx(nip);
-                        DFE(nip) = obj(XX,params); % FE
-                    else
-                        DFE(nip) = e0;
+                else
+                    parfor nip = 1:length(dx)
+                        XX     = V*x0;
+                        if red(nip)
+                            XX(nip)  = dx(nip);
+                            DFE(nip) = obj(XX,params); % FE
+                        else
+                            DFE(nip) = e0;
+                        end
                     end
-                end
-            end                
-                
-            DFE  = real(DFE(:));
-           
-            % Identify improver-parameters            
-            gp  = double(DFE < e0); % e0
-            gpi = find(gp);
+                end                
+
+                DFE  = real(DFE(:));
+
+                % Identify improver-parameters            
+                gp  = double(DFE < e0); % e0
+                gpi = find(gp);
+            end
             
             if ~BayesAdjust
                 % If the full gradient prediction over parameters did not
@@ -1468,6 +1471,30 @@ if nargout == 2 || nargout == 7
         JI = zeros(length(ip),1);
         JI(find(ip)) = J0;
         J0  = JI;        
+        
+        
+    elseif aopt.mimo == 3
+        
+        % derivatives 
+        % normally we look at the covariance of the partial derivatives to
+        % see which parameters are having the same effects wrt the error at a
+        % given point (compute_step takes this into account), however,
+        % really we'd like the partial derivatives w.r.t each *other* partial
+        % derivative - my thinking below is that incorporating covJ back into
+        % x kind of achieves a 'parameter-jacobian matrix'. subtracting the
+        % initial condition (x0) from this then leaves the residual parameter
+        % effects on each other, which i use to correct the partial
+        % derivatives proper... need to test this and see if it works :)
+%         xx = x0;
+%         for i = 1:length(xx)
+%             j = jaco(@obj,xx,V,0,Ord,[],{params});
+%             dx(:,i) = xx - (pinv(j*j') * xx);
+%             xx = dx(:,i);
+%         end
+%         
+%         PJ = dx - x0;
+%         [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});
+%         J = PJ*J;
     end
     
     % Embed J in full parameter space
@@ -1495,7 +1522,7 @@ if nargout == 2 || nargout == 7
             aopt.pJ = J;
         end
     end
-    if aopt.mimo
+    if aopt.mimo && (aopt.mimo~=3)
         J = spm_vec(J0);
     end
     params.aopt = aopt;

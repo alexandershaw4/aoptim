@@ -121,7 +121,7 @@ classdef AONN < handle
             obj.op.fun       = obj.g;
             obj.op.x0        = obj.p(:);
             obj.op.V         = obj.c(:);
-            obj.op.y         = {obj.y};
+            obj.op.y         = {double(obj.y)};
             obj.op.maxit     = niter;
             obj.op.criterion = -500;
             obj.op.step_method  = 1;
@@ -138,7 +138,7 @@ classdef AONN < handle
             
             obj.op.x0 = obj.p;
             obj.op.V  = obj.c;
-            
+                        
             [X,F,CP,Pp]    = AO(obj.op);
             %obj.prediction = obj.fun(spm_unvec(X,obj.modelspace),obj.x);
             obj.pred_raw   = obj.fun_nr(spm_unvec(X,obj.modelspace),obj.x);

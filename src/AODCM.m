@@ -120,7 +120,7 @@ classdef AODCM < handle
             end
             
             if obj.iserp; opts.y   = spm_cat(obj.DCM.xY.y);
-            else;         opts.y   =  (obj.DCM.xY.y);
+            else;         opts.y   = spm_vec(obj.DCM.xY.y);
             end
             
             opts.inner_loop  = 10;

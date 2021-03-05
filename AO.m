@@ -456,7 +456,7 @@ while iterate
             DFE = ones(1,length(x0))*de; 
         else
             % Assess each new parameter estimate (step) individually
-            if nfun == 1 % only complete this search once per gradient computation
+            %if nfun == 1 % only complete this search once per gradient computation
                 if ~doparallel
                     for nip = 1:length(dx)
                         XX     = V*x0;
@@ -484,7 +484,7 @@ while iterate
                 % Identify improver-parameters            
                 gp  = double(DFE < e0); % e0
                 gpi = find(gp);
-            end
+            %end
             
             if ~BayesAdjust
                 % If the full gradient prediction over parameters did not

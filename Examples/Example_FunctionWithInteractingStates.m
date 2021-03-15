@@ -22,7 +22,7 @@ op.x0  = x0(:);      % start values
 op.y   = y;%(:);       % data we're fitting (for computation of objective fun)
 op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
-op.step_method = 3;   % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 1;   % aggressive steps = 1, careful = 3, vanilla = 4.
 op.maxit       = 128; % maximum number of iterations
 
 op.inner_loop = 30;

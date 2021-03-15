@@ -1199,6 +1199,18 @@ elseif isfield(aopt,'precisionQ')
     for i = 1:length(Q)
         Q{i} = Q{i} .* aopt.precisionQ;
     end
+    
+%     for i = 1:length(Q)
+%         pQ = aopt.precisionQ*0;
+%         pQ(:,i) = aopt.precisionQ(:,i);
+%         pQ(i,:) = aopt.precisionQ(i,:);
+%         
+%         if numel(find(Q{i})) == 1
+%             Q{i} = sparse( full(Q{i}(find(Q{i})))*pQ );
+%         else
+%             Q{i} = Q{i} + sparse(pQ);
+%         end
+%     end
 end
 
 % if aopt.mimo

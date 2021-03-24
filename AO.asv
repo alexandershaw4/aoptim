@@ -371,23 +371,19 @@ while iterate
             pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
         end
         
-        % Curb parameter estimates trying to exceed their distirbution
-        % bounds
         if EnforcePriorProb
             odx = dx;
-            nst = 1;
             for i = 1:length(x1)
                 if red(i)
-                    if dx(i) < ( pd(i).mu - (nst*pd(i).sigma) )
-                       dx(i) = pd(i).mu - (nst*pd(i).sigma);
-                    elseif dx(i) > ( pd(i).mu + (nst*pd(i).sigma) )
-                           dx(i) = pd(i).mu + (nst*pd(i).sigma);
+                    if dx(i) < ( pd(i).mu - (2*pd(i).sigma) )
+                       dx(i) = pd(i).mu - (2*pd(i).sigma);
+                    elseif dx(i) > ( pd(i).mu + (2*pd(i).sigma) )
+                           dx(i) = pd(i).mu + (2*pd(i).sigma);
                     end
                 end
             end
         end
         
-        % compute relative change in probability
         pdx = pt*0;
         for i = 1:length(x1)
             if red(i)
@@ -495,7 +491,7 @@ while iterate
 
                 DFE  = real(DFE(:));
                 
-                tc = spm_pinv(aest_cov(DFE-e0,length(DFE)));
+                tc = spm_pinv(aest_cov(DFE-e0,12));
                 dx = dx - tc*dx;
                 
                 % Identify improver-parameters            
@@ -1564,10 +1560,10 @@ switch search_method
 %         end
         
         %Leading (gradient) components
-        %[uu,ss,vv] = spm_svd(x3);
+        [uu,ss,vv] = spm_svd(x3);
                         
-        %nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-        %x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
         %x3 = uu(:,1)'*x3;
         
     case 2

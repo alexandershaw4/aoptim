@@ -495,8 +495,8 @@ while iterate
 
                 DFE  = real(DFE(:));
                 
-                tc = spm_pinv(aest_cov(DFE-e0,length(DFE)));
-                dx = dx - tc*dx;
+                %tc = spm_pinv(aest_cov(DFE-e0,length(DFE)));
+                %dx = dx - tc*dx;
                 
                 % Identify improver-parameters            
                 gp  = double(DFE < e0); % e0

@@ -297,7 +297,7 @@ while iterate
     aopt.updateh = false;
     params.aopt  = aopt;
     
-    % Second order partial derivates w.r.t F using:
+    % Second order partial derivates of F w.r.t x0 using:
     %
     % f0 = f(x[i]+h) 
     % fx = f(x[i]  )
@@ -307,7 +307,16 @@ while iterate
     %          ----------------------------
     %            (f0 - 2 * fx + f1) / h^2  
     %
-         
+    % or 
+    %
+    % d1a = (f0 - fx) / (2*d);
+    % d1b = (fx - f1) / (2*d);
+    % d2a = (f0 - 2 * fx + f1) / d ^ 2;
+    %
+    % j(i,:)  = 0.5 * ( d1a + d1b ) 
+    %           ------------------
+    %                   d2a
+    
     %[df0,e0] = spm_diff(@obj,x0,1);
          
     % print end of gradient computation (just so we know it's finished)
@@ -1191,26 +1200,12 @@ end
 
 if ~isfield(aopt,'precisionQ')
     Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %
-    
+    ny  = length(spm_vec(y));
+    nq  = ny ./ length(Q);
 elseif isfield(aopt,'precisionQ')
-    Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); 
-    
-    % incorporate (prior) precision Q into (updating) Q
-    for i = 1:length(Q)
-        Q{i} = Q{i} .* aopt.precisionQ;
-    end
-    
-%     for i = 1:length(Q)
-%         pQ = aopt.precisionQ*0;
-%         pQ(:,i) = aopt.precisionQ(:,i);
-%         pQ(i,:) = aopt.precisionQ(i,:);
-%         
-%         if numel(find(Q{i})) == 1
-%             Q{i} = sparse( full(Q{i}(find(Q{i})))*pQ );
-%         else
-%             Q{i} = Q{i} + sparse(pQ);
-%         end
-%     end
+    Q   = {aopt.precisionQ};
+    ny  = length(spm_vec(y));
+    nq  = ny ./ length(Q{1});
 end
 
 % if aopt.mimo
@@ -1233,8 +1228,6 @@ for i  = 1:length(Q)
     iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 end
 
-ny  = length(spm_vec(y));
-nq  = ny ./ length(Q);
 e   = spm_vec(Y) - spm_vec(y);
 
 ipC = aopt.ipC;
@@ -1255,7 +1248,6 @@ end
 
 if aopt.hyperparameters
     % pulled directly from SPM's spm_nlsi_GN.m ...
-    
     % ascent on h / precision {M-step}
     %==========================================================================
     clear P;
@@ -1307,31 +1299,8 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
-% % % Compute peak distances
-% p1 = spm_vec(Y);
-% p0 = spm_vec(y);
-% [~,Pk1] = findpeaks(p1,'NPeaks',4);
-% [~,Pk0] = findpeaks(p0,'NPeaks',4);
-% 
-% i = min([length(Pk1) length(Pk0)]);
-% i=1:i;
-% if any(i)
-%     D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
-% else
-%     D = 0;
-% end
-% 
-% %L(4) = -(sum(D(:))) * 4;
-% PkAc = (sum(D(:))) * 4;
-
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-
-% if L(1) < 0; L(1) = L(1)*PkAc;
-% else
-%     L(1) = L(1)+PkAc;
-% end
-
 
 if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
@@ -1469,7 +1438,7 @@ if nargout == 2 || nargout == 7
         
     elseif aopt.mimo == 2
         
-        % dpdxdxdx
+        % dpdxdxdx - or approx the curvature of the curvature if order=2
         if ~aopt.parallel
             jfun = @(x0,V) jaco_mimo(@obj,x0-exp(V).*jaco(@obj,x0,V,0,Ord,[],{params}),V,0,Ord,4,{params});
         else

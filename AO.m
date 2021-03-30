@@ -193,6 +193,7 @@ aopt.forcels         = force_ls;  % force line search
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel;
 aopt.doimagesc       = doimagesc;
+aopt.rankappropriate = rankappropriate;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -1246,8 +1247,12 @@ Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
 
-%[V,D] = eig(Cp); % dont factorise it, it messes up F
-%Cp=V*D*V';
+if aopt.rankappropriate
+    N = rank((Cp)); % cov rank
+    [v,D] = eig((Cp)); % decompose covariance matrix
+    DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
+    Cp = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))';
+end
 
 p  = ( x0(:) - aopt.pp(:) );
 
@@ -1516,8 +1521,7 @@ if nargout == 2 || nargout == 7
         J = spm_vec(J0);
     end
     params.aopt = aopt;
-    %[J,ip] = jaco(IS,P',V,0,Ord);   ... df/dx
-    %J = repmat(V,[1 size(J,2)])./J;
+    
 end
 
 
@@ -1564,10 +1568,10 @@ switch search_method
 %         end
         
         %Leading (gradient) components
-        %[uu,ss,vv] = spm_svd(x3);
+        [uu,ss,vv] = spm_svd(x3);
                         
-        %nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-        %x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
         %x3 = uu(:,1)'*x3;
         
     case 2
@@ -1736,6 +1740,7 @@ X.allow_worsen = 0;
 X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
 X.FS = [];
+X.rankappropriate = 0;
 end
 
 function parseinputstruct(opts)

@@ -33,6 +33,11 @@ classdef AONN < handle
         y
         yscale
         confusion
+        J
+        redfun     = @(pp,x) obj.fun_nr(spm_unvec( (pp*obj.V')'.*obj.p, obj.modelspace), x)
+        V
+        rp
+        rc
     end
 
 
@@ -131,22 +136,94 @@ classdef AONN < handle
 
         end
         
-        function obj = train(obj)
+        function obj = dpdy(obj)
+            % computes numerical gradients/derivatives
+            fprintf('Computing partial numerical derivatives...\n');
+            y0 = obj.fun_nr(obj.modelspace,obj.x);
+            p  = obj.p;
+            m  = obj.modelspace;
+            d  = obj.c;
             
-            % this needs to redefined now for some reason
-            obj.op.fun     = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
+            for i = 1:length(p)
+                msp = spm_vec(m);
+                msp(i) = p(i) + p(i)*d(i);
+                J(i,:) = ( obj.fun_nr(spm_unvec(msp,obj.modelspace),obj.x) - y0 )./d(i);
+            end
+            obj.J = J;
+        end
+        
+        function obj = reduce(obj,N)
             
-            obj.op.x0 = obj.p;
-            obj.op.V  = obj.c;
+            if isempty(obj.J)
+                obj = dpdy(obj);
+            end
+            
+            J = obj.J;
+%             cJ = cov(J');
+%             
+%             N = rank(cJ); % cov rank
+%             [v,D] = eig(cJ); % decompose covariance matrix
+%             DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
+%             PCV = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))'; % project factorised matrix without rank deficiency
+            
+            %Check that the principal components are orthogonal:
+            %corr((v(:,ord(1:N))'*RelCh)')
+            
+            %Check that the reduced cov matrix explains enough of the variance in the
+            %original matrix:
+            %corr(spm_vec(cov(RelCh')),spm_vec(PCV)).^2
+            
+            T = clusterdata(J,'linkage','ward','maxclust',N);
+            V = sparse(1:size(J,1),T,1,size(J,1),N);
+            p = ones(1,N);
+            v = ones(1,N)/8;
+            
+            obj.V = V;
+            
+            %obj.redfun = @(pp,x) obj.fun_nr(spm_unvec( (pp*obj.V')'.*obj.p, obj.modelspace), x)
+            
+            obj.rp = p;
+            obj.rc = v;
+            
+        end
+        
+        
+        function obj = train(obj,method)
+            
+            if nargin < 2
+                method = 1;
+            end
+            
+            switch method
+                case 1
+                % this needs to redefined now for some reason
+                obj.op.fun     = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
+                obj.op.x0 = obj.p;
+                obj.op.V  = obj.c;
+                case 2
+                redfun    = @(pp) obj.fun_nr(spm_unvec( (pp*obj.V')'.*obj.p, obj.modelspace), obj.x);
+                obj.op.fun = @(p) redfun(p);
+                obj.op.x0 = obj.rp;
+                obj.op.V  = obj.rc;
+            end
+            
+            
                         
             [X,F,CP,Pp]    = AO(obj.op);
             %obj.prediction = obj.fun(spm_unvec(X,obj.modelspace),obj.x);
-            obj.pred_raw   = obj.fun_nr(spm_unvec(X,obj.modelspace),obj.x);
+            
+            switch method
+                case 1
+                    obj.pred_raw   = obj.fun_nr(spm_unvec(X,obj.modelspace),obj.x);
+                case 2
+                    obj.pred_raw   = redfun(X');
+            end
+            
             obj.weightvec  = X(:);
             obj.F          = F;
             obj.covariance = CP;
             
-            [M,T] = confustionmat([obj.truth obj.prediction]);
+            [M,T] = confustionmat([obj.truth obj.pred_raw]);
             obj.confusion.M = M;
             obj.confusion.T = T;
         end

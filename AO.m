@@ -75,14 +75,6 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %   e    = (data - y)                        ... error = data - f(p)
 %   F(p) = log evidence(e,y) - divergence(p) ... objective function F
 %
-% the long usage is:
-%   [X,F,Cp,Pp,Hist] = AO(f,x0,V,data,maxit,inner_loop,Q,crit,min_df,ordr,...
-%                                writelog,obj,ba,im,step_meth)
-%
-% minimum usage (using defaults):
-%   [X,F] = AO(fun,x0,V,[y])
-%
-%
 % INPUTS:
 %-------------------------------------------------------------------------
 % To call this function using an options structure:
@@ -168,8 +160,6 @@ end
 
 % If a feature selection function was passed, append it to the user fun
 if ~isempty(FS) && isa(FS,'function_handle')
-    %fun = @(x) FS(fun(x));
-    %y   = FS(y);
     params.FS = FS;
 end
 
@@ -191,9 +181,9 @@ aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
 aopt.forcels         = force_ls;  % force line search
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
-aopt.parallel        = doparallel;
-aopt.doimagesc       = doimagesc;
-aopt.rankappropriate = rankappropriate;
+aopt.parallel        = doparallel; % compute dpdy in parfor
+aopt.doimagesc       = doimagesc;  % change plot to a surface 
+aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            

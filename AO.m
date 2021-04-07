@@ -395,6 +395,10 @@ while iterate
         % Save for computing gradient ascent on probabilities
         p_hist(n,:) = pt;
         
+        % plot probabilities
+        [~,o]  = sort(pt(:),'descend');
+        probplot(cumprod(pt(o)),0.95);
+        
         % This is a variation on the Gauss-Newton algorithm
         % - compute MLE via WLS - where the weights are the priors
         %------------------------------------------------------------------
@@ -931,7 +935,7 @@ end
 function setfig()
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1716,254,710,695]);
+figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[2436,360,710,842]);
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -968,7 +972,7 @@ s = subplot(4,3,[10 11]);
 %bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
 plot(growth,'w','linewidth',3);hold on
 plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
-title('Cumulative P Step Probability','color','w','fontsize',18);
+title('Cumulative Param Prob','color','w','fontsize',18);
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -1088,6 +1092,7 @@ else
     plot(former_error,'w--','linewidth',3); hold on;
     plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
     grid on;grid minor;title('Error Change','color','w','fontsize',18);
+    ylabel('Δ error');
     s(2).YColor = [1 1 1];
     s(2).XColor = [1 1 1];
     s(2).Color  = [.3 .3 .3];
@@ -1097,6 +1102,8 @@ else
     s(3) = subplot(4,3,5);
     bar(real([ x(:)-ox(:) ]),'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
+    ylabel('Δ prior');
+    ylim([-1 1]);
     ax = gca;
     ax.XGrid = 'off';
     ax.YGrid = 'on';
@@ -1295,7 +1302,6 @@ if aopt.hyperparameters
 
     if aopt.updateh
         aopt.h = h;
-        
         aopt.JPJ = JPJ;
         aopt.Ch  = Ch;
         aopt.d   = d;
@@ -1309,6 +1315,22 @@ L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
+
+% Added a 4th term to FE: peak distances
+p1 = spm_vec(Y);
+p0 = spm_vec(y);
+[~,Pk1] = findpeaks(p1,'NPeaks',4);
+[~,Pk0] = findpeaks(p0,'NPeaks',4);
+i = min([length(Pk1) length(Pk0)]);
+i=1:i;
+if any(i)
+    D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
+else
+    D = 0;
+end
+
+L(4) = -(sum(D(:)));
+
 
 try aopt.Cp = Cp;
 catch

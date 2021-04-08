@@ -939,7 +939,7 @@ figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[2436,36
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
-    
+set(0,'DefaultAxesTitleFontWeight','normal');
 end
 
 function BayesPlot(x,pr,po)
@@ -972,7 +972,7 @@ s = subplot(4,3,[10 11]);
 %bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
 plot(growth,'w','linewidth',3);hold on
 plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
-title('Cumulative Param Prob','color','w','fontsize',18);
+title('E[p] | prior N(μ,σ2) ','color','w','fontsize',18);
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -1316,20 +1316,20 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-% Added a 4th term to FE: peak distances
-p1 = spm_vec(Y);
-p0 = spm_vec(y);
-[~,Pk1] = findpeaks(p1,'NPeaks',4);
-[~,Pk0] = findpeaks(p0,'NPeaks',4);
-i = min([length(Pk1) length(Pk0)]);
-i=1:i;
-if any(i)
-    D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
-else
-    D = 0;
-end
-
-L(4) = -(sum(D(:)));
+% % Added a 4th term to FE: peak distances
+% p1 = spm_vec(Y);
+% p0 = spm_vec(y);
+% [~,Pk1] = findpeaks(p1,'NPeaks',4);
+% [~,Pk0] = findpeaks(p0,'NPeaks',4);
+% i = min([length(Pk1) length(Pk0)]);
+% i=1:i;
+% if any(i)
+%     D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
+% else
+%     D = 0;
+% end
+% 
+% L(4) = -(sum(D(:))./(4.^2));
 
 
 try aopt.Cp = Cp;

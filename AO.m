@@ -396,8 +396,8 @@ while iterate
         p_hist(n,:) = pt;
         
         % plot probabilities
-        [~,o]  = sort(pt(:),'descend');
-        probplot(cumprod(pt(o)),0.95);
+        [~,oo]  = sort(pt(:),'descend');
+        probplot(cumprod(pt(oo)),0.95);
         
         % This is a variation on the Gauss-Newton algorithm
         % - compute MLE via WLS - where the weights are the priors

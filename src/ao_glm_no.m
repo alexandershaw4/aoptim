@@ -18,6 +18,7 @@ function [b,F,Cp,fit] = ao_glm_no(x,y)
 nb = size(y,2);
 n  = size(y,1);
 b  = ones(1,nb+1);
+b(1)=0;
 V  = [2 b(2:end)/8];
 
 fun = @(b) (b(1)+b(2:end)*y');

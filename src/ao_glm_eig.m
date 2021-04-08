@@ -40,6 +40,7 @@ opts.V   = V;
 opts.y   = x;
 opts.maxit = inf;
 opts.step_method = 1;
+opts.hyperparams=0;
 [b,F,Cp] = AO(opts);
 
 %[b,F,Cp] = AO(fun,b,V,x,inf,[],[],1e-8);

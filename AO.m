@@ -288,6 +288,7 @@ while iterate
     aopt.updateh = false;
     params.aopt  = aopt;
     
+    
     % Second order partial derivates of F w.r.t x0 using:
     %
     % f0 = f(x[i]+h) 
@@ -394,6 +395,7 @@ while iterate
         
         % Save for computing gradient ascent on probabilities
         p_hist(n,:) = pt;
+        Hist.pt(:,n)  = pt;
         
         % plot probabilities
         [~,oo]  = sort(pt(:),'descend');
@@ -413,7 +415,7 @@ while iterate
             end
             w  = pt;
             %w  = x1.^0;
-            r0 = spm_vec(y) - spm_vec(params.aopt.fun(x1)); % residuals
+            r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
             b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
             % inclusion of a weight essentially makes this a Marquardt/
             % regularisation parameter

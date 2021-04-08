@@ -973,6 +973,7 @@ s = subplot(4,3,[10 11]);
 plot(growth,'w','linewidth',3);hold on
 plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
 title('E[p] | prior N(μ,σ2) ','color','w','fontsize',18);
+ylim([0 1]);
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';

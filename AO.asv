@@ -282,7 +282,11 @@ while iterate
     [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
     [e0,~,er] = obj( V*x0(ip),params );
     df0 = real(df0);
-            
+    
+    % orthogonalise derivatives
+    od = atcm.fun.estcov(df0,20);
+    u = 
+        
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
@@ -974,7 +978,7 @@ s = subplot(4,3,[10 11]);
 %bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
 plot(growth,'w','linewidth',3);hold on
 plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
-title('P(p | prior N(μ,σ2)) ','color','w','fontsize',18);
+title('E[p] | prior N(μ,σ2) ','color','w','fontsize',18);
 ylim([0 1]);
 ax = gca;
 ax.XGrid = 'off';
@@ -1319,7 +1323,7 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-% % % Added a 4th term to FE: peak distances
+% % Added a 4th term to FE: peak distances
 % p1 = spm_vec(Y);
 % p0 = spm_vec(y);
 % [~,Pk1] = findpeaks(p1,'NPeaks',4);

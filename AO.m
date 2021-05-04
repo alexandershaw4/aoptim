@@ -546,7 +546,7 @@ while iterate
             end            
         end
            
-        fprintf('| sum(dp) = %d\n',sum(dx-x1));
+        fprintf('\b | sum(dp) = %d\n',sum(dx-x1));
         
         % print the full (un-filtered / line searched prediction)
         %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
@@ -565,7 +565,10 @@ while iterate
             inner_loop=2;
         end
         
-        if de  < ( obj(x1,params) + abs(etol) )
+        deltap = abs(sum(dx-x1));
+        deltaptol = 1e-3;
+        
+        if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
             
             % If the objective function has improved...
             if nfun == 1; pupdate(loc,n,0,de,e1,'improve',toc); end
@@ -594,7 +597,7 @@ while iterate
         
     % evaluate - accept/reject - plot - adjust rate
     %======================================================================
-    if e1 < e0 && ~aopt.forcels   % Improvement...
+    if e1 < e0 && ~aopt.forcels && (deltap > deltaptol)  % Improvement...
         
         % compute deltas & accept new parameters and error
         %------------------------------------------------------------------

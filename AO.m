@@ -392,6 +392,7 @@ while iterate
             end
         end    
         pt = pdx;
+        prplot(pt);
         
         % Save for computing gradient ascent on probabilities
         p_hist(n,:) = pt;
@@ -545,6 +546,8 @@ while iterate
             end            
         end
            
+        fprintf('| sum(dp) = %d\n',sum(dx-x1));
+        
         % print the full (un-filtered / line searched prediction)
         %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
         
@@ -966,6 +969,24 @@ s(4).Color  = [.3 .3 .3];
 drawnow;
 end
 
+function prplot(pt)
+
+s = subplot(4,3,8);
+    bar(real( pt(:) ),'FaceColor',[1 .7 .7],'EdgeColor','w');
+    title('P(dp)','color','w','fontsize',18);
+    ylabel('P(dp)');
+    ylim([0 1]);
+    ax = gca;
+    ax.XGrid = 'off';
+    ax.YGrid = 'on';
+    s.YColor = [1 1 1];
+    s.XColor = [1 1 1];
+    s.Color  = [.3 .3 .3];
+    drawnow;
+
+
+end
+
 function probplot(growth,thresh)
 
 growth(isnan(growth))=0;
@@ -1102,7 +1123,7 @@ else
     
     
     %s(3) = subplot(413);
-    s(3) = subplot(4,3,5);
+    s(3) = subplot(4,3,7);
     bar(real([ x(:)-ox(:) ]),'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
     ylabel('Δ prior');
@@ -1115,7 +1136,7 @@ else
     s(3).Color  = [.3 .3 .3];
     drawnow;
     
-    s(4) = subplot(4,3,[7 8]);
+    s(4) = subplot(4,3,5);
     plot(spm_vec(Y),'w:','linewidth',3);
     hold on;
     plot(spm_vec(Y)-aopt.oerror,'linewidth',3,'Color',[1 .7 .7]); hold off;

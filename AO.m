@@ -1214,11 +1214,11 @@ if isfield(params,'FS')
     Y = params.FS(Y);
 end
 
-% SSA if required
-rk = 3;
-s0 = atcm.fun.assa(Y,rk);
-s1 = atcm.fun.assa(y,rk);
-d0 = min( cdist(s0',s1') ,[],2);
+% % SSA if required
+% rk = 3;
+% s0 = atcm.fun.assa(Y,rk);
+% s1 = atcm.fun.assa(y,rk);
+% d0 = min( cdist(s0',s1') ,[],2);
 
 
 % Check / complete the derivative matrix (for the covariance)
@@ -1350,7 +1350,7 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-L(4) = -prod(d0);
+%L(4) = -prod(d0);
 
 % % % Added a 4th term to FE: peak distances
 % p1 = spm_vec(Y);

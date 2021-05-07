@@ -1291,9 +1291,8 @@ for i  = 1:length(Q)
     iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 end
 
-e   = (spm_vec(Y) - spm_vec(y)).^2;
-
-%e = 100*(e./spm_vec(Y));
+e   = spm_vec(Y) - spm_vec(y);
+e0 = (spm_vec(Y)'-spm_vec(y) );
 
 ipC = aopt.ipC;
 
@@ -1367,9 +1366,9 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
-%ee = real(sum( spm_vec(e0*iS*e0) ))/2;
-%L(1) = spm_logdet(iS)*nq/2  - ee - ny*log(8*atan(1))/2;      
-L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+ee = real(sum( spm_vec(e0*iS*e0) ));
+L(1) = spm_logdet(iS)*nq/2  - ee - ny*log(8*atan(1))/2;      
+%L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
 if aopt.hyperparameters

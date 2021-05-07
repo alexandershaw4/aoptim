@@ -154,7 +154,7 @@ classdef AODCM < handle
         end
         
         
-        function [y,PP] = wrapdm(obj,Px,varargin)
+        function [y,PP,s,t] = wrapdm(obj,Px,varargin)
             % wraps the DCM/SPM integrator function into a f(P)
             % anonymous-like function accepting a reduced parameter vector
             % and returning the model output
@@ -182,7 +182,22 @@ classdef AODCM < handle
             end
             
             IS   = spm_funcheck(DD.M.IS);       % Integrator
-            y    = IS(PP,DD.M,DD.xU);           % Prediction
+            
+            if nargout(IS) < 8
+            % generic, works for all functions....
+                y    = IS(PP,DD.M,DD.xU);
+ 
+            elseif nargout(IS) == 8
+            % this is specific to atcm.integrate3.m
+                [y,w,s,g,t,pst,l,oth] = IS(PP,DD.M,DD.xU);
+                s = (s{1});
+                s = reshape(s,[size(s,1)*size(s,2)*size(s,3),size(s,4)]);
+                jj = find(exp(PP.J));
+                s = s(jj,:);
+                t = pst;
+            end
+            
+            %y    = IS(PP,DD.M,DD.xU);           % Prediction
             y    = spm_vec(y);
             y    = real(y);
             

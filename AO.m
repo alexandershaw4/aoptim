@@ -191,6 +191,7 @@ givetol     = allow_worsen; % Allow bad updates within a tolerance
 EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
 
 params.aopt = aopt;      % Need to move form global aopt to a structure
+params.userplotfun = userplotfun;
 
 % parameter and step vectors
 x0  = full(x0(:));
@@ -1018,6 +1019,27 @@ function params = makeplot(x,ox,params)
 
 aopt = params.aopt;
 
+% user may pass a plot function which accepts parameter vector x and
+% params structure, and calls the user function (the one being optimised):
+% for example:
+%
+%
+% function aodcmplotfun(p,params)
+%    [~,~,y,t] = params.aopt.fun(p,params);
+%    plot(t,y);
+%
+% note: this plot will be added to the main AO optimisation figure in
+% position subplot(4,3,6) and coloured appropriately...
+if isfield(params,'userplotfun') && ~isempty(params.userplotfun);
+    subplot(4,3,6);
+    feval(params.userplotfun,x,params);
+    ax        = gca;
+    ax.YColor = [1 1 1];
+    ax.XColor = [1 1 1];
+    ax.Color  = [.3 .3 .3];hold on;
+end
+
+
 [Y,y] = GetStates(x,params);
 
 % Restrict plots to real values only - just for clarity really
@@ -1789,6 +1811,8 @@ X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
 X.FS = [];
 X.rankappropriate = 0;
+X.userplotfun = [];
+
 end
 
 function parseinputstruct(opts)

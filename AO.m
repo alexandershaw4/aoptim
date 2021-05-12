@@ -184,6 +184,7 @@ aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel; % compute dpdy in parfor
 aopt.doimagesc       = doimagesc;  % change plot to a surface 
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
+aopt.do_ssa          = ssa;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -1237,11 +1238,18 @@ if isfield(params,'FS')
 end
 
 % % SSA if required
-% rk = 3;
-% s0 = atcm.fun.assa(Y,rk);
-% s1 = atcm.fun.assa(y,rk);
-% d0 = min( cdist(s0',s1') ,[],2);
-
+if aopt.do_ssa
+    try
+        rk = 3;
+        Yn = Y; Yn(isinf(Yn))=0; Yn(isnan(Yn))=0;
+        yn = y; yn(isinf(yn))=0; yn(isnan(yn))=0;
+        s0 = assa(Yn,rk);
+        s1 = assa(yn,rk);
+        d0 = min( cdist(s0',s1') ,[],2);
+    catch
+        d0 = (100);
+    end
+end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
@@ -1376,7 +1384,12 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-%L(4) = -prod(d0);
+if aopt.do_ssa
+    L(4) = -exp(prod(d0));
+    if isinf(L(4))
+        L(4) = exp(100);
+    end
+end
 
 % % % Added a 4th term to FE: peak distances
 % p1 = spm_vec(Y);
@@ -1816,6 +1829,7 @@ X.EnforcePriorProb = 0;
 X.FS = [];
 X.rankappropriate = 0;
 X.userplotfun = [];
+X.ssa = 0;
 
 end
 

@@ -184,6 +184,7 @@ aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel; % compute dpdy in parfor
 aopt.doimagesc       = doimagesc;  % change plot to a surface 
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
+aopt.do_ssa          = ssa;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -1237,12 +1238,17 @@ if isfield(params,'FS')
 end
 
 % % SSA if required
-% rk = 3;
-% s0 = atcm.fun.assa(Y,rk);
-% s1 = atcm.fun.assa(y,rk);
-% d0 = min( cdist(s0',s1') ,[],2);
-
-
+if aopt.do_ssa
+try
+    rk = 3;
+    Yn = Y; Yn(isinf(Yn))=0; Yn(isnan(Yn))=0;
+    yn = y; yn(isinf(yn))=0; yn(isnan(yn))=0;
+    s0 = assa(Yn,rk);
+    s1 = assa(yn,rk);
+    d0 = min( cdist(s0',s1') ,[],2);
+catch
+    d0 = (100);
+end
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
@@ -1291,8 +1297,9 @@ for i  = 1:length(Q)
     iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 end
 
-e   = spm_vec(Y) - spm_vec(y);
-e0 = (spm_vec(Y)'-spm_vec(y) );
+e   = (spm_vec(Y) - spm_vec(y)).^2;
+
+%e = 100*(e./spm_vec(Y));
 
 ipC = aopt.ipC;
 
@@ -1366,16 +1373,20 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
-ee = real(sum( spm_vec(e0*iS*e0) ));
-L(1) = spm_logdet(iS)*nq/2  - ee - ny*log(8*atan(1))/2;      
-%L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+%ee = real(sum( spm_vec(e0*iS*e0) ))/2;
+%L(1) = spm_logdet(iS)*nq/2  - ee - ny*log(8*atan(1))/2;      
+L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
 if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-%L(4) = -prod(d0);
+L(4) = -exp(prod(d0));
+
+if isinf(L(4))
+    L(4) = exp(100);
+end
 
 % % % Added a 4th term to FE: peak distances
 % p1 = spm_vec(Y);
@@ -1815,6 +1826,7 @@ X.EnforcePriorProb = 0;
 X.FS = [];
 X.rankappropriate = 0;
 X.userplotfun = [];
+X.ssa = 0;
 
 end
 

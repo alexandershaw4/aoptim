@@ -139,6 +139,8 @@ if nargin == 1 && strcmp(lower(funopts),'options');
     X = DefOpts; return;
 end
 
+
+
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
 if isstruct(funopts)

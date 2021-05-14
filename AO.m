@@ -187,6 +187,7 @@ aopt.parallel        = doparallel; % compute dpdy in parfor
 aopt.doimagesc       = doimagesc;  % change plot to a surface 
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
+aopt.corrweight      = corrweight;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -1393,6 +1394,10 @@ if aopt.do_ssa
     end
 end
 
+if aopt.corrweight
+    L(1) = L(1) * corr(Y,y).^2;
+end
+
 % % % Added a 4th term to FE: peak distances
 % p1 = spm_vec(Y);
 % p0 = spm_vec(y);
@@ -1830,8 +1835,9 @@ X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
 X.FS = [];
 X.rankappropriate = 0;
-X.userplotfun = [];
-X.ssa = 0;
+X.userplotfun  = [];
+X.ssa          = 0;
+X.corrweight   = 0;
 
 end
 

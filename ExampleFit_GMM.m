@@ -47,6 +47,7 @@ op.fsd=0;
 op.FS = @(x) x(:).^2.*(1:length(x))';
 op.criterion = -inf;
 
+
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...
 %--------------------------------------------------------------------

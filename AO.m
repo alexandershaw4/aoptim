@@ -1378,8 +1378,9 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
-%ee = real(sum( spm_vec(e0*iS*e0) ))/2;
-%L(1) = spm_logdet(iS)*nq/2  - ee - ny*log(8*atan(1))/2;      
+%L(1) = roe = (e'*e)/(e'*iS*e);
+%L(1) = spm_logdet(iS)*nq/2  - real(roe) - ny*log(8*atan(1))/2;            ...
+
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
@@ -1397,22 +1398,6 @@ end
 if aopt.corrweight
     L(1) = L(1) * corr(Y,y).^2;
 end
-
-% % % Added a 4th term to FE: peak distances
-% p1 = spm_vec(Y);
-% p0 = spm_vec(y);
-% [~,Pk1] = findpeaks(p1,'NPeaks',4);
-% [~,Pk0] = findpeaks(p0,'NPeaks',4);
-% i = min([length(Pk1) length(Pk0)]);
-% i=1:i;
-% if any(i)
-%     D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
-% else
-%     D = 0;
-% end
-% 
-% L(4) = -(sum(D(:))./(4.^2));
-
 
 try aopt.Cp = Cp;
 catch

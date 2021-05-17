@@ -19,12 +19,12 @@ P      = S;
 P.Freq = [4 12 40 66];
 P.Amp  = [2  2  2  2];
 P.Wid  = [1 1 1 1];
-x0 = (spm_vec(P));
+x0 = spm_vec(P);
 
 V  = ~~spm_vec(P)/16;
 V(1:4)=1/4;
 V(9:12)=0;
-f  = @(x) (makef(w,spm_unvec(abs(x),S)));
+f  = @(x) (makef(w,spm_unvec(exp(x),S)));
 
 V(3:4)=1/16;
 

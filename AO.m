@@ -292,8 +292,7 @@ while iterate
     aopt.er      = er;
     aopt.updateh = false;
     params.aopt  = aopt;
-    
-    
+        
     % Second order partial derivates of F w.r.t x0 using:
     %
     % f0 = f(x[i]+h) 
@@ -1327,54 +1326,63 @@ if any(isnan(Cp(:)))
 end
 
 if aopt.hyperparameters
-    % pulled directly from SPM's spm_nlsi_GN.m ...
-    % ascent on h / precision {M-step}
-    %==========================================================================
-    clear P;
-    nh  = length(Q);
-    S   = spm_inv(iS);
-    ihC = speye(nh,nh)*exp(4);
-    hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
-    for i = 1:nh
-        P{i}   = Q{i}*exp(h(i));
-        PS{i}  = P{i}*S;
-        P{i}   = kron(speye(nq),P{i});
-        JPJ{i} = real(aopt.J*P{i}*aopt.J');
-    end
-
-    % derivatives: dLdh 
-    %------------------------------------------------------------------
-    for i = 1:nh
-        dFdh(i,1)      =   trace(PS{i})*nq/2 ...
-            - real(e'*P{i}*e)/2 ...
-            - spm_trace(Cp,JPJ{i})/2;
-        for j = i:nh
-            dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
-            dFdhh(j,i) =   dFdhh(i,j);
+    if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && params.aopt.computeh
+        %fprintf('using precomputed hyperparam while differentiating\n');
+        h = params.aopt.h;
+        ihC = params.aopt.ihC;
+        d = params.aopt.d;
+        Ch = params.aopt.Ch;
+    else
+        %fprintf('\n\n\ncomputing h\n\n\n');
+        % pulled directly from SPM's spm_nlsi_GN.m ...
+        % ascent on h / precision {M-step}
+        %==========================================================================
+        clear P;
+        nh  = length(Q);
+        S   = spm_inv(iS);
+        ihC = speye(nh,nh)*exp(4);
+        hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
+        for i = 1:nh
+            P{i}   = Q{i}*exp(h(i));
+            PS{i}  = P{i}*S;
+            P{i}   = kron(speye(nq),P{i});
+            JPJ{i} = real(aopt.J*P{i}*aopt.J');
         end
-    end
 
-    % add hyperpriors
-    %------------------------------------------------------------------
-    d     = h     - hE;
-    dFdh  = dFdh  - ihC*d;
-    dFdhh = dFdhh - ihC;
-    Ch    = spm_inv(-dFdhh);
+        % derivatives: dLdh 
+        %------------------------------------------------------------------
+        for i = 1:nh
+            dFdh(i,1)      =   trace(PS{i})*nq/2 ...
+                - real(e'*P{i}*e)/2 ...
+                - spm_trace(Cp,JPJ{i})/2;
+            for j = i:nh
+                dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
+                dFdhh(j,i) =   dFdhh(i,j);
+            end
+        end
 
-    % update ReML estimate
-    %------------------------------------------------------------------
-    warning off;
-    dh    = spm_dx(dFdhh,dFdh,{4});
-    dh    = min(max(dh,-1),1);
-    warning on;
-    h     = h  + dh;
+        % add hyperpriors
+        %------------------------------------------------------------------
+        d     = h     - hE;
+        dFdh  = dFdh  - ihC*d;
+        dFdhh = dFdhh - ihC;
+        Ch    = spm_inv(-dFdhh);
 
-    if aopt.updateh
-        aopt.h = h;
-        aopt.JPJ = JPJ;
-        aopt.Ch  = Ch;
-        aopt.d   = d;
-        aopt.ihC = ihC;
+        % update ReML estimate
+        %------------------------------------------------------------------
+        warning off;
+        dh    = spm_dx(dFdhh,dFdh,{4});
+        dh    = min(max(dh,-1),1);
+        warning on;
+        h     = h  + dh;
+
+        if aopt.updateh
+            aopt.h = h;
+            aopt.JPJ = JPJ;
+            aopt.Ch  = Ch;
+            aopt.d   = d;
+            aopt.ihC = ihC;
+        end
     end
 end % end of if hyperparams (from spm) ... 
 
@@ -1490,6 +1498,11 @@ if nargout == 2 || nargout == 7
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     params.aopt.updateh = 0;
+    params.aopt.computeh = 0;
+    params.aopt.h   = h;
+    params.aopt.ihC = ihC;
+    params.aopt.d   = d;
+    params.aopt.Ch  = Ch;
     
     % Switch the derivative function: There are 4: 
     %
@@ -1579,6 +1592,7 @@ if nargout == 2 || nargout == 7
     J  = IJ;
     
     aopt.updateh = 1;
+    aopt.computeh = true;
     
     % store for objective function
     if  aopt.updatej

@@ -139,6 +139,8 @@ if nargin == 1 && strcmp(lower(funopts),'options');
     X = DefOpts; return;
 end
 
+
+
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
 if isstruct(funopts)
@@ -185,6 +187,7 @@ aopt.parallel        = doparallel; % compute dpdy in parfor
 aopt.doimagesc       = doimagesc;  % change plot to a surface 
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
+aopt.corrweight      = corrweight;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -289,8 +292,7 @@ while iterate
     aopt.er      = er;
     aopt.updateh = false;
     params.aopt  = aopt;
-    
-    
+        
     % Second order partial derivates of F w.r.t x0 using:
     %
     % f0 = f(x[i]+h) 
@@ -1239,16 +1241,18 @@ end
 
 % % SSA if required
 if aopt.do_ssa
-try
-    rk = 3;
-    Yn = Y; Yn(isinf(Yn))=0; Yn(isnan(Yn))=0;
-    yn = y; yn(isinf(yn))=0; yn(isnan(yn))=0;
-    s0 = assa(Yn,rk);
-    s1 = assa(yn,rk);
-    d0 = min( cdist(s0',s1') ,[],2);
-catch
-    d0 = (100);
+    try
+        rk = 3;
+        Yn = Y; Yn(isinf(Yn))=0; Yn(isnan(Yn))=0;
+        yn = y; yn(isinf(yn))=0; yn(isnan(yn))=0;
+        s0 = assa(Yn,rk);
+        s1 = assa(yn,rk);
+        d0 = min( cdist(s0',s1') ,[],2);
+    catch
+        d0 = (100);
+    end
 end
+
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
@@ -1322,59 +1326,64 @@ if any(isnan(Cp(:)))
 end
 
 if aopt.hyperparameters
-    % pulled directly from SPM's spm_nlsi_GN.m ...
-    % ascent on h / precision {M-step}
-    %==========================================================================
-    clear P;
-    nh  = length(Q);
-    S   = spm_inv(iS);
-    ihC = speye(nh,nh)*exp(4);
-    hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
-    for i = 1:nh
-        P{i}   = Q{i}*exp(h(i));
-        PS{i}  = P{i}*S;
-        P{i}   = kron(speye(nq),P{i});
-        JPJ{i} = real(aopt.J*P{i}*aopt.J');
-    end
-
-    % derivatives: dLdh 
-    %------------------------------------------------------------------
-    for i = 1:nh
-        dFdh(i,1)      =   trace(PS{i})*nq/2 ...
-            - real(e'*P{i}*e)/2 ...
-            - spm_trace(Cp,JPJ{i})/2;
-        for j = i:nh
-            dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
-            dFdhh(j,i) =   dFdhh(i,j);
+    if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && length(params.aopt.h)>1
+        h = params.aopt.h;
+    else
+        % pulled directly from SPM's spm_nlsi_GN.m ...
+        % ascent on h / precision {M-step}
+        %==========================================================================
+        clear P;
+        nh  = length(Q);
+        S   = spm_inv(iS);
+        ihC = speye(nh,nh)*exp(4);
+        hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
+        for i = 1:nh
+            P{i}   = Q{i}*exp(h(i));
+            PS{i}  = P{i}*S;
+            P{i}   = kron(speye(nq),P{i});
+            JPJ{i} = real(aopt.J*P{i}*aopt.J');
         end
-    end
 
-    % add hyperpriors
-    %------------------------------------------------------------------
-    d     = h     - hE;
-    dFdh  = dFdh  - ihC*d;
-    dFdhh = dFdhh - ihC;
-    Ch    = spm_inv(-dFdhh);
+        % derivatives: dLdh 
+        %------------------------------------------------------------------
+        for i = 1:nh
+            dFdh(i,1)      =   trace(PS{i})*nq/2 ...
+                - real(e'*P{i}*e)/2 ...
+                - spm_trace(Cp,JPJ{i})/2;
+            for j = i:nh
+                dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
+                dFdhh(j,i) =   dFdhh(i,j);
+            end
+        end
 
-    % update ReML estimate
-    %------------------------------------------------------------------
-    warning off;
-    dh    = spm_dx(dFdhh,dFdh,{4});
-    dh    = min(max(dh,-1),1);
-    warning on;
-    h     = h  + dh;
+        % add hyperpriors
+        %------------------------------------------------------------------
+        d     = h     - hE;
+        dFdh  = dFdh  - ihC*d;
+        dFdhh = dFdhh - ihC;
+        Ch    = spm_inv(-dFdhh);
 
-    if aopt.updateh
-        aopt.h = h;
-        aopt.JPJ = JPJ;
-        aopt.Ch  = Ch;
-        aopt.d   = d;
-        aopt.ihC = ihC;
+        % update ReML estimate
+        %------------------------------------------------------------------
+        warning off;
+        dh    = spm_dx(dFdhh,dFdh,{4});
+        dh    = min(max(dh,-1),1);
+        warning on;
+        h     = h  + dh;
+
+        if aopt.updateh
+            aopt.h = h;
+            aopt.JPJ = JPJ;
+            aopt.Ch  = Ch;
+            aopt.d   = d;
+            aopt.ihC = ihC;
+        end
     end
 end % end of if hyperparams (from spm) ... 
 
-%ee = real(sum( spm_vec(e0*iS*e0) ))/2;
-%L(1) = spm_logdet(iS)*nq/2  - ee - ny*log(8*atan(1))/2;      
+%L(1) = roe = (e'*e)/(e'*iS*e);
+%L(1) = spm_logdet(iS)*nq/2  - real(roe) - ny*log(8*atan(1))/2;            ...
+
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
@@ -1382,27 +1391,16 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-L(4) = -exp(prod(d0));
-
-if isinf(L(4))
-    L(4) = exp(100);
+if aopt.do_ssa
+    L(4) = -exp(prod(d0));
+    if isinf(L(4))
+        L(4) = exp(100);
+    end
 end
 
-% % % Added a 4th term to FE: peak distances
-% p1 = spm_vec(Y);
-% p0 = spm_vec(y);
-% [~,Pk1] = findpeaks(p1,'NPeaks',4);
-% [~,Pk0] = findpeaks(p0,'NPeaks',4);
-% i = min([length(Pk1) length(Pk0)]);
-% i=1:i;
-% if any(i)
-%     D  = ( cdist(Pk1(i),Pk0(i)) - cdist(Pk1(i),Pk1(i)) ).^2;
-% else
-%     D = 0;
-% end
-% 
-% L(4) = -(sum(D(:))./(4.^2));
-
+if aopt.corrweight
+    L(1) = L(1) * corr(Y,y).^2;
+end
 
 try aopt.Cp = Cp;
 catch
@@ -1495,6 +1493,7 @@ if nargout == 2 || nargout == 7
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     params.aopt.updateh = 0;
+    params.aopt.h = h;
     
     % Switch the derivative function: There are 4: 
     %
@@ -1825,8 +1824,9 @@ X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
 X.FS = [];
 X.rankappropriate = 0;
-X.userplotfun = [];
-X.ssa = 0;
+X.userplotfun  = [];
+X.ssa          = 0;
+X.corrweight   = 0;
 
 end
 

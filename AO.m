@@ -1500,9 +1500,11 @@ if nargout == 2 || nargout == 7
     params.aopt.updateh = 0;
     params.aopt.computeh = 0;
     params.aopt.h   = h;
+    try
     params.aopt.ihC = ihC;
     params.aopt.d   = d;
     params.aopt.Ch  = Ch;
+    end
     
     % Switch the derivative function: There are 4: 
     %

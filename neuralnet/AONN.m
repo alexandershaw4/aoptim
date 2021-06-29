@@ -38,6 +38,7 @@ classdef AONN < handle
         V
         rp
         rc
+        userg
     end
 
 
@@ -103,10 +104,10 @@ classdef AONN < handle
             W2 = ones(nh,ny)/nh.^2;
             OA = ones(ny,1)/2;
             
-            %HL = rand(nh,1);
-            %W1 = rand(np,nh)/np*nh;
-            %W2 = rand(nh,ny)/nh.^2;
-            %OA = rand(ny,1);
+            HL = randi([1 10],nh,1);
+            W1 = randi([1 10],np,nh)/np*nh;
+            W2 = randi([1 10],nh,ny)/nh.^2;
+            OA = randi([1 10],ny,1);
             
             % accessible parameters to f - now we can refer to state space
             obj.modelspace  = {W1 HL W2 OA};
@@ -132,8 +133,10 @@ classdef AONN < handle
             obj.op.step_method  = 1;
             obj.op.BTLineSearch = 0;
             obj.op.hyperparams  = 0; % turn off 4speed for large problems
-            obj.op.inner_loop   = 8;
-
+            obj.op.inner_loop   = 8;            
+            %obj.op.corrweight=1;
+            obj.op.doparallel=1;
+            %obj.op.ismimo=1;
         end
         
         function obj = dpdy(obj)
@@ -151,6 +154,18 @@ classdef AONN < handle
             end
             obj.J = J;
         end
+        
+        function rnn(obj,m,x)
+            
+            p1 = x*m{1}*diag(1./(1 + exp(-m{2})));
+            
+            p2 = m{3};
+            
+            p3 = (exp(1./(1 + exp(-m{4}))) ./ sum(exp(1./(1 + exp(-m{4})))));
+            
+            y = p1*p2*p3;
+            
+        end        
         
         function obj = reduce(obj,N)
             
@@ -200,6 +215,7 @@ classdef AONN < handle
                 obj.op.fun     = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
                 obj.op.x0 = obj.p;
                 obj.op.V  = obj.c;
+
                 case 2
                 redfun    = @(pp) obj.fun_nr(spm_unvec( (pp*obj.V')'.*obj.p, obj.modelspace), obj.x);
                 obj.op.fun = @(p) redfun(p);
@@ -232,6 +248,7 @@ classdef AONN < handle
             
             f = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
             g = @(p) sum( (spm_vec(obj.y(:) - f(p) )).^2);
+                        
             [X,F] = fminsearch(g,obj.p);
             
             obj.weightvec = X;
@@ -248,6 +265,7 @@ classdef AONN < handle
         
         function obj = updateweights(obj,w)
                  obj.p = spm_unvec(spm_vec(w),obj.p);
+                 
         end
     end
 end

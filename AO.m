@@ -1404,7 +1404,7 @@ if aopt.do_ssa
 end
 
 if aopt.corrweight
-    L(1) = L(1) * corr(Y,y).^2;
+    L(1) = L(1) * corr(spm_vec(Y),spm_vec(y)).^2;
 end
 
 try aopt.Cp = Cp;

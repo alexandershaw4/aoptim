@@ -19,7 +19,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % For a multivariate function f(x) where x = [p1 .. pn]' the ascent scheme
 % is:
 %
-%   x[p,t+1] = x[p,t] +         a[p]          *-dFdx[p]
+%   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
 %
 % Note the use of different step sizes, a[p], for each parameter.
 % Optionally, a second GD can be computed to find the best step size a[p]:
@@ -87,10 +87,27 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % opts.maxit       = 125;   % max num iterations 
 % opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla).
 % opts.im    = 1;           % flag to include momentum of parameters
-% opts.order = 2;           % partial derivate fun option (see jaco.m)
-% opts.hyperparameters = 0; % do an grad asc on the precision (see spm_nlsi_GN)
+% opts.order = 2;           % partial derivate fun option (see jaco.m): 1 or 2
+% opts.hyperparameters = 0; % flag to do a grad ascent on the precision (3rd term in FE)
 % opts.BTLineSearch    = 1; % back tracking line search
 % opts.criterion    = -300  % convergence threshold
+% opts.mleselect    = 0;    % maximum likelihood param selection
+% opts.objective    = 'fe'; % objective fun: 'free energy', 'logevidence','sse', ...
+% opts.writelog     = 0;    % flag to write logbook instead of to console
+% opts.Q   = [];            % square matrix precision operator ( size=length(y) )
+% opts.inner_loop = 10;     % limit on number of repeats on same decent (between grad comp)
+% opts.DoMLE = 0;           % flag to perform a sort of MLE via WLS
+% opts.force_ls = 0;        % flag to force a line search every time
+% opts.ismimo = 0;          % compute dFdx of a multi-output function, not just objective value
+% opts.gradmemory = 0;      % remember previous gradients
+% opts.doparallel = 0;      % compute gradients using parfor
+% opts.fsd = 1;             % use fixed step for derivative computation
+% opts.allow_worsen = 0;    % allow objective to get worse sometimes
+% opts.doimagesc = 0;       % if data/model outputs are matrix (not vector), plot as such
+% opts.EnforcePriorProb = 0;% force the parameter updates to strictly adhere to prior distribution
+% opts.FS = []              % feat selection function: FS(y)
+% opts.userplotfun = [];    % inject a user plot function into the main display
+% opts.corrweight = 1;      % weight error term by correlation
 %
 % [X,F] = AO(opts);       % call the optimser, passing the opttions struct
 %
@@ -126,7 +143,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Approximation of derivaives by finite difference methods:
 % https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
 %
-% AS2019
+% AS2019/2020/2021
 % alexandershaw4@gmail.com
 % global aopt
 
@@ -1389,10 +1406,13 @@ end % end of if hyperparams (from spm) ...
 %L(1) = roe = (e'*e)/(e'*iS*e);
 %L(1) = spm_logdet(iS)*nq/2  - real(roe) - ny*log(8*atan(1))/2;            ...
 
+% complexity minus accuracy of states
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+% complexity minus accuracy of parameters
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
 if aopt.hyperparameters
+    % complexity minus accuracy of precision
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 

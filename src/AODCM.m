@@ -313,8 +313,9 @@ classdef AODCM < handle
             
             [BETA,R,J,COVB,MSE] = atcm.optim.nlinfit(obj.opts.x0,...
                             full(spm_vec(spm_cat(obj.opts.y))),funfun,full(obj.opts.x0),options);
-            obj.X  = BETA.*obj.opts.x0;
-            obj.Ep = spm_unvec(spm_vec(obj.X),obj.DD.P);
+            obj.X  = obj.V*(BETA.*obj.opts.x0);
+            %obj.Ep = spm_unvec(spm_vec(obj.X),obj.DD.P);
+            obj.Ep = spm_vec(obj.X);
             obj.CP = COVB;
             obj.F  = MSE;
             

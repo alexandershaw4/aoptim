@@ -69,11 +69,12 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %   b      = pinv(j0'*diag(Pp)*j0)*j0'*diag(Pp)*y
 %   dx     = x - (a*b)
 %  
-% Usage: to minimise a model fitting problem of the form:
+% The objective function minimised is
 %==========================================================================
-%   y    = f(p)                              ... f = function, p = params
-%   e    = (data - y)                        ... error = data - f(p)
-%   F(p) = log evidence(e,y) - divergence(p) ... objective function F
+%  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
+%  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
+%  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
+%  F    = -sum(L);
 %
 % INPUTS:
 %-------------------------------------------------------------------------

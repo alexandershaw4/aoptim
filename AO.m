@@ -1255,6 +1255,11 @@ Q  = aopt.Q;
 if isfield(params,'FS')
     y = params.FS(y);
     Y = params.FS(Y);
+    
+    if isnumeric(Q) && ~isempty(Q)
+        n1 = length(y) - length(Q);
+        Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
+    end
 end
 
 % % SSA if required

@@ -45,10 +45,14 @@ classdef AONN < handle
     methods
         
     
-        function obj = AONN(y,x,nh,niter) 
+        function obj = AONN(y,x,nh,niter,force) 
             
             %obj.yscale = 1./max(abs(y(:)));
             %y = y*obj.yscale;
+            
+            if nargin < 5 || isempty(force)
+                force = 0;
+            end
                         
             obj.x = x;
             obj.y = y;
@@ -56,19 +60,25 @@ classdef AONN < handle
             x  = full(real(x));
             [nob,np] = size(x); % num obs and vars
 
-            ny = length(unique(y));
-            values = unique(y);
+            if ~force
+                ny = length(unique(y));
+                values = unique(y);
+            else
+                ny = length(y);
+                values = y;
+            end
+            
             obj.yy = zeros(length(y),ny);
             
             obj.yy = y;
             
-            if all(values == round(values))
+            if all(values == round(values)) && ~force
                 obj.yy = y;
                 %for i = 1:ny
                     %obj.yy(find(y==i-1),i)=1;
                     %obj.yy(find(y==values(i)),i)=1;%values(i);
                 %end
-            else
+            elseif ~force
                 % model the whole confusion matrix - i.e. i don't just want
                 % to optimise TP and TN, but also FP and FN
                 ny = size(y,1);
@@ -92,7 +102,11 @@ classdef AONN < handle
                     ny     = round(3*log(length(y)));
                     
                 end
-                 
+                
+            elseif force
+                
+                obj.yy = y;
+                
                 
             end
             

@@ -22,7 +22,7 @@ classdef AONN < handle
         p
         c
         covariance 
-        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*m{4}*(exp(1./(1 + exp(-m{5}))) ./ sum(exp(1./(1 + exp(-m{5}))))));
+        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*(exp(1./(1 + exp(-m{4}))) ./ sum(exp(1./(1 + exp(-m{4}))))));
         g          = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
         prediction
         pred_raw  

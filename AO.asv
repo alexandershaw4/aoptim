@@ -19,7 +19,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % For a multivariate function f(x) where x = [p1 .. pn]' the ascent scheme
 % is:
 %
-%   x[p,t+1] = x[p,t] +         a[p]          *-dFdx[p]
+%   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
 %
 % Note the use of different step sizes, a[p], for each parameter.
 % Optionally, a second GD can be computed to find the best step size a[p]:
@@ -69,11 +69,12 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %   b      = pinv(j0'*diag(Pp)*j0)*j0'*diag(Pp)*y
 %   dx     = x - (a*b)
 %  
-% Usage: to minimise a model fitting problem of the form:
+% The objective function minimised is
 %==========================================================================
-%   y    = f(p)                              ... f = function, p = params
-%   e    = (data - y)                        ... error = data - f(p)
-%   F(p) = log evidence(e,y) - divergence(p) ... objective function F
+%  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
+%  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
+%  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
+%  F    = -sum(L);
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -87,10 +88,27 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % opts.maxit       = 125;   % max num iterations 
 % opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla).
 % opts.im    = 1;           % flag to include momentum of parameters
-% opts.order = 2;           % partial derivate fun option (see jaco.m)
-% opts.hyperparameters = 0; % do an grad asc on the precision (see spm_nlsi_GN)
+% opts.order = 2;           % partial derivate fun option (see jaco.m): 1 or 2
+% opts.hyperparameters = 0; % flag to do a grad ascent on the precision (3rd term in FE)
 % opts.BTLineSearch    = 1; % back tracking line search
 % opts.criterion    = -300  % convergence threshold
+% opts.mleselect    = 0;    % maximum likelihood param selection
+% opts.objective    = 'fe'; % objective fun: 'free energy', 'logevidence','sse', ...
+% opts.writelog     = 0;    % flag to write logbook instead of to console
+% opts.Q   = [];            % square matrix precision operator ( size=length(y) )
+% opts.inner_loop = 10;     % limit on number of repeats on same decent (between grad comp)
+% opts.DoMLE = 0;           % flag to perform a sort of MLE via WLS
+% opts.force_ls = 0;        % flag to force a line search every time
+% opts.ismimo = 0;          % compute dFdx of a multi-output function, not just objective value
+% opts.gradmemory = 0;      % remember previous gradients
+% opts.doparallel = 0;      % compute gradients using parfor
+% opts.fsd = 1;             % use fixed step for derivative computation
+% opts.allow_worsen = 0;    % allow objective to get worse sometimes
+% opts.doimagesc = 0;       % if data/model outputs are matrix (not vector), plot as such
+% opts.EnforcePriorProb = 0;% force the parameter updates to strictly adhere to prior distribution
+% opts.FS = []              % feat selection function: FS(y)
+% opts.userplotfun = [];    % inject a user plot function into the main display
+% opts.corrweight = 1;      % weight error term by correlation
 %
 % [X,F] = AO(opts);       % call the optimser, passing the opttions struct
 %
@@ -126,7 +144,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Approximation of derivaives by finite difference methods:
 % https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
 %
-% AS2019
+% AS2019/2020/2021
 % alexandershaw4@gmail.com
 % global aopt
 
@@ -430,6 +448,12 @@ while iterate
                 dx = x1 - a*b; % recompose dx including cov-adjusted step matrix (a)
             end
         end
+        
+%         if neuralnet
+%             N = AONN(params.aopt.y,params.aopt.J',1,12,1);
+%             N.train_bp;
+%             m = spm_unvec(N.weightvec,N.modelspace);
+%         end
         
         % (option) Momentum inclusion
         %------------------------------------------------------------------
@@ -1237,6 +1261,11 @@ Q  = aopt.Q;
 if isfield(params,'FS')
     y = params.FS(y);
     Y = params.FS(Y);
+    
+    if isnumeric(Q) && ~isempty(Q)
+        n1 = length(y) - length(Q);
+        Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
+    end
 end
 
 % % SSA if required
@@ -1265,7 +1294,7 @@ end
 
 % Free Energy Objective Function: F(p) = log evidence - divergence
 %--------------------------------------------------------------------------
-if isnumeric(Q) && ~isempty(Q)
+if isnumeric(Q) && ~isempty(Q) 
     % If user supplied a precision matrix, store it so that it can be
     % incorporated into the updating q
     aopt.precisionQ = Q;
@@ -1308,13 +1337,18 @@ e   = (spm_vec(Y) - spm_vec(y)).^2;
 ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
+% l    = 0.01;
+% JJ   = [aopt.J l];
+% iiS  = diag([diag(iS); 1]); 
+% Cp   = spm_inv( (JJ*iiS*JJ') + ipC );
+
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
 
 if aopt.rankappropriate
     N = rank((Cp)); % cov rank
-    [v,D] = eig((Cp)); % decompose covariance matrix
+    [v,D] = eig(real(mean(e)) + (Cp)); % decompose covariance matrix
     DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
     Cp = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))';
 end
@@ -1326,9 +1360,14 @@ if any(isnan(Cp(:)))
 end
 
 if aopt.hyperparameters
-    if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && length(params.aopt.h)>1
+    if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && params.aopt.computeh
+        %fprintf('using precomputed hyperparam while differentiating\n');
         h = params.aopt.h;
+        ihC = params.aopt.ihC;
+        d = params.aopt.d;
+        Ch = params.aopt.Ch;
     else
+        %fprintf('\n\n\ncomputing h\n\n\n');
         % pulled directly from SPM's spm_nlsi_GN.m ...
         % ascent on h / precision {M-step}
         %==========================================================================
@@ -1384,10 +1423,13 @@ end % end of if hyperparams (from spm) ...
 %L(1) = roe = (e'*e)/(e'*iS*e);
 %L(1) = spm_logdet(iS)*nq/2  - real(roe) - ny*log(8*atan(1))/2;            ...
 
+% complexity minus accuracy of states
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+% complexity minus accuracy of parameters
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
 if aopt.hyperparameters
+    % complexity minus accuracy of precision
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
@@ -1399,7 +1441,7 @@ if aopt.do_ssa
 end
 
 if aopt.corrweight
-    L(1) = L(1) * corr(Y,y).^2;
+    L(1) = L(1) * corr(spm_vec(Y),spm_vec(y)).^2;
 end
 
 try aopt.Cp = Cp;
@@ -1493,7 +1535,13 @@ if nargout == 2 || nargout == 7
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
     params.aopt.updateh = 0;
-    params.aopt.h = h;
+    params.aopt.computeh = 0;
+    params.aopt.h   = h;
+    try
+    params.aopt.ihC = ihC;
+    params.aopt.d   = d;
+    params.aopt.Ch  = Ch;
+    end
     
     % Switch the derivative function: There are 4: 
     %
@@ -1583,6 +1631,7 @@ if nargout == 2 || nargout == 7
     J  = IJ;
     
     aopt.updateh = 1;
+    aopt.computeh = true;
     
     % store for objective function
     if  aopt.updatej
@@ -1651,10 +1700,34 @@ switch search_method
 %         end
         
         %Leading (gradient) components
-        [uu,ss,vv] = spm_svd(x3);
-                        
-        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        [u,s] = eig(x3);
+        [~,order] = sort(abs(diag(s)),'descend');
+
+        s = diag(s);
+        
+        s = s(order);
+        u = u(:,order);
+        
+        nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
+        
+        this = full(u(:,1:nc90));
+        num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
+    
+        [~,I]=maxpoints(abs(this),num_needed);
+        
+        
+        % store the weights for these parameters contrib to component
+        wt{i} = this(I);
+        
+        % work backwards to reconstruct components at individ subj level
+        xbar = x3*0;
+        xbar = xbar + 
+        subj_comp(:,i) = p(:,I)*this(I);
+        
+        %[uu,ss,vv] = spm_svd(x3);
+        %nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        %x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        
         %x3 = uu(:,1)'*x3;
         
     case 2
@@ -1827,6 +1900,7 @@ X.rankappropriate = 0;
 X.userplotfun  = [];
 X.ssa          = 0;
 X.corrweight   = 0;
+X.neuralnet    = 0;
 
 end
 

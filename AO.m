@@ -344,12 +344,18 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------    
     % compute step, a, in scheme: dx = x0 + a*-J
-    [a,J] = compute_step(df0,red,e0,search_method,params); % a = (1/64) / J = -df0;
-               
+    if ~ismimo
+        [a,J] = compute_step(df0,red,e0,search_method,params); % a = (1/64) / J = -df0;
+    else
+        [a,J] = compute_step(params.aopt.J,red,e0,search_method,params); % a = (1/64) / J = -df0;
+        J = -df0';
+    end
+    
     % Log start of iteration (these are returned)
     Hist.e(n) = e0;
     Hist.p{n} = x0;
     Hist.J{n} = df0;
+    Hist.a{n} = a;
     
     % make copies of error and param set for inner while loops
     x1  = x0;
@@ -448,6 +454,12 @@ while iterate
                 dx = x1 - a*b; % recompose dx including cov-adjusted step matrix (a)
             end
         end
+        
+%         if neuralnet
+%             N = AONN(params.aopt.y,params.aopt.J',1,12,1);
+%             N.train_bp;
+%             m = spm_unvec(N.weightvec,N.modelspace);
+%         end
         
         % (option) Momentum inclusion
         %------------------------------------------------------------------
@@ -1288,7 +1300,7 @@ end
 
 % Free Energy Objective Function: F(p) = log evidence - divergence
 %--------------------------------------------------------------------------
-if isnumeric(Q) && ~isempty(Q)
+if isnumeric(Q) && ~isempty(Q) 
     % If user supplied a precision matrix, store it so that it can be
     % incorporated into the updating q
     aopt.precisionQ = Q;
@@ -1331,13 +1343,18 @@ e   = (spm_vec(Y) - spm_vec(y)).^2;
 ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
+% l    = 0.01;
+% JJ   = [aopt.J l];
+% iiS  = diag([diag(iS); 1]); 
+% Cp   = spm_inv( (JJ*iiS*JJ') + ipC );
+
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
 
 if aopt.rankappropriate
     N = rank((Cp)); % cov rank
-    [v,D] = eig((Cp)); % decompose covariance matrix
+    [v,D] = eig(real(mean(e)) + (Cp)); % decompose covariance matrix
     DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
     Cp = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))';
 end
@@ -1669,30 +1686,53 @@ switch search_method
         
         J      = -df0';
         dFdpp  = -(J'*J);
-                
+        
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
-        
-%         if isfield(aopt,'Cp') && ~isempty(aopt.Cp)
-%             % rescue unstable covariance estimation
-%             Cp = aopt.Cp;
-%             if any(isnan(Cp(:))) || any(isinf(Cp(:)))
-%                 Cp = zeros(size(aopt.Cp));
-%             end
-%             % penalise the step by the covariance among params
-%             st = (red+red') - Cp;
-%             %st = (1-red-diag(Cp))./(1-dFdpp);
-%             x3 = st./(1-dFdpp);
-%         else
-%             x3  = ( red+red' )./(1-dFdpp);
-%         end
-        
         %Leading (gradient) components
-        [uu,ss,vv] = spm_svd(x3);
-                        
-        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        [u,s] = eig(x3);
+        [~,order] = sort(abs(diag(s)),'descend');
+
+        s = diag(s);
+        s = s(order);
+        u = u(:,order);
+        
+%         nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
+%         
+%         this = full(u(:,1:nc90));
+%         this = sum(this,2);
+%         num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
+%     
+%         [~,I]=maxpoints(abs(this),num_needed);
+%         
+%         % work backwards to reconstruct x3 from important components
+%         xbar = x3*0;
+%         xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+%         x3   = xbar;
+        
+        % number of components (trajectories) needed
+        nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
+        xbar = x3*0;
+        
+        for thisn = 1:nc90
+            
+            this = full(u(:,thisn));
+            
+            num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
+    
+            [~,I]=maxpoints(abs(this),num_needed);
+        
+            % work backwards to reconstruct x3 from important components
+            xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+        end
+        
+        x3   = xbar;
+
+%         [uu,ss,vv] = spm_svd(x3);
+%         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+%         x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        
         %x3 = uu(:,1)'*x3;
         
     case 2
@@ -1865,6 +1905,7 @@ X.rankappropriate = 0;
 X.userplotfun  = [];
 X.ssa          = 0;
 X.corrweight   = 0;
+X.neuralnet    = 0;
 
 end
 

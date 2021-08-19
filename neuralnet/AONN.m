@@ -169,7 +169,7 @@ classdef AONN < handle
             obj.J = J;
         end
         
-        function rnn(obj,m,x)
+        function y = rnn(obj,m,x)
             
             p1 = x*m{1}*diag(1./(1 + exp(-m{2})));
             
@@ -253,7 +253,7 @@ classdef AONN < handle
             obj.F          = F;
             obj.covariance = CP;
             
-            [M,T] = confustionmat([obj.truth obj.pred_raw]);
+            [M,T] = confustionmat([obj.truth(:) obj.pred_raw(:)]);
             obj.confusion.M = M;
             obj.confusion.T = T;
         end
@@ -272,7 +272,7 @@ classdef AONN < handle
             obj.prediction = round(...
                     obj.fun_nr(spm_unvec(obj.weightvec,obj.modelspace),obj.x));
             
-            [M,T] = confustionmat([obj.truth obj.prediction]);
+            [M,T] = confustionmat([obj.truth(:) obj.prediction(:)]);
             obj.confusion.M = M;
             obj.confusion.T = T;
         end

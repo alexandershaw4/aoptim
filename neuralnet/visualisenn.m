@@ -32,7 +32,7 @@ s(2).XColor = [1 1 1];
 s(2).Color  = [.3 .3 .3];
 axis square;
 xlabel('Diagonals','fontsize',18);
-title('Neuron Activation Functions','color','w','fontsize',18);
+title('Activation Functions','color','w','fontsize',18);
 
 s(3) = subplot(153); imagesc(m{3});
 ax = gca;
@@ -43,9 +43,9 @@ ax.YTick = [];
 s(3).YColor = [1 1 1];
 s(3).XColor = [1 1 1];
 s(3).Color  = [.3 .3 .3];
-ylabel('Hidden Layer Neurons'' Self-Gain','fontsize',18);xlabel('OUTPUTS','fontsize',18);
-title('MAPPING','color','w','fontsize',18);
-
+ylabel('HLN','fontsize',18);xlabel('HLN','fontsize',18);
+title('Hidden Layer Neurons','color','w','fontsize',18);
+axis square;
 
 s(4) = subplot(154); imagesc(m{4});
 ax = gca;

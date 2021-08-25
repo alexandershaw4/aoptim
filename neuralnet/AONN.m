@@ -133,7 +133,8 @@ classdef AONN < handle
             obj.c  = [spm_vec(ones(size(obj.modelspace{1})))/32;
                   spm_vec(ones(size(obj.modelspace{2})))/32;
                   spm_vec(ones(size(obj.modelspace{3})))/32;
-                  spm_vec(ones(size(obj.modelspace{4})))/32;];
+                  spm_vec(ones(size(obj.modelspace{4})))/32;
+                  spm_vec(ones(size(obj.modelspace{5})))/32;];
 
             % note I'm optimisming using f_nr - i.e. on a continuous, scalar
             % prediction landscape rather than binary (f)
@@ -151,7 +152,7 @@ classdef AONN < handle
             obj.op.hyperparams  = 0; % turn off 4speed for large problems
             obj.op.inner_loop   = 8;            
             %obj.op.corrweight=1;
-            obj.op.doparallel=1;
+            obj.op.doparallel=0;
             %obj.op.ismimo=1;
         end
         

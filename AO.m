@@ -183,7 +183,8 @@ if ~isempty(FS) && isa(FS,'function_handle')
     params.FS = FS;
 end
 
-% check functions, inputs, options...
+% check functions, inputs, options... note: many of these are set/returned
+% by the subfunctions parseinputstruct and DefOpts()
 %--------------------------------------------------------------------------
 %aopt         = [];      % reset
 aopt.x0x0    = x0;
@@ -211,6 +212,7 @@ BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
 givetol     = allow_worsen; % Allow bad updates within a tolerance
 EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
+WeightByProbability = WeightByProbability; % weight parameter updates by probability
 
 params.aopt = aopt;      % Need to move form global aopt to a structure
 params.userplotfun = userplotfun;
@@ -421,6 +423,11 @@ while iterate
         end    
         pt = pdx;
         prplot(pt);
+        
+        if WeightByProbability
+            x1 = x1 + ( pt(:).*(dx-x1) );
+        end
+       
         
         % Save for computing gradient ascent on probabilities
         p_hist(n,:) = pt;
@@ -1449,6 +1456,9 @@ end
 if aopt.corrweight
     L(1) = L(1) * corr(spm_vec(Y),spm_vec(y)).^2;
 end
+%if aopt.probweight
+%   L(1) = L(1) * ( sum(aopt.pt)./length(aopt.pt) );    
+%end
 
 try aopt.Cp = Cp;
 catch
@@ -1544,9 +1554,9 @@ if nargout == 2 || nargout == 7
     params.aopt.computeh = 0;
     params.aopt.h   = h;
     try
-    params.aopt.ihC = ihC;
-    params.aopt.d   = d;
-    params.aopt.Ch  = Ch;
+        params.aopt.ihC = ihC;
+        params.aopt.d   = d;
+        params.aopt.Ch  = Ch;
     end
     
     % Switch the derivative function: There are 4: 
@@ -1722,9 +1732,10 @@ switch search_method
             num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
     
             [~,I]=maxpoints(abs(this),num_needed);
-        
+                    
             % work backwards to reconstruct x3 from important components
             xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+            
         end
         
         x3   = xbar;
@@ -1906,6 +1917,7 @@ X.userplotfun  = [];
 X.ssa          = 0;
 X.corrweight   = 0;
 X.neuralnet    = 0;
+X.WeightByProbability = 0;
 
 end
 

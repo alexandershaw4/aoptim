@@ -10,7 +10,11 @@ classdef AODCM < handle
 %     m = AODCM(DCM,1);
 %
 % Flag if its an ERP model rather than spectral:
-%     m = AODCM(DCM,0,1);
+%     m = AODCM(DCM,-,1);
+%
+% If your model doesn't have logged/exponentiated params that will cause nan/infs, 
+% flag it with 4th input (mine does, so i use 4th input=0)
+%     m = AODCM(DCM,-,-,1);
 %
 % Or you can re-run the optimisation with different step_method and num
 % iterations:
@@ -45,6 +49,7 @@ classdef AODCM < handle
             % after contruction, allow updating object priors
             P        = spm_unvec( spm_vec(P), obj.DCM.M.pE);
             obj.DD.P = spm_vec(P);
+            obj.history = [obj.history;ob
         end
         
         function obj = AODCM(DCM,do_optimise,iserp,ftype)

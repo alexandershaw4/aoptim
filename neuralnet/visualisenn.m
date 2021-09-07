@@ -9,7 +9,7 @@ end
 figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off',...
     'position',[706         380        1226         486]);
 
-s(1) = subplot(151); imagesc(m{1});
+s(1) = subplot(161); imagesc(m{1});
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -21,7 +21,7 @@ s(1).Color  = [.3 .3 .3];
 ylabel('Inputs','fontsize',18);xlabel('Hidden Layer: Neurons','fontsize',18);
 title('MAPPING','color','w','fontsize',18);
 
-s(2) = subplot(152); imagesc(diag(1./(1+exp(-m{2}))));
+s(2) = subplot(162); imagesc(diag(1./(1+exp(-m{2}))));
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -34,7 +34,7 @@ axis square;
 xlabel('Diagonals','fontsize',18);
 title('Activation Functions','color','w','fontsize',18);
 
-s(3) = subplot(153); imagesc(m{3});
+s(3) = subplot(163); imagesc(m{3});
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -43,11 +43,25 @@ ax.YTick = [];
 s(3).YColor = [1 1 1];
 s(3).XColor = [1 1 1];
 s(3).Color  = [.3 .3 .3];
-ylabel('HLN','fontsize',18);xlabel('HLN','fontsize',18);
+ylabel('input','fontsize',18);xlabel('output','fontsize',18);
 title('Hidden Layer Neurons','color','w','fontsize',18);
 axis square;
 
-s(4) = subplot(154); imagesc(m{4});
+s(4) = subplot(164); imagesc(m{4});
+ax = gca;
+ax.XGrid = 'off';
+ax.YGrid = 'on';
+ax.XTick = [];
+ax.YTick = [];
+s(3).YColor = [1 1 1];
+s(3).XColor = [1 1 1];
+s(3).Color  = [.3 .3 .3];
+ylabel('biases','fontsize',18);xlabel('biases','fontsize',18);
+title('Biases','color','w','fontsize',18);
+axis square;
+
+
+s(5) = subplot(165); imagesc(m{5});
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';
@@ -59,7 +73,7 @@ s(3).Color  = [.3 .3 .3];
 ylabel('Hidden Layer: Neurons','fontsize',18);xlabel('OUTPUTS','fontsize',18);
 title('MAPPING','color','w','fontsize',18);
 
-s(5) = subplot(155); imagesc(diag(1./(1+exp(-m{5}))));
+s(6) = subplot(166); imagesc(diag(1./(1+exp(-m{6}))));
 ax = gca;
 ax.XGrid = 'off';
 ax.YGrid = 'on';

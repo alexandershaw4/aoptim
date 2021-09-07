@@ -40,6 +40,7 @@ classdef AODCM < handle
         V       % maps between full (parameter) space and reduced
         iserp   % switch to ERP models rather than spectral
         ftype   % swith between reduced and full model 
+        hist
         
     end
     
@@ -49,6 +50,12 @@ classdef AODCM < handle
             % after contruction, allow updating object priors
             P        = spm_unvec( spm_vec(P), obj.DCM.M.pE);
             obj.DD.P = spm_vec(P);
+            
+            % also save the optimisation hisotry structure from each call
+            % to the optimimser
+            try obj.hist = [obj.hist; obj.history];
+            catch obj.hist = obj.history;
+            end
         end
         
         function obj = AODCM(DCM,do_optimise,iserp,ftype)

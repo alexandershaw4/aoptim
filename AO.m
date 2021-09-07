@@ -56,12 +56,15 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % parameter steps & can be useful when your start positions are a long way
 % from the solution. In either case, note that the variance term V[p] on the
 % parameter distribution is a scaled version of the step size. 
+% 
+% Alternatively, step_method=6 invokes hyperparameter tuning of the step
+% size.
 %
 % For each iteration of the ascent:
 % 
 %   dx[p]  = x[p] + a[p]*-dFdx
 %
-% Under default settings, the probability of each predicted dx[p] coming 
+% With the MLE setting, the probability of each predicted dx[p] coming 
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
 %
@@ -86,11 +89,10 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % opts.V   = [1 1]/8;       % variances for each param
 % opts.y   = [...];         % data to fit - .e.g y = f(p) + e
 % opts.maxit       = 125;   % max num iterations 
-% opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla).
+% opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla)**.
 % opts.im    = 1;           % flag to include momentum of parameters
 % opts.order = 2;           % partial derivate fun option (see jaco.m): 1 or 2
 % opts.hyperparameters = 0; % flag to do a grad ascent on the precision (3rd term in FE)
-% opts.BTLineSearch    = 1; % back tracking line search
 % opts.criterion    = -300  % convergence threshold
 % opts.mleselect    = 0;    % maximum likelihood param selection
 % opts.objective    = 'fe'; % objective fun: 'free energy', 'logevidence','sse', ...
@@ -217,7 +219,7 @@ WeightByProbability = WeightByProbability; % weight parameter updates by probabi
 params.aopt = aopt;      % Need to move form global aopt to a structure
 params.userplotfun = userplotfun;
 
-% parameter and step vectors
+% parameter and step / distribution vectors
 x0  = full(x0(:));
 XX0 = x0;
 V   = full(V(:));
@@ -239,7 +241,7 @@ aopt.ipC = ipC;      % store ^
 
 params.aopt = aopt;
 
-% initial objective value
+% initial objective value (approx at this point as missing covariance data)
 [e0]       = obj(x0,params);
 n          = 0;
 iterate    = true;
@@ -312,7 +314,7 @@ while iterate
     aopt.er      = er;
     aopt.updateh = false;
     params.aopt  = aopt;
-        
+            
     % Second order partial derivates of F w.r.t x0 using:
     %
     % f0 = f(x[i]+h) 
@@ -346,12 +348,26 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------    
     % compute step, a, in scheme: dx = x0 + a*-J
-    if ~ismimo
-        [a,J] = compute_step(df0,red,e0,search_method,params); % a = (1/64) / J = -df0;
+    if n == 1; a = red*0; end
+    
+    if search_method ~= 6
+        pupdate(loc,n,0,e0,e0,'stepsiz',toc);
     else
-        [a,J] = compute_step(params.aopt.J,red,e0,search_method,params); % a = (1/64) / J = -df0;
-        J = -df0';
+        pupdate(loc,n,0,e0,e0,'hyprprm',toc);
     end
+    
+    if ~ismimo
+        [a,J] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
+    else
+        [a,J] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
+        J = -df0(:);
+    end
+     
+    if search_method ~= 6
+        pupdate(loc,n,0,e0,e0,'stp-fin',toc);
+    else
+        pupdate(loc,n,0,e0,e0,'hyp-fin',toc);
+    end    
     
     % Log start of iteration (these are returned)
     Hist.e(n) = e0;
@@ -450,7 +466,6 @@ while iterate
                 j = aopt.J;
             end
             w  = pt;
-            %w  = x1.^0;
             r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
             b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
             % inclusion of a weight essentially makes this a Marquardt/
@@ -458,7 +473,7 @@ while iterate
             if isvector(a)
                 dx = x1 - a.*b;
             else
-                dx = x1 - a*b; % recompose dx including cov-adjusted step matrix (a)
+                dx = x1 - a*b; % recompose dx including step matrix (a)
             end
         end
         
@@ -509,7 +524,7 @@ while iterate
             DFE = ones(1,length(x0))*de; 
         else
             % Assess each new parameter estimate (step) individually
-            %if nfun == 1 % only complete this search once per gradient computation
+            if (~faster) || nfun == 1 % only complete this search once per gradient computation
                 if ~doparallel
                     for nip = 1:length(dx)
                         XX     = V*x0;
@@ -534,13 +549,10 @@ while iterate
 
                 DFE  = real(DFE(:));
                 
-                %tc = spm_pinv(aest_cov(DFE-e0,length(DFE)));
-                %dx = dx - tc*dx;
-                
                 % Identify improver-parameters            
                 gp  = double(DFE < e0); % e0
                 gpi = find(gp);
-            %end
+            end
             
             if ~BayesAdjust
                 % If the full gradient prediction over parameters did not
@@ -587,7 +599,7 @@ while iterate
             end            
         end
            
-        fprintf('\b | sum(dp) = %d\n',sum(dx-x1));
+        fprintf('\b | euc dist(dp) = %d\n',cdist(dx',x1'));
         
         % print the full (un-filtered / line searched prediction)
         %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
@@ -659,14 +671,9 @@ while iterate
         while exploit
             % local linear extrapolation
             extrapx = V*(x1+(-dp));
-            %extrapx = V*(x1+(-dp./-df));
-            %extrapx = V*(x1 + ((-dp).*((df-e1)./e1)).^(1+nexpl) );
-            %extrapx = V*(x1 + dp.*(df./e1).^(1+nexpl) );
             if obj(extrapx,params) < (e1+abs(etol))
-                %dp    = dp + (extrapx-x1);
                 x1    = extrapx(:);
                 e1    = obj(x1,params);
-                %df    = df + (e0-e1);
                 nexpl = nexpl + 1;
             else
                 % if this didn't work, just stop and move on to accepting
@@ -841,6 +848,7 @@ while iterate
         %red = red ./ max(red(:));
         red     = diag(pC);
         aopt.pC = V*red;
+        a       = red;
     end
     
     % stop at max iterations
@@ -1545,6 +1553,8 @@ if nargout == 2 || nargout == 7
     
     if aopt.fixedstepderiv == 1
         V = (~~V)*1e-3;
+    elseif aopt.fixedstepderiv == -1
+        V = V + ( (~~V) .* abs(randn(size(V))) );
     else
         %V = V*1e-2;
     end
@@ -1675,12 +1685,12 @@ end
 
 end
 
-function J = compute_step_J(df0,red,e0,step_method,params)
+function J = compute_step_J(df0,red,e0,step_method,params,x0,x3,df1)
 % wrapper on the function below to just return the second output!
-    [x3,J] = compute_step(df0,red,e0,step_method,params);
+    [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1);
 end
 
-function [x3,J] = compute_step(df0,red,e0,step_method,params)
+function [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
 % Given the gradients (df0) & parameter variances (red)
 % compute the step, 'a' , in:
 %
@@ -1724,7 +1734,7 @@ switch search_method
         % number of components (trajectories) needed
         nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
         xbar = x3*0;
-        
+                
         for thisn = 1:nc90
             
             this = full(u(:,thisn));
@@ -1735,7 +1745,7 @@ switch search_method
                     
             % work backwards to reconstruct x3 from important components
             xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
-            
+                        
         end
         
         x3   = xbar;
@@ -1761,7 +1771,7 @@ switch search_method
         J      = -df0;
         dFdpp  = -(J'*J);
         
-        %Initial step (Rasmussen method)
+        %Initial step 
         x3  = (4*red)./(1-dFdpp);
         
     case {4 5}
@@ -1770,6 +1780,39 @@ switch search_method
         %x3 = (1/64);
         x3 = red(:);
         
+     case 6
+        % low dimensional hyperparameter tuning based on clustering of the
+        % jacobian (works better if derivatives are computed as if the
+        % system is not a mimo - i.e.not elementwise on the output function)
+        
+        J  = -df0;        
+        [u,s] = eig(params.aopt.Cp);
+        s=diag(s);
+        [~,order] = sort(abs(s),'descend');
+        r = atcm.fun.findthenearest(cumsum(abs(s(order)))./sum(abs(s(order))),0.99);
+        r = round(r);
+        
+        v  = clusterdata(J,r);
+        V  = sparse(v,1:length(red),1,r,length(red));
+        p  = ones(1,r);
+        V  = V.*repmat(~~red(:)',[r 1]);
+        
+        aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
+        
+        % hyperparameter tuning to find a in x + a*-J' using parameter
+        % components - i.e. x + (p*V)*-J'
+        g = @(a) real(obj(x0 + (a*V)'.*-df1,params));
+        
+        if params.aopt.parallel
+            options = optimset('Display','off','UseParallel',true);
+        else
+            options = optimset('Display','off');
+        end
+        
+        p = fmincon(g,p,[],[],[],[],p*0,p+100,[],options);
+
+        x3 = (p*V)';
+        J  = -df1;
 end
 
 end
@@ -1806,6 +1849,10 @@ elseif search_method == 5
         
         [dx] = spm_dx(dfdx,f,{-2});
         dx = x1 + dx;
+elseif search_method == 6
+    % hyperparameter tuned step size
+    dx = x1 + a.*J;
+    
 end
 
 
@@ -1900,7 +1947,6 @@ X.fun         = [];
 X.DoMLE       = 0;
 
 X.hyperparams  = 1;
-X.BTLineSearch = 0;
 X.force_ls     = 0;
 X.doplot       = 1;
 X.smoothfun    = 0;
@@ -1918,6 +1964,7 @@ X.ssa          = 0;
 X.corrweight   = 0;
 X.neuralnet    = 0;
 X.WeightByProbability = 0;
+X.faster = 0;
 
 end
 

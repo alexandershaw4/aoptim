@@ -22,7 +22,7 @@ classdef AONN < handle
         p
         c
         covariance 
-        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*m{3}*m{4}*(exp(1./(1 + exp(-m{5}))) ./ sum(exp(1./(1 + exp(-m{5}))))));
+        fun_nr     = @(m,x)       (x*m{1}*diag(1./(1 + exp(-m{2})))*(m{3}+m{4})*m{5}*(exp(1./(1 + exp(-m{6}))) ./ sum(exp(1./(1 + exp(-m{6}))))));
         g          = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
         prediction
         pred_raw  
@@ -39,6 +39,7 @@ classdef AONN < handle
         rp
         rc
         userg
+        islogistic
     end
 
 
@@ -71,9 +72,11 @@ classdef AONN < handle
             obj.yy = zeros(length(y),ny);
             
             obj.yy = y;
+            obj.islogistic=false;
             
             if all(values == round(values)) && ~force
                 obj.yy = y;
+                %obj.islogistic=true;
                 %for i = 1:ny
                     %obj.yy(find(y==i-1),i)=1;
                     %obj.yy(find(y==values(i)),i)=1;%values(i);
@@ -118,23 +121,19 @@ classdef AONN < handle
             W2 = ones(nh,ny);
             OA = ones(ny,1);
             RN = eye(nh);
-            
-            %HL = randi([1 10],nh,1);
-            %W1 = randi([1 10],np,nh)/np*nh;
-            %W2 = randi([1 10],nh,ny)/nh.^2;
-            %OA = randi([1 10],ny,1);
-            
+            b  = eye(nh); % biases!
+                        
             % accessible parameters to f - now we can refer to state space
-            obj.modelspace = {W1 HL RN W2 OA};
+            obj.modelspace = {W1 HL RN b W2 OA};
             obj.modelspace = spm_unvec( spm_vec(obj.modelspace)./sum(spm_vec(obj.modelspace)), obj.modelspace);
 
             obj.p  = real(spm_vec(obj.modelspace)) ;
             obj.c  = (~~obj.p)/32;
-            obj.c  = [spm_vec(ones(size(obj.modelspace{1})))/32;
-                  spm_vec(ones(size(obj.modelspace{2})))/32;
-                  spm_vec(ones(size(obj.modelspace{3})))/32;
-                  spm_vec(ones(size(obj.modelspace{4})))/32;
-                  spm_vec(ones(size(obj.modelspace{5})))/32;];
+%             obj.c  = [spm_vec(ones(size(obj.modelspace{1})))/32;
+%                  spm_vec(ones(size(obj.modelspace{2})))/32;
+%                  spm_vec(ones(size(obj.modelspace{3})))/32;
+%                  spm_vec(ones(size(obj.modelspace{4})))/32;
+%                  spm_vec(ones(size(obj.modelspace{5})))/32;];
 
             % note I'm optimisming using f_nr - i.e. on a continuous, scalar
             % prediction landscape rather than binary (f)
@@ -172,19 +171,19 @@ classdef AONN < handle
             obj.J = J;
         end
         
-%         function y = rnn(obj,m,x)
-%             
-%             p1 = x*m{1}*diag(1./(1 + exp(-m{2})));
-%             
-%             p2 = m{3};
-%             
-%             p3 = 
-%             
-%             p4 = (exp(1./(1 + exp(-m{4}))) ./ sum(exp(1./(1 + exp(-m{4})))));
-%             
-%             y = p1*p2*p3*p4;
-%             
-%         end        
+        function binarymodel = prune(obj)
+            
+            this = dpdy(obj);
+            
+            this = ~~this.J;
+            
+            binarymodel = spm_unvec(this,obj.modelspace);
+            
+        end
+        
+        function ac = accuracy(obj)
+            ac = 100*(obj.confusion.T.TP + obj.confusion.T.TN) ./ sum(obj.confusion.M(:));
+        end
         
         function obj = compute_covariance(obj)
             this = dpdy(obj);
@@ -198,20 +197,6 @@ classdef AONN < handle
             end
             
             J = obj.J;
-%             cJ = cov(J');
-%             
-%             N = rank(cJ); % cov rank
-%             [v,D] = eig(cJ); % decompose covariance matrix
-%             DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
-%             PCV = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))'; % project factorised matrix without rank deficiency
-            
-            %Check that the principal components are orthogonal:
-            %corr((v(:,ord(1:N))'*RelCh)')
-            
-            %Check that the reduced cov matrix explains enough of the variance in the
-            %original matrix:
-            %corr(spm_vec(cov(RelCh')),spm_vec(PCV)).^2
-            
             T = clusterdata(J,'linkage','ward','maxclust',N);
             V = sparse(1:size(J,1),T,1,size(J,1),N);
             p = ones(1,N);
@@ -226,6 +211,13 @@ classdef AONN < handle
             
         end
         
+        function ff = logfun(obj,f,p)
+            
+            %f0 = @(p) f(spm_unvec(p,obj.modelspace),obj.x);
+            ff = f(p);
+            ff(ff<.5)=0;
+            ff(ff>=.5)=1;
+        end
         
         function obj = train(obj,method)
             
@@ -233,18 +225,28 @@ classdef AONN < handle
                 method = 1;
             end
             
+            
             switch method
                 case 1
                 % this needs to redefined now for some reason
                 obj.op.fun     = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
                 obj.op.x0 = obj.p;
                 obj.op.V  = obj.c;
+                
+                if obj.islogistic
+                    obj.op.fun = @(p) obj.logfun(obj.op.fun,p);
+                end
 
                 case 2
                 redfun    = @(pp) obj.fun_nr(spm_unvec( (pp*obj.V')'.*obj.p, obj.modelspace), obj.x);
                 obj.op.fun = @(p) redfun(p);
                 obj.op.x0 = obj.rp;
                 obj.op.V  = obj.rc;
+                
+                if obj.islogistic
+                    obj.op.fun = @(p) obj.logfun(obj.op.fun,p);
+                end
+                
             end
             
             
@@ -266,6 +268,8 @@ classdef AONN < handle
             [M,T] = confustionmat([obj.truth(:) obj.pred_raw(:)]);
             obj.confusion.M = M;
             obj.confusion.T = T;
+            
+            ac = accuracy(obj)
         end
         
         function obj = train_bp(obj)
@@ -273,6 +277,10 @@ classdef AONN < handle
             f = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
             g = @(p) sum( (spm_vec(obj.y(:) - f(p) )).^2);
                         
+            if obj.islogistic
+                  g = @(p) sum( (spm_vec(obj.y(:) - obj.logfun(f,p) )).^2);  
+            end
+            
             [X,F] = fminsearch(g,obj.p);
             
             obj.weightvec = X;
@@ -285,6 +293,8 @@ classdef AONN < handle
             [M,T] = confustionmat([obj.truth(:) obj.prediction(:)]);
             obj.confusion.M = M;
             obj.confusion.T = T;
+            
+            ac = accuracy(obj)
         end
         
         function obj = updateweights(obj,w)

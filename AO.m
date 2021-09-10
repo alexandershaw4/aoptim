@@ -992,7 +992,8 @@ end
 function setfig()
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[2436,360,710,842]);
+figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
+figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -1710,49 +1711,49 @@ switch search_method
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
-        %Leading (gradient) components
-        [u,s] = eig(x3);
-        [~,order] = sort(abs(diag(s)),'descend');
-
-        s = diag(s);
-        s = s(order);
-        u = u(:,order);
-        
+%         %Leading (gradient) components
+%         [u,s] = eig(x3);
+%         [~,order] = sort(abs(diag(s)),'descend');
+% 
+%         s = diag(s);
+%         s = s(order);
+%         u = u(:,order);
+%         
+% %         nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
+% %         
+% %         this = full(u(:,1:nc90));
+% %         this = sum(this,2);
+% %         num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
+% %     
+% %         [~,I]=maxpoints(abs(this),num_needed);
+% %         
+% %         % work backwards to reconstruct x3 from important components
+% %         xbar = x3*0;
+% %         xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+% %         x3   = xbar;
+%         
+%         % number of components (trajectories) needed
 %         nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
-%         
-%         this = full(u(:,1:nc90));
-%         this = sum(this,2);
-%         num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
-%     
-%         [~,I]=maxpoints(abs(this),num_needed);
-%         
-%         % work backwards to reconstruct x3 from important components
 %         xbar = x3*0;
-%         xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+%                 
+%         for thisn = 1:nc90
+%             
+%             this = full(u(:,thisn));
+%             
+%             num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
+%     
+%             [~,I]=maxpoints(abs(this),num_needed);
+%                     
+%             % work backwards to reconstruct x3 from important components
+%             xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+%                         
+%         end
+%         
 %         x3   = xbar;
-        
-        % number of components (trajectories) needed
-        nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
-        xbar = x3*0;
-                
-        for thisn = 1:nc90
-            
-            this = full(u(:,thisn));
-            
-            num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
-    
-            [~,I]=maxpoints(abs(this),num_needed);
-                    
-            % work backwards to reconstruct x3 from important components
-            xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
-                        
-        end
-        
-        x3   = xbar;
 
-%         [uu,ss,vv] = spm_svd(x3);
-%         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-%         x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        [uu,ss,vv] = spm_svd(x3);
+        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
         
         %x3 = uu(:,1)'*x3;
         

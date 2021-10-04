@@ -1,4 +1,4 @@
-function X = makef(w,Fq,Amp,Wid,aper)
+function X = makef(w,Fq,Amp,Wid)
 %
 % afit.makef(w,Fq,Amp,Wid)
 %
@@ -8,34 +8,20 @@ function X = makef(w,Fq,Amp,Wid,aper)
 % figure;plot(w,S)
 %
 % AS
-doaperiod=0;
 
 if isstruct(Fq)
     Amp = Fq.Amp;
     Wid = Fq.Wid;
-    
-    if isfield(Fq,'aper')
-        aper = Fq.aper;
-        doaperiod = 1;
-    end
-    
     Fq  = Fq.Freq;
-end
-
-if nargin == 5 && ~isempty(aper)
-    doaperiod = 1;
+    
 end
 
 if length(Fq) > 1
     for i = 1:length(Fq)
-        if doaperiod && i == 1
-            X0 =      makef(w,Fq(i),Amp(i),Wid(i),aper);
-        else
-            try
-                X0 = X0 + makef(w,Fq(i),Amp(i),Wid(i));
-            catch
-                X0 =      makef(w,Fq(i),Amp(i),Wid(i));
-            end
+        try
+            X0 = X0 + afit.makef(w,Fq(i),Amp(i),Wid(i));
+        catch
+            X0 =      afit.makef(w,Fq(i),Amp(i),Wid(i));
         end
         %X0(i,:) = afit.makef(w,Fq(i),Amp(i),Wid(i));
 
@@ -62,8 +48,4 @@ w   = w + mw;
 if sum(X) == 0
     % exception with 1 node models where sum==0
     X   = X + Amp * exp( -(w-Fq).^2 / (2*(2*Wid)^2) );
-end
-
-if doaperiod &&  length(Fq) == 1
-    X = X + ( aper(1) * (w.^0) + w.^-aper(2) );
 end

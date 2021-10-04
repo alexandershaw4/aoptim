@@ -31,13 +31,13 @@ V(3:4)=1/16;
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 6;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
 op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
-op.maxit        = 6; % maximum number of iterations
+op.maxit        = 16; % maximum number of iterations
 op.inner_loop   = 30;
 op.BTLineSearch = 0;
 op.DoMLE        = 0;

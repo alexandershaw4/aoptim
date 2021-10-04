@@ -451,7 +451,7 @@ while iterate
         
         % plot probabilities
         [~,oo]  = sort(pt(:),'descend');
-        probplot(cumprod(pt(oo)),0.95);
+        probplot(cumprod(pt(oo)),0.95,oo);
         
         % This is a variation on the Gauss-Newton algorithm
         % - compute MLE via WLS - where the weights are the priors
@@ -594,7 +594,7 @@ while iterate
                 newp(selpar) = dx(selpar);
                 dx           = newp(:);                
                 de           = obj(V*newp,params);
-                probplot(cumprod(PP(o)),thresh);
+                %probplot(cumprod(PP(o)),thresh,o);
                 
             end            
         end
@@ -1040,24 +1040,27 @@ s = subplot(4,3,8);
 
 end
 
-function probplot(growth,thresh)
+function probplot(growth,thresh,oo)
 
+growth=growth(oo);
 growth(isnan(growth))=0;
-these = find(growth>thresh);
-s = subplot(4,3,[10 11]);
-%bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
-plot(growth,'w','linewidth',3);hold on
-plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
-title('P(p | prior N(μ,σ2)) ','color','w','fontsize',18);
-ylim([0 1]);
-ax = gca;
-ax.XGrid = 'off';
-ax.YGrid = 'on';
-s.YColor = [1 1 1];
-s.XColor = [1 1 1];
-s.Color  = [.3 .3 .3];
-drawnow;hold off;
-
+    these = find(growth>thresh);
+    s = subplot(4,3,[10 11]);
+    bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
+    %plot(growth,'w','linewidth',3);hold on
+    %plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
+    title('P(p | prior N(μ,σ2)) ','color','w','fontsize',18);
+    ylim([0 1]);
+    ax = gca;
+    ax.XGrid = 'off';
+    ax.YGrid = 'on';
+    s.YColor = [1 1 1];
+    s.XColor = [1 1 1];
+    s.Color  = [.3 .3 .3];
+    
+    %plot(1:length(growth),growth*0+thresh)
+    hold off;
+    drawnow;
 end
 
 function params = makeplot(x,ox,params)
@@ -1442,9 +1445,6 @@ if aopt.hyperparameters
     end
 end % end of if hyperparams (from spm) ... 
 
-%L(1) = roe = (e'*e)/(e'*iS*e);
-%L(1) = spm_logdet(iS)*nq/2  - real(roe) - ny*log(8*atan(1))/2;            ...
-
 % complexity minus accuracy of states
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
 % complexity minus accuracy of parameters
@@ -1488,8 +1488,13 @@ switch lower(method)
         if strcmp(lower(method),'logevidence')
             % for log evidence, ignore the parameter term
             % its actually still an SSE measure really
-            F = L(1);
-            e = -F;
+            if ~aopt.hyperparameters
+                F = L(1);
+                e = -F;
+            else
+                F = sum( L([1 3]) );
+                e = -F;
+            end
         end
     
         % Other Objective Functions
@@ -1711,46 +1716,6 @@ switch search_method
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
-%         %Leading (gradient) components
-%         [u,s] = eig(x3);
-%         [~,order] = sort(abs(diag(s)),'descend');
-% 
-%         s = diag(s);
-%         s = s(order);
-%         u = u(:,order);
-%         
-% %         nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
-% %         
-% %         this = full(u(:,1:nc90));
-% %         this = sum(this,2);
-% %         num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
-% %     
-% %         [~,I]=maxpoints(abs(this),num_needed);
-% %         
-% %         % work backwards to reconstruct x3 from important components
-% %         xbar = x3*0;
-% %         xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
-% %         x3   = xbar;
-%         
-%         % number of components (trajectories) needed
-%         nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
-%         xbar = x3*0;
-%                 
-%         for thisn = 1:nc90
-%             
-%             this = full(u(:,thisn));
-%             
-%             num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
-%     
-%             [~,I]=maxpoints(abs(this),num_needed);
-%                     
-%             % work backwards to reconstruct x3 from important components
-%             xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
-%                         
-%         end
-%         
-%         x3   = xbar;
-
         [uu,ss,vv] = spm_svd(x3);
         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
         x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
@@ -1814,6 +1779,43 @@ switch search_method
 
         x3 = (p*V)';
         J  = -df1;
+        
+    case 7
+        
+        J      = -df0';
+        dFdpp  = -(J'*J);
+        
+        % Compatibility with older matlabs
+        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        
+        %Leading (gradient) components
+        [u,s] = eig(x3);
+        [~,order] = sort(abs(diag(s)),'descend');
+
+        s = diag(s);
+        s = s(order);
+        u = u(:,order);
+        
+        % number of components (trajectories) needed
+        nc90 = findthenearest(cumsum(abs(s))./sum(abs(s)),0.9);
+        xbar = x3*0;
+                
+        for thisn = 1:nc90
+            
+            this = full(u(:,thisn));
+            
+            num_needed = findthenearest( cumsum(sort(abs(this),'descend'))./sum(abs(this)), .99);
+    
+            [~,I]=maxpoints(abs(this),num_needed);
+                    
+            % work backwards to reconstruct x3 from important components
+            xbar = xbar + x3(:,I)*diag(this(I))*x3(:,I)';
+                        
+        end
+        
+        x3   = xbar;        
+        
+            
 end
 
 end
@@ -1828,7 +1830,7 @@ function dx = compute_dx(x1,a,J,red,search_method,params)
 
 aopt = params.aopt;
 
-if search_method == 1
+if search_method == 1 || search_method == 7
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
 elseif search_method == 2

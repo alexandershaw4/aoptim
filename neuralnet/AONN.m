@@ -74,7 +74,7 @@ classdef AONN < handle
             obj.yy = y;
             obj.islogistic=false;
             
-            if all(values == round(values)) && ~force
+            if all(values(:) == round(values(:))) && ~force
                 obj.yy = y;
                 %obj.islogistic=true;
                 %for i = 1:ny

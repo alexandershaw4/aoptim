@@ -335,6 +335,62 @@ classdef AODCM < handle
             
         end
         
+        function F = errfun(obj,f,x)
+            
+            if istable(x)
+                x = x.Variables;
+            end
+            
+            Y = spm_vec(obj.opts.y);
+            y = spm_vec(f(x));
+            e  = Y - y;
+            Q  = obj.opts.Q;
+            nq = length(Q);
+            ny = length(e);
+            
+            L(1) = real(e'*Q*e)/2; 
+            L(1) = L(1) * corr(real(spm_vec(Y)),real(spm_vec(y))).^2;
+            F    = -sum(L);            
+
+        end
+        
+        function bayesopt(obj)
+            
+            % Bayesian optimsation algorithm
+            %------------------------------------------------------------------
+            fprintf('Performing (Matlab) Bayesian Optimsation\n');
+
+            LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+            Px  = obj.opts.x0;
+            
+            for ip = 1:length(Px)
+                name = sprintf('Par%d',ip);
+                xvar(ip) = optimizableVariable(name,[LB(ip) UB(ip)],'Optimize',true);
+                thename{ip} = name;
+            end
+            
+            t = array2table(obj.opts.x0','VariableNames',thename)  ;              
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            
+            reps    = 32;
+            explore = 0.2;
+            RESULTS = bayesopt(objective,xvar,'IsObjectiveDeterministic',true,...
+                'ExplorationRatio',explore,'MaxObjectiveEvaluations',reps,...
+                'AcquisitionFunctionName','expected-improvement-plus','InitialX',t);
+            
+            % Best Actually observed model
+            % = RESULTS.MinObjective;
+            obj.F   = RESULTS.MinObjective;
+            obj.X   = RESULTS.XAtMinObjective.Variables;
+            
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+        
     end
     
 end

@@ -167,8 +167,28 @@ classdef AODCM < handle
             
         end
         
+        function [yy,PP] = wrapd_gauss(obj,Px,varargin)
+                [y,PP,s,t] = wrapdm(obj,Px,varargin);
+                w = obj.DCM.xY.Hz;
+                oy = real(y);
+                cf = fit(w.',oy,'Gauss3');
+
+                yy = coeffvalues(cf);
+                
+        end
         
-        function [y,PP,s,t] = wrapdm(obj,Px,varargin)
+        function [yy,PP] = wrapd_cf(obj,Px,varargin)
+                [y,PP,s,t,centrefreqs] = wrapdm(obj,Px,varargin);
+                
+                %[~,CF] = findpeaks(real(smooth(spm_vec(y))),'NPeak',4);
+                
+                yy = [spm_vec(y); real(log(spm_vec(centrefreqs))./60)];
+                
+                %yy = [spm_vec(y); log(spm_vec(centrefreqs))./8];
+            
+        end
+        
+        function [y,PP,s,t,centrefreqs] = wrapdm(obj,Px,varargin)
             % wraps the DCM/SPM integrator function into a f(P)
             % anonymous-like function accepting a reduced parameter vector
             % and returning the model output
@@ -209,6 +229,8 @@ classdef AODCM < handle
                 jj = find(exp(PP.J));
                 s = s(jj,:);
                 t = pst;
+               % centrefreqs = l{1}.centrals{1};
+               centrefreqs=[];
             end
             
             %y    = IS(PP,DD.M,DD.xU);           % Prediction
@@ -341,9 +363,13 @@ classdef AODCM < handle
                 x = x.Variables;
             end
             
+            if isempty(obj.opts.Q)
+               obj.opts.Q = eye(length(Y));
+            end
+            
             Y = spm_vec(obj.opts.y);
             y = spm_vec(f(x));
-            e  = Y - y;
+            e  = (Y - y);
             Q  = obj.opts.Q;
             nq = length(Q);
             ny = length(e);
@@ -353,6 +379,31 @@ classdef AODCM < handle
             F    = -sum(L);            
 
         end
+        
+        function ga(obj)
+            
+            
+            fprintf('Performing (Matlab) Genetic Algorithm Optimsation\n');
+
+            LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+            Px  = obj.opts.x0;
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+
+            %[X,F(i)] = ga(@optimi,length(Px),[],[],[],[],LB,UB);
+            gaopts = optimoptions('ga','MaxTime', 86400/2,'PlotFcn',...
+         {@gaplotbestf,@gaplotbestindiv,@gaplotexpectation,@gaplotstopping}); % 12hours
+        
+            [obj.X,obj.F] = ga(objective,length(Px),[],[],[],[],LB,UB,[],[],gaopts);        
+            
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+            
+        end
+        
         
         function bayesopt(obj)
             

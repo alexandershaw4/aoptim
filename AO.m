@@ -209,6 +209,7 @@ aopt.doimagesc       = doimagesc;  % change plot to a surface
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
 aopt.corrweight      = corrweight;
+aopt.includepeaksinerror = includepeaksinerror;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -251,6 +252,7 @@ Vb         = V;
 %--------------------------------------------------------------------------
 if doplot
     setfig(); params = makeplot(x0,x0,params); aopt.oerror = params.aopt.oerror;
+    pl_init(x0,params)
 end
 
 % initialise counters
@@ -348,7 +350,9 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------    
     % compute step, a, in scheme: dx = x0 + a*-J
-    if n == 1; a = red*0; end
+    if     n == 1 && search_method~=100 ; a = red*0; 
+    elseif n == 1 && search_method==100 ; a = repmat({red*0},1,4); 
+    end
     
     if search_method ~= 6
         pupdate(loc,n,0,e0,e0,'stepsiz',toc);
@@ -356,11 +360,21 @@ while iterate
         pupdate(loc,n,0,e0,e0,'hyprprm',toc);
     end
     
-    if ~ismimo
-        [a,J] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
+    % normal search method
+    if search_method ~= 100
+        if ~ismimo
+            [a,J] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
+        else
+            [a,J] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
+            J = -df0(:);
+        end
     else
-        [a,J] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
-        J = -df0(:);
+        % greedy search method:
+        % force it to try a few different step computations and pick best
+        steps   = [1 3 4 7]; 
+        for ist = 1:length(steps)
+            [a{ist},J{ist}] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
+        end
     end
      
     if search_method ~= 6
@@ -387,13 +401,27 @@ while iterate
     %======================================================================
     while improve
         
+        % THE WALK....
+        
         % descend while de < e1
-        nfun = nfun + 1;
+        %nfun = nfun + 1;
                                         
         % Compute The Parameter Step (from gradients and step sizes):
         % % x[p,t+1] = x[p,t] + a[p]*-dfdx[p] 
         %------------------------------------------------------------------
-        dx = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );  
+        if search_method ~= 100
+            dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );  
+            ddxm = dx;
+        else
+            aopt.updatej = false; % switch off objective fun triggers
+            aopt.updateh = false;
+            params.aopt  = aopt;
+            for ist = 1:length(steps)
+                dx(:,ist) = compute_dx(x1,a{ist},J{ist},red,steps(ist),params);
+                ex(:,ist) = obj(dx(:,ist),params);
+            end
+            ddxm = dx;
+        end
         
         % The following options are like 'E-steps' or line search options 
         % - i.e. they estimate the missing variables (parameter indices & 
@@ -401,205 +429,227 @@ while iterate
         %==================================================================
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)
-        pt  = zeros(1,length(x1));
-        for i = 1:length(x1)
-            %vv     = real(sqrt( red(i) ));
-            vv     = real(sqrt( red(i) ))*2;
-            if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-            pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-        end
         
-        % Curb parameter estimates trying to exceed their distirbution
-        % bounds
-        if EnforcePriorProb
-            odx = dx;
-            nst = 1;
+        if all(size(ddxm)>1)
+            [uu,ss]=svd(cov(ddxm'));
+            ss=diag(ss);
+            ncp=findthenearest(cumsum(ss)./sum(ss),.99);
+            ddxm = (uu(1:ncp)'*ddxm')' ;
+        end        
+        
+        for istepm = 1:size(ddxm,2)
+            
+            nfun = nfun + 1;
+            
+            % dx prediction from step method n
+            dx = ddxm(:,istepm); 
+        
+            % distributions
+            pt  = zeros(1,length(x1));
             for i = 1:length(x1)
-                if red(i)
-                    if dx(i) < ( pd(i).mu - (nst*pd(i).sigma) )
-                       dx(i) = pd(i).mu - (nst*pd(i).sigma);
-                    elseif dx(i) > ( pd(i).mu + (nst*pd(i).sigma) )
-                           dx(i) = pd(i).mu + (nst*pd(i).sigma);
-                    end
-                end
-            end
-        end
-        
-        % compute relative change in probability
-        pdx = pt*0;
-        for i = 1:length(x1)
-            if red(i)
                 %vv     = real(sqrt( red(i) ));
                 vv     = real(sqrt( red(i) ))*2;
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                 pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                 pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
-            else
+                pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
             end
-        end    
-        pt = pdx;
-        prplot(pt);
-        
-        if WeightByProbability
-            x1 = x1 + ( pt(:).*(dx-x1) );
-        end
-       
-        
-        % Save for computing gradient ascent on probabilities
-        p_hist(n,:) = pt;
-        Hist.pt(:,n)  = pt;
-        
-        % plot probabilities
-        [~,oo]  = sort(pt(:),'descend');
-        probplot(cumprod(pt(oo)),0.95,oo);
-        
-        % This is a variation on the Gauss-Newton algorithm
-        % - compute MLE via WLS - where the weights are the priors
-        %------------------------------------------------------------------
-        if DoMLE                           % note - this could be iterated
-            if nfun == 1
-                pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
-            end
-            if ~ismimo
-                j  = J(:)*er';
-            else
-                j = aopt.J;
-            end
-            w  = pt;
-            r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
-            b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
-            % inclusion of a weight essentially makes this a Marquardt/
-            % regularisation parameter
-            if isvector(a)
-                dx = x1 - a.*b;
-            else
-                dx = x1 - a*b; % recompose dx including step matrix (a)
-            end
-        end
-        
-%         if neuralnet
-%             N = AONN(params.aopt.y,params.aopt.J',1,12,1);
-%             N.train_bp;
-%             m = spm_unvec(N.weightvec,N.modelspace);
-%         end
-        
-        % (option) Momentum inclusion
-        %------------------------------------------------------------------
-        if n > 2 && IncMomentum
-            % The idea here is that we can have more confidence in
-            % parameters that are repeatedly updated in the same direction,
-            % so we can take bigger steps for those parameters
-            imom = sum( diff(full(spm_cat(Hist.p))')' > 0 ,2);
-            dmom = sum( diff(full(spm_cat(Hist.p))')' < 0 ,2);
-            
-            timom = imom >= (2);
-            tdmom = dmom >= (2);
-            
-            moments = (timom .* imom) + (tdmom .* dmom);
-            
-            if any(moments)
-               % parameter update
-               ddx = dx - x1;
-               dx  = dx + ( ddx .* (moments./n) );
-            end
-        end
-        
-        % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
-        % Either by:
-        % (1) just update all parameters
-        % (2) update all parameters whose updated value improves obj
-        % (3) update only parameters whose probability exceeds a threshold
-        %------------------------------------------------------------------
-        aopt.updatej = false; % switch off objective fun triggers
-        aopt.updateh = false;
-        params.aopt  = aopt;
-        
-        if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
-            % Don't perform checks, assume all f(dx[i]) <= e1
-            % i.e. full gradient prediction over parameters is good and we
-            % don't want to be explicitly Bayesian about it ...
-            gp  = ones(1,length(x0));
-            gpi = 1:length(x0);
-            de  = obj(V*dx,params);
-            DFE = ones(1,length(x0))*de; 
-        else
-            % Assess each new parameter estimate (step) individually
-            if (~faster) || nfun == 1 % only complete this search once per gradient computation
-                if ~doparallel
-                    for nip = 1:length(dx)
-                        XX     = V*x0;
-                        if red(nip)
-                            XX(nip)  = dx(nip);
-                            DFE(nip) = obj(XX,params); % FE
-                        else
-                            DFE(nip) = e0;
-                        end
-                    end
-                else
-                    parfor nip = 1:length(dx)
-                        XX     = V*x0;
-                        if red(nip)
-                            XX(nip)  = dx(nip);
-                            DFE(nip) = obj(XX,params); % FE
-                        else
-                            DFE(nip) = e0;
-                        end
-                    end
-                end                
 
-                DFE  = real(DFE(:));
-                
-                % Identify improver-parameters            
-                gp  = double(DFE < e0); % e0
-                gpi = find(gp);
-            end
-            
-            if ~BayesAdjust
-                % If the full gradient prediction over parameters did not
-                % improve, but the BayesAdjust option is not selected, then
-                % only update parameters showing improvements in objective func
-                ddx        = V*x0;
-                ddx(gpi)   = dx(gpi);
-                dx         = ddx;
-                de         = obj(dx,params);
-                                
-            else
-                % MSort of maximum likelihood - opimise p(dx) according to 
-                % initial conditions (priors; a,b) and error
-                % arg max: p(dx | a,b & e)
-                alpha = 0.95;
-                thresh = 1 - alpha ;
-                
-                if n>1
-                    thresh = 1 - (alpha - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
+            % Curb parameter estimates trying to exceed their distirbution
+            % bounds
+            if EnforcePriorProb
+                odx = dx;
+                nst = 1;
+                for i = 1:length(x1)
+                    if red(i)
+                        if dx(i) < ( pd(i).mu - (nst*pd(i).sigma) )
+                           dx(i) = pd(i).mu - (nst*pd(i).sigma);
+                        elseif dx(i) > ( pd(i).mu + (nst*pd(i).sigma) )
+                               dx(i) = pd(i).mu + (nst*pd(i).sigma);
+                        end
+                    end
                 end
-                                
-                pupdate(loc,n,0,e1,e1,'mleslct',toc);
-                
-                PP = pt(:) ;
-                
-                % parameter selection based on probability:
-                % sort h2l th probabilities and find jpdtol intersect
-                [~,o]  = sort(PP(:),'descend');
-                              
-                epar = e0 - DFE(o);
-                px   = cumprod(PP(o));
-                
-                pI   = find( px > thresh );
-                [~,pnt] = min( epar(pI) );
-                
-                selpar = o(1:pnt); % activate parameters
-                
-                newp         = x1;
-                newp(selpar) = dx(selpar);
-                dx           = newp(:);                
-                de           = obj(V*newp,params);
-                %probplot(cumprod(PP(o)),thresh,o);
-                
-            end            
-        end
+            end
+
+            % compute relative change in probability
+            pdx = pt*0;
+            for i = 1:length(x1)
+                if red(i)
+                    %vv     = real(sqrt( red(i) ));
+                    vv     = real(sqrt( red(i) ))*2;
+                    if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+                     pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+                     pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                else
+                end
+            end    
+            pt = pdx;
+            prplot(pt);
+
+            if WeightByProbability
+                x1 = x1 + ( pt(:).*(dx-x1) );
+            end
+
+            % Save for computing gradient ascent on probabilities
+            p_hist(n,:) = pt;
+            Hist.pt(:,n)  = pt;
+
+            % plot probabilities
+            [~,oo]  = sort(pt(:),'descend');
+            probplot(cumprod(pt(oo)),0.95,oo);
+
+            % This is a variation on the Gauss-Newton algorithm
+            % - compute MLE via WLS - where the weights are the priors
+            %------------------------------------------------------------------
+            if DoMLE                           % note - this could be iterated
+                if nfun == 1
+                    pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
+                end
+                if ~ismimo
+                    j  = J(:)*er';
+                else
+                    j = aopt.J;
+                end
+                w  = pt;
+                r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
+                b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
+                % inclusion of a weight essentially makes this a Marquardt/
+                % regularisation parameter
+                if isvector(a)
+                    dx = x1 - a.*b;
+                else
+                    dx = x1 - a*b; % recompose dx including step matrix (a)
+                end
+            end
+
+    %         if neuralnet
+    %             N = AONN(params.aopt.y,params.aopt.J',1,12,1);
+    %             N.train_bp;
+    %             m = spm_unvec(N.weightvec,N.modelspace);
+    %         end
+
+            % (option) Momentum inclusion
+            %------------------------------------------------------------------
+            if n > 2 && IncMomentum
+                % The idea here is that we can have more confidence in
+                % parameters that are repeatedly updated in the same direction,
+                % so we can take bigger steps for those parameters
+                imom = sum( diff(full(spm_cat(Hist.p))')' > 0 ,2);
+                dmom = sum( diff(full(spm_cat(Hist.p))')' < 0 ,2);
+
+                timom = imom >= (2);
+                tdmom = dmom >= (2);
+
+                moments = (timom .* imom) + (tdmom .* dmom);
+
+                if any(moments)
+                   % parameter update
+                   ddx = dx - x1;
+                   dx  = dx + ( ddx .* (moments./n) );
+                end
+            end
+
+            % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
+            % Either by:
+            % (1) just update all parameters
+            % (2) update all parameters whose updated value improves obj
+            % (3) update only parameters whose probability exceeds a threshold
+            %------------------------------------------------------------------
+            aopt.updatej = false; % switch off objective fun triggers
+            aopt.updateh = false;
+            params.aopt  = aopt;
+
+            if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
+                % Don't perform checks, assume all f(dx[i]) <= e1
+                % i.e. full gradient prediction over parameters is good and we
+                % don't want to be explicitly Bayesian about it ...
+                gp  = ones(1,length(x0));
+                gpi = 1:length(x0);
+                de  = obj(V*dx,params);
+                DFE = ones(1,length(x0))*de; 
+            else
+                % Assess each new parameter estimate (step) individually
+                if (~faster) || nfun == 1 % only complete this search once per gradient computation
+                    if ~doparallel
+                        for nip = 1:length(dx)
+                            XX     = V*x0;
+                            if red(nip)
+                                XX(nip)  = dx(nip);
+                                DFE(nip) = obj(XX,params); % FE
+                            else
+                                DFE(nip) = e0;
+                            end
+                        end
+                    else
+                        parfor nip = 1:length(dx)
+                            XX     = V*x0;
+                            if red(nip)
+                                XX(nip)  = dx(nip);
+                                DFE(nip) = obj(XX,params); % FE
+                            else
+                                DFE(nip) = e0;
+                            end
+                        end
+                    end                
+
+                    DFE  = real(DFE(:));
+
+                    % Identify improver-parameters            
+                    gp  = double(DFE < e0); % e0
+                    gpi = find(gp);
+                end
+
+                if ~BayesAdjust
+                    % If the full gradient prediction over parameters did not
+                    % improve, but the BayesAdjust option is not selected, then
+                    % only update parameters showing improvements in objective func
+                    ddx        = V*x0;
+                    ddx(gpi)   = dx(gpi);
+                    dx         = ddx;
+                    de         = obj(dx,params);
+
+                else
+                    % MSort of maximum likelihood - opimise p(dx) according to 
+                    % initial conditions (priors; a,b) and error
+                    % arg max: p(dx | a,b & e)
+                    alpha = 0.95;
+                    thresh = 1 - alpha ;
+
+                    if n>1
+                        thresh = 1 - (alpha - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
+                    end
+
+                    pupdate(loc,n,0,e1,e1,'mleslct',toc);
+
+                    PP = pt(:) ;
+
+                    % parameter selection based on probability:
+                    % sort h2l th probabilities and find jpdtol intersect
+                    [~,o]  = sort(PP(:),'descend');
+
+                    epar = e0 - DFE(o);
+                    px   = cumprod(PP(o));
+
+                    pI   = find( px > thresh );
+                    [~,pnt] = min( epar(pI) );
+
+                    selpar = o(1:pnt); % activate parameters
+
+                    newp         = x1;
+                    newp(selpar) = dx(selpar);
+                    dx           = newp(:);                
+                    de           = obj(V*newp,params);
+                    %probplot(cumprod(PP(o)),thresh,o);
+
+                end            
+            end
+
+            fprintf('\b | euc dist(dp) = %d\n',cdist(dx',x1'));
+
+           ddxm(:,istepm) = dx; 
            
-        fprintf('\b | euc dist(dp) = %d\n',cdist(dx',x1'));
+           if nfun >= inner_loop
+               break;
+           end
+        end
         
         % print the full (un-filtered / line searched prediction)
         %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
@@ -621,6 +671,18 @@ while iterate
         deltap = abs(sum(dx-x1));
         deltaptol = 1e-3;
         
+        % if running multiple search (step) methods, now is the time to
+        % evaluate and commit to one for the remainder of the iteration
+        if search_method == 100
+            for ist = 1:size(ddxm,2)
+                dex(ist) = obj(ddxm(:,ist),params);
+            end
+            [~,Ith]=min(real(dex));
+            dx = ddxm(:,Ith);
+            fprintf('\nSelecting step method %d\n',steps(Ith));
+        end
+        
+        
         if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
             
             % If the objective function has improved...
@@ -640,7 +702,6 @@ while iterate
         if nfun >= inner_loop
             improve = false;
         end
-        
     end  % end while improve... ends iter descent on this trajectory
       
     
@@ -1022,6 +1083,26 @@ s(4).Color  = [.3 .3 .3];
 drawnow;
 end
 
+function pl_init(x,params)
+[Y,y] = GetStates(x,params);
+
+% Restrict plots to real values only - just for clarity really
+% (this doesn't mean the actual model output is not complex)
+Y = spm_unvec( real(spm_vec(Y)), Y);
+y = spm_unvec( real(spm_vec(y)), Y);
+
+
+s(1) = subplot(4,3,[10 11]);
+
+plot(spm_vec(Y),'w:','linewidth',3); hold on;
+plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
+grid on;grid minor;title('Start Point','color','w','fontsize',18);
+s(1).YColor = [1 1 1];
+s(1).XColor = [1 1 1];
+s(1).Color  = [.3 .3 .3];
+
+end
+
 function prplot(pt)
 
 s = subplot(4,3,8);
@@ -1045,7 +1126,7 @@ function probplot(growth,thresh,oo)
 growth=growth(oo);
 growth(isnan(growth))=0;
     these = find(growth>thresh);
-    s = subplot(4,3,[10 11]);
+    s = subplot(4,3,[9]);
     bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
     %plot(growth,'w','linewidth',3);hold on
     %plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
@@ -1081,9 +1162,9 @@ aopt = params.aopt;
 %    plot(t,y);
 %
 % note: this plot will be added to the main AO optimisation figure in
-% position subplot(4,3,6) and coloured appropriately...
+% position subplot(4,3,12) and coloured appropriately...
 if isfield(params,'userplotfun') && ~isempty(params.userplotfun);
-    subplot(4,3,6);
+    subplot(4,3,12);
     feval(params.userplotfun,x,params);
     ax        = gca;
     ax.YColor = [1 1 1];
@@ -1117,7 +1198,7 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     plot(aopt.history,'wo');hold on;
     plot(aopt.history,'w');hold off;grid on;
     ylabel('Error^2');xlabel('Step'); 
-    title('AO: System Identification: Error','color','w','fontsize',18);
+    title('AO: Parameter Estimation: Error','color','w','fontsize',18);
     drawnow;
 % elseif iscell(Y) && all( size(Y{1}) > 1)
 %     % Matrix representation (imagesc)
@@ -1154,7 +1235,7 @@ else
 
         plot(spm_vec(Y),'w:','linewidth',3); hold on;
         plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
-        grid on;grid minor;title('AO System Identification: Current Best','color','w','fontsize',18);
+        grid on;grid minor;title('AO Parameter Estimation: Current Best','color','w','fontsize',18);
         s(1).YColor = [1 1 1];
         s(1).XColor = [1 1 1];
         s(1).Color  = [.3 .3 .3];
@@ -1188,7 +1269,7 @@ else
     end
 
     %s(2) = subplot(412);
-    s(2) = subplot(4,3,[4]);
+    s(2) = subplot(4,3,[6]);
     %bar([former_error new_error]);
     plot(former_error,'w--','linewidth',3); hold on;
     plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1213,7 +1294,7 @@ else
     s(3).Color  = [.3 .3 .3];
     drawnow;
     
-    s(4) = subplot(4,3,5);
+    s(4) = subplot(4,3,[4 5]);
     plot(spm_vec(Y),'w:','linewidth',3);
     hold on;
     plot(spm_vec(Y)-aopt.oerror,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1284,8 +1365,11 @@ Q  = aopt.Q;
 % Feature selection
 %--------------------------------------------------------------------------
 if isfield(params,'FS')
-    y = params.FS(y);
-    Y = params.FS(Y);
+    yfs = params.FS(y);
+    Yfs = params.FS(Y);
+    
+    y = spm_vec(yfs);
+    Y = spm_vec(Yfs);
     
     if isnumeric(Q) && ~isempty(Q)
         n1 = length(y) - length(Q);
@@ -1293,19 +1377,28 @@ if isfield(params,'FS')
     end
 end
 
-% % SSA if required
-if aopt.do_ssa
-    try
-        rk = 3;
-        Yn = Y; Yn(isinf(Yn))=0; Yn(isnan(Yn))=0;
-        yn = y; yn(isinf(yn))=0; yn(isnan(yn))=0;
-        s0 = assa(Yn,rk);
-        s1 = assa(yn,rk);
-        d0 = min( cdist(s0',s1') ,[],2);
-    catch
-        d0 = (100);
-    end
-end
+% Manipulations of the objective function for spectral fitting
+%--------------------------------------------------------------------------
+% includepeaksinerror = aopt.includepeaksinerror;
+% if includepeaksinerror
+%     % compute euclidean distances between peaks in the output - e.g. when
+%     % the user fun returns a power spectrum that we're fitting. Use sum of
+%     % these distances as a weighting on the log evidence
+%     
+%     [~,YI] = findpeaks(real(Y));
+%     [~,yi] = findpeaks(real(y));
+%     
+%     DX = cdist(YI,yi);
+%     D  = min(DX,[],2);
+%     
+%     if any(D)
+%         iD     = 1./(D+1);
+%         totalD = sum(iD);
+%     else
+%         totalD = 1;
+%     end
+%     
+% end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
@@ -1356,17 +1449,12 @@ for i  = 1:length(Q)
 end
 
 e   = (spm_vec(Y) - spm_vec(y)).^2;
+e = e + gradient(e);
 
-%e = 100*(e./spm_vec(Y));
 
 ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
-% l    = 0.01;
-% JJ   = [aopt.J l];
-% iiS  = diag([diag(iS); 1]); 
-% Cp   = spm_inv( (JJ*iiS*JJ') + ipC );
-
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp  = spm_inv( ipC );
 warning on
@@ -1446,7 +1534,8 @@ if aopt.hyperparameters
 end % end of if hyperparams (from spm) ... 
 
 % complexity minus accuracy of states
-L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;            ...
+L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;           
+%L(1) = spm_logdet(iS)*nq/2  - real(e'*cdist(spm_vec(Y), spm_vec(y))*iS*e)/2 - ny*log(8*atan(1))/2; 
 % complexity minus accuracy of parameters
 L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 
@@ -1455,15 +1544,11 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
 end
 
-if aopt.do_ssa
-    L(4) = -exp(prod(d0));
-    if isinf(L(4))
-        L(4) = exp(100);
-    end
-end
-
 if aopt.corrweight
     L(1) = L(1) * corr(spm_vec(Y),spm_vec(y)).^2;
+    %sQ   = smooth(diag(aopt.precisionQ));
+    %QCx  = atcm.fun.wcor([real(spm_vec(Y)),real(spm_vec(y))],sQ./sum(sQ));
+    %L(1) = L(1) * QCx(1,2).^2;
 end
 %if aopt.probweight
 %   L(1) = L(1) * ( sum(aopt.pt)./length(aopt.pt) );    
@@ -1528,12 +1613,6 @@ switch lower(method)
         case {'logistic' 'lr'}
             % logistic optimisation 
             e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
-
-
-            % complex output models
-            %ey  = spm_vec(Y) - spm_vec(y);
-            %qh  = real(ey)*real(ey') + imag(ey)*imag(ey');
-            %e   = sum(qh(:).^2);
 end
 %end
 
@@ -1561,8 +1640,8 @@ if nargout == 2 || nargout == 7
         V = (~~V)*1e-3;
     elseif aopt.fixedstepderiv == -1
         V = V + ( (~~V) .* abs(randn(size(V))) );
-    else
-        %V = V*1e-2;
+    elseif aopt.fixedstepderiv > 1
+        V = (~~V)*aopt.fixedstepderiv;
     end
     
     %aopt.computeiCp = 0; % don't re-invert covariance for each p of dfdp
@@ -1968,7 +2047,7 @@ X.corrweight   = 0;
 X.neuralnet    = 0;
 X.WeightByProbability = 0;
 X.faster = 0;
-
+X.includepeaksinerror = 0;
 end
 
 function parseinputstruct(opts)

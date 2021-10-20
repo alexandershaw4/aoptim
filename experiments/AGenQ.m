@@ -9,9 +9,9 @@ function [Q,GL] = AGenQ(x)
 % Q = x + (ux) + (lx);
 
 % % Peak points as regions of importance
-x     = x ./ max(x);
-[v,I] = findpeaks(x);
-x(I)  = 8;
+% x     = x ./ max(x);
+% [v,I] = findpeaks(x);
+% x(I)  = 8;
  
 % Get features
 a  = diag( x );

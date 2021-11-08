@@ -295,7 +295,8 @@ classdef AODCM < handle
             
             [X,F,CP,Pp,History] = AO(obj.opts);   
             
-            close; drawnow;
+            %close; 
+            drawnow;
             
             [~, P] = obj.opts.fun(spm_vec(X));
             
@@ -364,7 +365,7 @@ classdef AODCM < handle
             end
             
             if isempty(obj.opts.Q)
-               obj.opts.Q = eye(length(Y));
+               obj.opts.Q = eye(length(obj.Y));
             end
             
             Y = spm_vec(obj.opts.y);

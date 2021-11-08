@@ -209,7 +209,6 @@ aopt.doimagesc       = doimagesc;  % change plot to a surface
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
 aopt.corrweight      = corrweight;
-aopt.includepeaksinerror = includepeaksinerror;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -481,6 +480,11 @@ while iterate
                 end
                 w  = pt;
                 r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
+                
+                if ~isempty(FS)
+                    r0 = FS(r0);
+                end
+                
                 b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
                 % inclusion of a weight essentially makes this a Marquardt/
                 % regularisation parameter
@@ -608,8 +612,10 @@ while iterate
                 end            
             end
 
-            fprintf('-->| euc dist(dp) = %d\n',cdist(dx',x1'));
-
+            if ~DoMLE  
+                fprintf('-->| euc dist(dp) = %d\n',cdist(dx',x1'));
+            end
+            
            % Save for this step method...
            ddxm(:,istepm) = dx; 
 
@@ -1085,7 +1091,7 @@ growth=growth(oo);
 growth(isnan(growth))=0;
     these = find(growth>thresh);
     s = subplot(4,3,[9]);
-    bar(growth,'FaceColor',[1 .7 .7],'EdgeColor','w');
+    bar(real(growth),'FaceColor',[1 .7 .7],'EdgeColor','w');
     %plot(growth,'w','linewidth',3);hold on
     %plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
     title('P(p | prior N(μ,σ2)) ','color','w','fontsize',18);
@@ -1290,7 +1296,7 @@ Q  = aopt.Q;
 % Feature selection
 %--------------------------------------------------------------------------
 if isfield(params,'FS')
-    yfs = params.FS(y);
+    yfs = params.FS(spm_unvec(y,Y));
     Yfs = params.FS(Y);
     
     y = spm_vec(yfs);
@@ -1908,7 +1914,6 @@ X.corrweight   = 0;
 X.neuralnet    = 0;
 X.WeightByProbability = 0;
 X.faster = 0;
-X.includepeaksinerror = 0;
 end
 
 function parseinputstruct(opts)

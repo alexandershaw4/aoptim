@@ -21,8 +21,7 @@ P.Amp  = [2  2  2  2];
 P.Wid  = [1 1 1 1];
 x0 = (spm_vec(P));
 
-V  = ~~spm_vec(P)/16;
-V(1:4)=1/4;
+V  = ~~spm_vec(P)/8;
 V(9:12)=0;
 f  = @(x) (makef(w,spm_unvec(abs(x),S)));
 
@@ -38,18 +37,19 @@ op.y   = Y(:);       % data we're fitting (for computation of objective fun)
 op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
 op.maxit        = 16; % maximum number of iterations
-op.inner_loop   = 30;
+op.inner_loop   = 10;
 op.BTLineSearch = 0;
 op.DoMLE        = 0;
-op.ismimo=0;
-op.hyperparams=1;
-op.im=1;
-op.fsd=0;
+op.ismimo       = 1;
+op.hyperparams  = 1;
+op.im           = 1;
+op.fsd          = 0;
 op.FS = @(x) x(:).^2.*(1:length(x))';
-op.criterion = -inf;
-op.doparallel=0;
+op.FS = @(x) sqrt(x);
+op.criterion  = -inf;
+op.doparallel = 0;
 
-%op.fsd=-1;
+op.DoMLE=1;
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

@@ -438,7 +438,7 @@ while iterate
                 end
             end
 
-            % Compute relative change in 'probability'
+            % Compute relative change in 'probability'^
             pdx = pt*0;
             for i = 1:length(x1)
                 if red(i)
@@ -470,28 +470,38 @@ while iterate
             % MLE via WLS - where the weights are the probabilities
             %------------------------------------------------------------------
             if DoMLE                        % note - this could be iterated
-                if nfun == 1
-                    pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
-                end
-                if ~ismimo
-                    j  = J(:)*er';
-                else
-                    j = aopt.J;
-                end
-                w  = pt;
-                r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
-                
-                if ~isempty(FS)
-                    r0 = FS(r0);
-                end
-                
-                b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
-                % inclusion of a weight essentially makes this a Marquardt/
-                % regularisation parameter
-                if isvector(a)
-                    dx = x1 - a.*b;
-                else
-                    dx = x1 - a*b; % recompose dx including step matrix (a)
+                iter_mle = true;
+                while iter_mle
+                    %if nfun == 1
+                        pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
+                    %end
+                    if ~ismimo
+                        j  = J(:)*er';
+                    else
+                        j = aopt.J;
+                    end
+                    w  = pt;
+                    r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
+
+                    if ~isempty(FS)
+                        r0 = FS(r0);
+                    end
+
+                    b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
+                    % inclusion of a weight essentially makes this a Marquardt/
+                    % regularisation parameter
+                    if isvector(a)
+                        dxd = x1 - a.*b;
+                    else
+                        dxd = x1 - a*b; % recompose dx including step matrix (a)
+                    end
+                    
+                    if obj(dxd,params) < obj(x1,params)
+                        x1 = dxd;
+                    else
+                        iter_mle = false;
+                        dx = dxd;
+                    end
                 end
             end
 
@@ -606,14 +616,18 @@ while iterate
 
                     newp         = x1;
                     newp(selpar) = dx(selpar);
-                    dx           = newp(:);                
-                    de           = obj(V*newp,params);
+                    %if nfun>1 && all(newp(:)~=dx(:))
+                        dx           = newp(:);                
+                        de           = obj(V*newp,params);
+                    %else
+                    %    improve = false;
+                    %end
 
                 end            
             end
 
             if ~DoMLE  
-                fprintf('-->| euc dist(dp) = %d\n',cdist(dx',x1'));
+                fprintf('--> euc dist(dp) = %d\n',cdist(dx',x1'));
             end
             
            % Save for this step method...
@@ -1464,10 +1478,9 @@ end % end of if hyperparams (from spm) ...
 % FREE ENERGY TERMS
 %==========================================================================
 
-% (1) Complexity minus accuracy of states
+% (1) Complexity minus accuracy of states / observations
 %--------------------------------------------------------------------------
 L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;           
-%L(1) = spm_logdet(iS)*nq/2  - real(e'*cdist(spm_vec(Y), spm_vec(y))*iS*e)/2 - ny*log(8*atan(1))/2; 
 
 % (2) Complexity minus accuracy of parameters
 %--------------------------------------------------------------------------
@@ -1476,7 +1489,7 @@ L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 if aopt.hyperparameters
     % (3) Complexity minus accuracy of precision
     %----------------------------------------------------------------------
-    L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; % no hyperparameters
+    L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; 
 end
 
 if aopt.corrweight
@@ -1528,7 +1541,7 @@ switch lower(method)
         case 'rmse'
             % rmse: root mean squaree error
             e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-
+            
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
             e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
@@ -1538,6 +1551,13 @@ switch lower(method)
             SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
             R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
             e   = SSE + R2;
+            
+        case 'euclidean'
+        
+            ED = cdist(spm_vec(Y),spm_vec(y));
+            ED = ED*iS*ED';
+            e  = sum(spm_vec(ED)).^2;
+        
 
         case {'logistic' 'lr'}
             % logistic optimisation 
@@ -1732,44 +1752,62 @@ switch search_method
         % jacobian (works better if derivatives are computed as if the
         % system is not a mimo - i.e.not elementwise on the output function)
         
-        J  = -df0;        
-        [u,s] = eig(params.aopt.Cp);
+        J  = -df0;      
+        Cp = params.aopt.Cp;
+        Cp(isnan(Cp))=0;
+        Cp(isinf(Cp))=0;
+        [u,s] = eig(Cp);
         s=diag(s);
         [~,order] = sort(abs(s),'descend');
         r = atcm.fun.findthenearest(cumsum(abs(s(order)))./sum(abs(s(order))),0.99);
         r = round(r);
         
-        r = min(r,5);
+        r = min(r,6);
+        r = max(r,2); % make sure its not 0
+        
+        if isempty(r)
+            r = 2;
+        end
         
         % restricting r to a very low dimensional (sub)space is conceptually like a
         % variational autoencoder in the assumption that some reduced space
         % can be identified but we can still project back out to full param
         % space
         
-        v  = clusterdata(J,r);
-        V  = sparse(v,1:length(red),1,r,length(red));
-        p  = ones(1,r);
-        V  = V.*repmat(~~red(:)',[r 1]);
-        
-        aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
-        
-        % hyperparameter tuning to find a in x + a*-J' using parameter
-        % components - i.e. x + (p*V)*-J'
-        g = @(a) real(obj(x0 + (a*V)'.*-df1,params));
-        
-        if params.aopt.parallel
-            options = optimset('Display','off','UseParallel',true);
-        else
-            options = optimset('Display','off');
-        end
-        
-        options.MaxIter = 12;
-        
-        LB = p - 10;
-        UB = p + 10;
-        
-        p = fmincon(g,p,[],[],[],[],LB,UB,[],options);
+        v  = clusterdata(real(J),r);
+        try
+            V  = sparse(v,1:length(red),1,r,length(red));
+            p  = ones(1,r);
+            V  = V.*repmat(~~red(:)',[r 1]);
 
+            % options for the objective function
+            aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
+
+            % hyperparameter tuning to find a in x + a*-J' using parameter
+            % components - i.e. x + (p*V)*-J'
+            g = @(a) real(obj(x0 + (a*V)'.*-df1,params));
+
+            if params.aopt.parallel
+                options = optimset('Display','off','UseParallel',true);
+            else
+                options = optimset('Display','off');
+            end
+
+            % we're not looking for a global solution so restrict n-its and
+            % search space
+            options.MaxIter = 50;
+
+            LB = p - 10;
+            UB = p + 10;
+
+            p = fmincon(g,p,[],[],[],[],LB,UB,[],options);
+            %p = fminsearch(g,p,options);
+        
+        catch
+            V = eye(length(red));
+            p = ones(1,length(red));
+        end
+            
         x3 = (p*V)';
         J  = -df1;
         

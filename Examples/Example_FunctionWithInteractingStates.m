@@ -25,7 +25,7 @@ op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 op.step_method = 1;   % aggressive steps = 1, careful = 3, vanilla = 4.
 op.maxit       = 128; % maximum number of iterations
 
-op.inner_loop = 30;
+op.inner_loop = 2;
 op.BTLineSearch = 0;
 op.fsd=0;
 op.DoMLE = 0;

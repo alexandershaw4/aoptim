@@ -24,13 +24,10 @@
 %   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
 %
 % Note the use of different step sizes, a[p], for each parameter.
-% Optionally, a second GD can be computed to find the best step size a[p]:
+% Optionally, low dimensional hyperparameter tuning can be used to find 
+% the best step size a[p], by setting step_method = 6;
 %
-%   x[p,t+1] = x[p,t] + ( a[p] + b*-dFda[p] ) *-dFdx[p] ... where b = 1e-4
-%
-% For the new step sizes, the Armijo-Goldstein condition is enforced. The
-% secondary optimisation (of a) is only invoked is the full gradient
-% prediction initially inproved F, since it is computationally intensive.
+%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised using fminsearch
 %
 % dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
 % the objective function and not 'f' - your function). See jaco.m for options, 
@@ -49,7 +46,10 @@
 % using variations on:      (where V is the variance of each param)
 % 
 %  J      = -j ;
-%  dFdpp  = -(J'*J);
+%  dFdpp  = approx -(J'*J); -- however, we normalise out the full magnitude 
+%                              of the gradient using a LDL decomposition,
+%                              such that;
+%  dFdpp  = -L*(D./sum(D))*L' 
 %  a      = (V)./(1-dFdpp);   
 % 
 % If step_method = 3, dFdpp is a small number and this reduces to a simple
@@ -58,17 +58,19 @@
 % parameter steps & can be useful when your start positions are a long way
 % from the solution. In either case, note that the variance term V[p] on the
 % parameter distribution is a scaled version of the step size. 
+% 
+% Alternatively, step_method=6 invokes hyperparameter tuning of the step
+% size.
 %
 % For each iteration of the ascent:
 % 
 %   dx[p]  = x[p] + a[p]*-dFdx
 %
-% Under default settings, the probability of each predicted dx[p] coming 
+% With the MLE setting, the probability of each predicted dx[p] coming 
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
-%
-%   j0     = J*error_vector';                  % approx full derivtv matrix
-%   b      = pinv(j0'*diag(Pp)*j0)*j0'*diag(Pp)*y
+%           
+%   b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
 %   dx     = x - (a*b)
 %  
 % The objective function minimised is
@@ -88,11 +90,10 @@
 % opts.V   = [1 1]/8;       % variances for each param
 % opts.y   = [...];         % data to fit - .e.g y = f(p) + e
 % opts.maxit       = 125;   % max num iterations 
-% opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla).
+% opts.step_method = 1;     % step method - 1 (big), 3 (small) and 4 (vanilla)**.
 % opts.im    = 1;           % flag to include momentum of parameters
 % opts.order = 2;           % partial derivate fun option (see jaco.m): 1 or 2
 % opts.hyperparameters = 0; % flag to do a grad ascent on the precision (3rd term in FE)
-% opts.BTLineSearch    = 1; % back tracking line search
 % opts.criterion    = -300  % convergence threshold
 % opts.mleselect    = 0;    % maximum likelihood param selection
 % opts.objective    = 'fe'; % objective fun: 'free energy', 'logevidence','sse', ...
@@ -145,10 +146,6 @@
 %
 % Approximation of derivaives by finite difference methods:
 % https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
-%
-% AS2019/2020/2021
-% alexandershaw4@gmail.com
-% global aopt
 ```
 
 Here's a video of the the optimiser solving a system of nonlinear differential equations that describe a mean-field neural mass model - fitting it's spectral output to some real data:

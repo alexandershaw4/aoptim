@@ -47,7 +47,10 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % using variations on:      (where V is the variance of each param)
 % 
 %  J      = -j ;
-%  dFdpp  = -(J'*J);
+%  dFdpp  = approx -(J'*J); -- however, we normalise out the full magnitude 
+%                              of the gradient using a LDL decomposition,
+%                              such that;
+%  dFdpp  = -L*(D./sum(D))*L' 
 %  a      = (V)./(1-dFdpp);   
 % 
 % If step_method = 3, dFdpp is a small number and this reduces to a simple
@@ -68,8 +71,8 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
 %
-%   j0     = J*error_vector';                  % approx full derivtv matrix
-%   b      = pinv(j0'*diag(Pp)*j0)*j0'*diag(Pp)*y
+%   J      = J*error_vector';                  
+%   b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
 %   dx     = x - (a*b)
 %  
 % The objective function minimised is
@@ -209,12 +212,14 @@ aopt.doimagesc       = doimagesc;  % change plot to a surface
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
 aopt.corrweight      = corrweight;
+aopt.factorise_gradients = factorise_gradients;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
 givetol     = allow_worsen; % Allow bad updates within a tolerance
 EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
 WeightByProbability = WeightByProbability; % weight parameter updates by probability
+ExLineSearch = ext_linesearch;
 
 params.aopt = aopt;      % Need to move form global aopt to a structure
 params.userplotfun = userplotfun;
@@ -385,21 +390,28 @@ while iterate
                                         
         % Compute The Parameter Step (from gradients and step sizes):
         % % x[p,t+1] = x[p,t] + a[p]*-dfdx[p] 
-        %------------------------------------------------------------------
-        if search_method ~= 100
-            dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );  
-            ddxm = dx;
-        else
-            % When we are doing a greedy search there are multiple dx's
-            % resulting from different step size methods - try them all.
-            aopt.updatej = false; % switch off objective fun triggers
-            aopt.updateh = false;
-            params.aopt  = aopt;
-            for ist = 1:length(steps)
-                dx(:,ist) = compute_dx(x1,a{ist},J{ist},red,steps(ist),params);
-                ex(:,ist) = obj(dx(:,ist),params);
+        %------------------------------------------------------------------if
+        if ~ExLineSearch
+            if search_method ~= 100
+                dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );  
+                ddxm = dx;
+            else
+                % When we are doing a greedy search there are multiple dx's
+                % resulting from different step size methods - try them all.
+                aopt.updatej = false; % switch off objective fun triggers
+                aopt.updateh = false;
+                params.aopt  = aopt;
+                for ist = 1:length(steps)
+                    dx(:,ist) = compute_dx(x1,a{ist},J{ist},red,steps(ist),params);
+                    ex(:,ist) = obj(dx(:,ist),params);
+                end
+                ddxm = dx;
             end
-            ddxm = dx;
+        else
+            %fobj = @(x) obj_J(x,params);
+            %[dx,~] = linesearch(fobj,y,x1,4,1e-5,50);
+            %fobj = @(x) obj(x,params);
+            %lso = lineSearch(fobj,x1,(df0./norm(df0)),'none');
         end
         
         % The following options are like 'E-steps' or line search options 
@@ -414,6 +426,8 @@ while iterate
             % dx prediction from step method n
             dx = ddxm(:,istepm); 
         
+            pupdate(loc,n,nfun,e1,e1,'p dists',toc);
+            
             % Distributions
             pt  = zeros(1,length(x1));
             for i = 1:length(x1)
@@ -469,35 +483,49 @@ while iterate
             % This is a variation on the Gauss-Newton algorithm - compute 
             % MLE via WLS - where the weights are the probabilities
             %------------------------------------------------------------------
-            if DoMLE                        % note - this could be iterated
+            if DoMLE                     
                 iter_mle = true;
+                nmfun    = 0;
+                clear b
+                
                 while iter_mle
-                    %if nfun == 1
-                        pupdate(loc,n,0,e1,e1,'MLE/WLS',toc);
-                    %end
-                    if ~ismimo
-                        j  = J(:)*er';
-                    else
-                        j = aopt.J;
+                    pupdate(loc,n,nmfun,e1,e1,'MLE/WLS',toc);
+                    nmfun = nmfun + 1;
+                    nfun  = nfun  + 1;
+                    
+                    % parameter derivatives
+                    if ~ismimo;  j  = J(:)*er';
+                    else;        j = aopt.J;
                     end
+                    
+                    % weights and residuals
                     w  = pt;
-                    r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); % residuals
+                    r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); 
 
                     if ~isempty(FS)
                         r0 = FS(r0);
                     end
 
-                    b  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
-                    % inclusion of a weight essentially makes this a Marquardt/
-                    % regularisation parameter
+                    db  = ( pinv(j'*diag(w)*j)*j'*diag(w) )'*r0;
+                    
+                    % b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
+                    try    b = b - db;
+                    catch; b = db;
+                    end
+                    
+                    % inclusion of a weight essentially makes this a Marquardt regularisation parameter
                     if isvector(a)
                         dxd = x1 - a.*b;
                     else
                         dxd = x1 - a*b; % recompose dx including step matrix (a)
                     end
                     
-                    if obj(dxd,params) < obj(x1,params)
+                    % update x
+                    if obj(dxd,params) < obj(x1,params) && (nmfun < 3)
                         x1 = dxd;
+                        x0 = x1;
+                        e1 = obj(x1,params);
+                        e0 = e1;
                     else
                         iter_mle = false;
                         dx = dxd;
@@ -508,6 +536,7 @@ while iterate
             % (option) Momentum inclusion
             %------------------------------------------------------------------
             if n > 2 && IncMomentum
+                pupdate(loc,n,nfun,e1,e1,'momentm',toc);
                 % The idea here is that we can have more confidence in
                 % parameters that are repeatedly updated in the same direction,
                 % so we can take bigger steps for those parameters
@@ -535,6 +564,8 @@ while iterate
             aopt.updatej = false; % switch off objective fun triggers
             aopt.updateh = false;
             params.aopt  = aopt;
+            
+            pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
 
             if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
                 % Don't perform checks, assume all f(dx[i]) <= e1
@@ -598,7 +629,7 @@ while iterate
                         thresh = 1 - (alpha - (1-(mean(1 - (p_hist(end,:)-p_hist(end-1,:))))) );
                     end
 
-                    pupdate(loc,n,0,e1,e1,'mleslct',toc);
+                    pupdate(loc,n,nfun,e1,e1,'mleslct',toc);
 
                     PP = pt(:) ;
 
@@ -625,19 +656,14 @@ while iterate
 
                 end            
             end
-
-            if ~DoMLE  
-                fprintf('--> euc dist(dp) = %d\n',cdist(dx',x1'));
-            end
             
+            fprintf('--> euc dist(dp) = %d\n',cdist(dx',x1'));
+
            % Save for this step method...
            ddxm(:,istepm) = dx; 
 
         end
-                
-        % Print the full (un-filtered / line searched prediction) ?
-        %pupdate(loc,n,0,min(de,e0),e1,'predict',toc);
-        
+                        
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         if givetol; etol = e1 * ( ( 0.5./(n*2) )  );
@@ -648,7 +674,7 @@ while iterate
             inner_loop=2;
         end
         
-        deltap = abs(sum(dx-x1));
+        deltap = cdist(dx',x1');
         deltaptol = 1e-3;
         
         % if running multiple search (step) methods, now is the time to
@@ -662,12 +688,19 @@ while iterate
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
         
+        if n > 2
+            % make a prediction using changes so far
+            
+            
+            
+        end        
+        
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
         if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
             
             % If the objective function has improved...
-            if nfun == 1; pupdate(loc,n,0,de,e1,'improve',toc); end
+            if nfun == 1; pupdate(loc,n,nfun,de,e1,'improve',toc); end
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -1282,6 +1315,20 @@ Y  = aopt.y;
 
 end
 
+function [e,J] = obj_J(x,params)
+% wrapped version of objective that returns the full (i.e. MIMO) version of
+% the Jacobian
+params.aopt.mimo=1;
+
+if nargout==1
+    e = obj(x,params);
+    J = [];
+else
+    [e,J,er,mp,Cp,L,params] = obj(x,params);
+    J = params.aopt.J;
+end
+end
+
 function [e,J,er,mp,Cp,L,params] = obj(x0,params)
 % Computes the objective function - i.e. the Free Energy or squared error to 
 % minimise. Also returns the parameter Jacobian, error (vector), model prediction
@@ -1622,7 +1669,7 @@ if nargout == 2 || nargout == 7
             [J,ip] = jacopar(@obj,x0,V,0,Ord,{params});
         end
     elseif aopt.mimo == 1
-        nout   = 4;
+        nout   = 3;
         if ~aopt.parallel
             % option 3: dfdp, not parallel, ObjF has multiple outputs
             %----------------------------------------------------------
@@ -1665,6 +1712,11 @@ if nargout == 2 || nargout == 7
     catch; IJ(find(ip),:) = J(find(ip),:);
     end
     J  = IJ;
+    
+    % unstable parameters can introduce NaN and inf's into J: set gradient
+    % to 0 and it won't get updated...
+    %J(isnan(J))=0;
+    %J(isinf(J))=0;
     
     aopt.updateh  = 1;
     aopt.computeh = true;
@@ -1710,11 +1762,25 @@ function [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
 aopt = params.aopt;
 search_method = step_method;
 
+% J = -gradient
+J      = -df0';
+
+% if aopt.factorise_gradients
+%     a = ones(size(J,2),1);
+%     [L,D] = ldl_smola(J',a);  
+%     J = L*(D./sum(diag(D)))*L';
+% end
+
 switch search_method
     case 1
         
-        J      = -df0';
-        dFdpp  = -(J'*J);
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
         
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
@@ -1722,7 +1788,7 @@ switch search_method
         [uu,ss,vv] = spm_svd(x3);
         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
         x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
-                
+                        
     case 2
         
         J     = -df0';
@@ -1735,7 +1801,6 @@ switch search_method
 
     case 3
         
-        J      = -df0;
         dFdpp  = -(J'*J);
         
         %Initial step 
@@ -1743,7 +1808,6 @@ switch search_method
         
     case {4 5}
         
-        J  = -df0;
         %x3 = (1/64);
         x3 = red(:);
         
@@ -1752,7 +1816,6 @@ switch search_method
         % jacobian (works better if derivatives are computed as if the
         % system is not a mimo - i.e.not elementwise on the output function)
         
-        J  = -df0;      
         Cp = params.aopt.Cp;
         Cp(isnan(Cp))=0;
         Cp(isinf(Cp))=0;
@@ -1813,7 +1876,6 @@ switch search_method
         
     case 7
         
-        J      = -df0';
         dFdpp  = -(J'*J);
         
         % Compatibility with older matlabs
@@ -1862,6 +1924,7 @@ aopt = params.aopt;
 if search_method == 1 || search_method == 7
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
+    %dx = x1 + (sum(a).*J')';
 elseif search_method == 2
     dFdp  = a;
     dFdpp = J;
@@ -1952,6 +2015,8 @@ X.corrweight   = 0;
 X.neuralnet    = 0;
 X.WeightByProbability = 0;
 X.faster = 0;
+X.ext_linesearch = 0;
+X.factorise_gradients = 1;
 end
 
 function parseinputstruct(opts)

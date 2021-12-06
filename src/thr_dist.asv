@@ -1,0 +1,16 @@
+function e = thr_dist(Y,y)
+
+dY = detrend(Y);
+y = detrend(y);
+
+[~,iY] = sort(Y,'descend');
+[~,iy] = sort(y,'descend');
+
+Q  = sqrt( (iY.^2) - (iy.^2) );
+%N  = round(length(Q)*.2);
+
+%e  = sum(Q(1:N));
+e  = sum(Q);
+
+
+

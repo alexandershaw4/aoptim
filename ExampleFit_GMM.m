@@ -40,7 +40,7 @@ op.maxit        = 16; % maximum number of iterations
 op.inner_loop   = 10;
 op.BTLineSearch = 0;
 op.DoMLE        = 0;
-op.ismimo       = 1;
+op.ismimo       = 0;
 op.hyperparams  = 1;
 op.im           = 1;
 op.fsd          = 0;
@@ -48,8 +48,8 @@ op.FS = @(x) x(:).^2.*(1:length(x))';
 op.FS = @(x) sqrt(x);
 op.criterion  = -inf;
 op.doparallel = 0;
-
-op.DoMLE=1;
+op.DoMLE=0;
+op.factorise_gradients = 1;
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

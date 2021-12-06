@@ -22,13 +22,10 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
 %
 % Note the use of different step sizes, a[p], for each parameter.
-% Optionally, a second GD can be computed to find the best step size a[p]:
+% Optionally, low dimensional hyperparameter tuning can be used to find 
+% the best step size a[p], by setting step_method = 6;
 %
-%   x[p,t+1] = x[p,t] + ( a[p] + b*-dFda[p] ) *-dFdx[p] ... where b = 1e-4
-%
-% For the new step sizes, the Armijo-Goldstein condition is enforced. The
-% secondary optimisation (of a) is only invoked is the full gradient
-% prediction initially inproved F, since it is computationally intensive.
+%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised using fminsearch
 %
 % dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
 % the objective function and not 'f' - your function). See jaco.m for options, 
@@ -70,8 +67,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % With the MLE setting, the probability of each predicted dx[p] coming 
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
-%
-%   J      = J*error_vector';                  
+%           
 %   b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
 %   dx     = x - (a*b)
 %  

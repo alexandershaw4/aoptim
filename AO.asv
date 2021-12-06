@@ -47,7 +47,10 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % using variations on:      (where V is the variance of each param)
 % 
 %  J      = -j ;
-%  dFdpp  = -(J'*J);
+%  dFdpp  = approx -(J'*J); -- however, we normalise out the full magnitude 
+%                              of the gradient using a LDL decomposition,
+%                              such that;
+%  dFdpp  = -L*(D./sum(D))*L' 
 %  a      = (V)./(1-dFdpp);   
 % 
 % If step_method = 3, dFdpp is a small number and this reduces to a simple
@@ -67,8 +70,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % With the MLE setting, the probability of each predicted dx[p] coming 
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
-%
-%   J      = J*error_vector';                  
+%           
 %   b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
 %   dx     = x - (a*b)
 %  
@@ -209,6 +211,7 @@ aopt.doimagesc       = doimagesc;  % change plot to a surface
 aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
 aopt.corrweight      = corrweight;
+aopt.factorise_gradients = factorise_gradients;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -686,7 +689,7 @@ while iterate
         
         if n > 2
             % make a prediction using changes so far
-            for i = 1:
+            
             
             
         end        
@@ -1709,6 +1712,11 @@ if nargout == 2 || nargout == 7
     end
     J  = IJ;
     
+    % unstable parameters can introduce NaN and inf's into J: set gradient
+    % to 0 and it won't get updated...
+    %J(isnan(J))=0;
+    %J(isinf(J))=0;
+    
     aopt.updateh  = 1;
     aopt.computeh = true;
     
@@ -1753,11 +1761,25 @@ function [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
 aopt = params.aopt;
 search_method = step_method;
 
+% J = -gradient
+J      = -df0';
+
+% if aopt.factorise_gradients
+%     a = ones(size(J,2),1);
+%     [L,D] = ldl_smola(J',a);  
+%     J = L*(D./sum(diag(D)))*L';
+% end
+
 switch search_method
     case 1
         
-        J      = -df0';
-        dFdpp  = -(J'*J);
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
         
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
@@ -1765,7 +1787,7 @@ switch search_method
         [uu,ss,vv] = spm_svd(x3);
         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
         x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
-                
+                        
     case 2
         
         J     = -df0';
@@ -1778,7 +1800,6 @@ switch search_method
 
     case 3
         
-        J      = -df0;
         dFdpp  = -(J'*J);
         
         %Initial step 
@@ -1786,7 +1807,6 @@ switch search_method
         
     case {4 5}
         
-        J  = -df0;
         %x3 = (1/64);
         x3 = red(:);
         
@@ -1795,7 +1815,6 @@ switch search_method
         % jacobian (works better if derivatives are computed as if the
         % system is not a mimo - i.e.not elementwise on the output function)
         
-        J  = -df0;      
         Cp = params.aopt.Cp;
         Cp(isnan(Cp))=0;
         Cp(isinf(Cp))=0;
@@ -1856,7 +1875,6 @@ switch search_method
         
     case 7
         
-        J      = -df0';
         dFdpp  = -(J'*J);
         
         % Compatibility with older matlabs
@@ -1997,6 +2015,7 @@ X.neuralnet    = 0;
 X.WeightByProbability = 0;
 X.faster = 0;
 X.ext_linesearch = 0;
+X.factorise_gradients = 1;
 end
 
 function parseinputstruct(opts)

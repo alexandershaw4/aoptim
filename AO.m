@@ -27,6 +27,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %
 %   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised using fminsearch
 %
+% where V maps between a (reduced) parameter subspace and the full vector.
 % dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
 % the objective function and not 'f' - your function). See jaco.m for options, 
 % although by default these are computed using a finite difference 
@@ -60,6 +61,11 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Alternatively, step_method=6 invokes hyperparameter tuning of the step
 % size.
 %
+% By default momentum is included (opts.im=1). The idea is that we can 
+% have more confidence in parameters that are repeatedly updated in the 
+% same direction, so we can take bigger steps for those parameters as the
+% optimisation progresses.
+%
 % For each iteration of the ascent:
 % 
 %   dx[p]  = x[p] + a[p]*-dFdx
@@ -68,15 +74,17 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
 %           
-%   b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
+%   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
 %   dx     = x - (a*b)
 %  
-% The objective function minimised is
+% The {free energy} objective function minimised is
 %==========================================================================
 %  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
 %  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
 %  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
 %  F    = -sum(L);
+%
+% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' ... 
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -111,7 +119,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % opts.userplotfun = [];    % inject a user plot function into the main display
 % opts.corrweight = 1;      % weight error term by correlation
 %
-% [X,F] = AO(opts);       % call the optimser, passing the opttions struct
+% [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
 % OUTPUTS:
 %-------------------------------------------------------------------------
@@ -121,7 +129,6 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Pp  = posterior probabilites
 % H   = history
 %
-% *NOTE THAT, FOR FREE ENERGY OBJECTIVE, THE OUTPUT F-VALUE IS SIGN FLIPPED!
 % *If the optimiser isn't working well, try making V smaller!
 %
 % References
@@ -145,9 +152,11 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Approximation of derivaives by finite difference methods:
 % https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
 %
+% For an explanation of normalised gradients in gradient descent
+% https://jermwatt.github.io/machine_learning_refined/notes/3_First_order_methods/3_9_Normalized.html
+%
 % AS2019/2020/2021
 % alexandershaw4@gmail.com
-% global aopt
 
 % Print the description of steps and exit
 %--------------------------------------------------------------------------
@@ -417,7 +426,15 @@ while iterate
         
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)
-        for istepm = 1:size(ddxm,2)
+        
+        % Loop if there are multiple steps being tested (i.e. ddxm is a matrix),
+        % although this can also be because ismimo=1 (if dFdx was computed
+        % on vector output), in which case stop it at 1
+        if ~ismimo; nlp = size(ddxm,2);
+        else;       nlp = 1;
+        end
+        
+        for istepm = 1:nlp
                         
             % dx prediction from step method n
             dx = ddxm(:,istepm); 
@@ -683,20 +700,16 @@ while iterate
             dx = ddxm(:,Ith);
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
-        
-        if n > 2
-            % make a prediction using changes so far
-            
-            
-            
-        end        
-        
+                
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
         if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
             
+            % linear model prediction using history
+            %
+            
             % If the objective function has improved...
-            if nfun == 1; pupdate(loc,n,nfun,de,e1,'improve',toc); end
+            if nfun == 1; pupdate(loc,n,nfun,de,e1,'predict',toc); end
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -1438,6 +1451,7 @@ for i  = 1:length(Q)
 end
 
 e   = (spm_vec(Y) - spm_vec(y)).^2;
+e   = (spm_vec(Y) - spm_vec(y));
 ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings

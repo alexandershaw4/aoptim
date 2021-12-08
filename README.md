@@ -29,6 +29,7 @@
 %
 %   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised using fminsearch
 %
+% where V maps between a (reduced) parameter subspace and the full vector.
 % dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
 % the objective function and not 'f' - your function). See jaco.m for options, 
 % although by default these are computed using a finite difference 
@@ -62,6 +63,11 @@
 % Alternatively, step_method=6 invokes hyperparameter tuning of the step
 % size.
 %
+% By default momentum is included (opts.im=1). The idea is that we can 
+% have more confidence in parameters that are repeatedly updated in the 
+% same direction, so we can take bigger steps for those parameters as the
+% optimisation progresses.
+%
 % For each iteration of the ascent:
 % 
 %   dx[p]  = x[p] + a[p]*-dFdx
@@ -70,15 +76,17 @@
 % from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
 % MLE:
 %           
-%   b(s+1) = b(s) - (J'*J)^-1*J'*r(s)
+%   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
 %   dx     = x - (a*b)
 %  
-% The objective function minimised is
+% The {free energy} objective function minimised is
 %==========================================================================
 %  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
 %  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
 %  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
 %  F    = -sum(L);
+%
+% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' ... 
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -113,7 +121,7 @@
 % opts.userplotfun = [];    % inject a user plot function into the main display
 % opts.corrweight = 1;      % weight error term by correlation
 %
-% [X,F] = AO(opts);       % call the optimser, passing the opttions struct
+% [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
 % OUTPUTS:
 %-------------------------------------------------------------------------
@@ -123,7 +131,6 @@
 % Pp  = posterior probabilites
 % H   = history
 %
-% *NOTE THAT, FOR FREE ENERGY OBJECTIVE, THE OUTPUT F-VALUE IS SIGN FLIPPED!
 % *If the optimiser isn't working well, try making V smaller!
 %
 % References
@@ -146,6 +153,13 @@
 %
 % Approximation of derivaives by finite difference methods:
 % https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
+%
+% For an explanation of normalised gradients in gradient descent
+% https://jermwatt.github.io/machine_learning_refined/notes/3_First_order_methods/3_9_Normalized.html
+%
+% AS2019/2020/2021
+% alexandershaw4@gmail.com
+
 ```
 
 Here's a video of the the optimiser solving a system of nonlinear differential equations that describe a mean-field neural mass model - fitting it's spectral output to some real data:

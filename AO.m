@@ -700,16 +700,22 @@ while iterate
             dx = ddxm(:,Ith);
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
-                
+          
+        % linear model prediction using history
+        %
+        if n > 1
+            %b_p = cat(2,Hist.p{:});
+            % Hist.e(n);
+            % Hist.p{n};
+            % Hist.J{n};
+        end
+        
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
         if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
             
-            % linear model prediction using history
-            %
-            
             % If the objective function has improved...
-            if nfun == 1; pupdate(loc,n,nfun,de,e1,'predict',toc); end
+            if nfun == 1; pupdate(loc,n,nfun,de,e1,'improve',toc); end
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -1597,7 +1603,11 @@ switch lower(method)
 
         case 'rmse'
             % rmse: root mean squaree error
-            e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            er = spm_vec(Y)-spm_vec(y);
+            %er = er + atcm.fun.adct(er);
+            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            
+            %e = ( (norm(Q{:}*(spm_vec(Y) - spm_vec(y)),2).^2)/numel(spm_vec(Y)) ).^(1/2);
             
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
@@ -1775,12 +1785,6 @@ search_method = step_method;
 % J = -gradient
 J      = -df0';
 
-% if aopt.factorise_gradients
-%     a = ones(size(J,2),1);
-%     [L,D] = ldl_smola(J',a);  
-%     J = L*(D./sum(diag(D)))*L';
-% end
-
 switch search_method
     case 1
         
@@ -1811,7 +1815,13 @@ switch search_method
 
     case 3
         
-        dFdpp  = -(J'*J);
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
         
         %Initial step 
         x3  = (4*red)./(1-dFdpp);
@@ -1825,6 +1835,17 @@ switch search_method
         % low dimensional hyperparameter tuning based on clustering of the
         % jacobian (works better if derivatives are computed as if the
         % system is not a mimo - i.e.not elementwise on the output function)
+        
+        
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
+        
+        J = dFdpp;
         
         Cp = params.aopt.Cp;
         Cp(isnan(Cp))=0;
@@ -1858,7 +1879,7 @@ switch search_method
 
             % hyperparameter tuning to find a in x + a*-J' using parameter
             % components - i.e. x + (p*V)*-J'
-            g = @(a) real(obj(x0 + (a*V)'.*-df1,params));
+            g = @(a) real(obj(x0 + (a*V)'.*J,params));
 
             if params.aopt.parallel
                 options = optimset('Display','off','UseParallel',true);
@@ -1882,14 +1903,23 @@ switch search_method
         end
             
         x3 = (p*V)';
-        J  = -df1;
+        %J  = -df1;
         
     case 7
         
-        dFdpp  = -(J'*J);
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
         
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        
+        x3(isnan(x3))=0;
+        x3(isinf(x3))=0;
         
         %Leading SVD components
         [u,s] = eig(x3);

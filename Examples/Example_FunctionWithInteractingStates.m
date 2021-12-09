@@ -11,7 +11,7 @@ y  = f(x); % data given correct parameters
 rng default;
 
 x0 = randn(size(x));     % random start positions
-V  = ones(size(x0))/512; % variances/step sizes
+V  = ones(size(x0))/8; % variances/step sizes
 
 % Setting up the optimiser
 %-------------------------------------------------------------
@@ -30,6 +30,8 @@ op.BTLineSearch = 0;
 op.fsd=0;
 op.DoMLE = 0;
 op.doimagesc=1;
+
+op.objective='rmse';
 
 [X,F,CV] = AO(op);    % RUN IT
 

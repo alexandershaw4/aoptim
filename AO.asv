@@ -84,8 +84,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
 %  F    = -sum(L);
 %
-% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean'
-%
+% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' ... 
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -120,7 +119,7 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % opts.userplotfun = [];    % inject a user plot function into the main display
 % opts.corrweight = 1;      % weight error term by correlation
 %
-% [X,F] = AO(opts);       % call the optimser, passing the opttions struct
+% [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
 % OUTPUTS:
 %-------------------------------------------------------------------------
@@ -130,7 +129,6 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Pp  = posterior probabilites
 % H   = history
 %
-% *NOTE THAT, FOR FREE ENERGY OBJECTIVE, THE OUTPUT F-VALUE IS SIGN FLIPPED!
 % *If the optimiser isn't working well, try making V smaller!
 %
 % References
@@ -154,9 +152,11 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % Approximation of derivaives by finite difference methods:
 % https://www.ljll.math.upmc.fr/frey/cours/UdC/ma691/ma691_ch6.pdf
 %
+% For an explanation of normalised gradients in gradient descent
+% https://jermwatt.github.io/machine_learning_refined/notes/3_First_order_methods/3_9_Normalized.html
+%
 % AS2019/2020/2021
 % alexandershaw4@gmail.com
-% global aopt
 
 % Print the description of steps and exit
 %--------------------------------------------------------------------------
@@ -1597,7 +1597,9 @@ switch lower(method)
 
         case 'rmse'
             % rmse: root mean squaree error
-            e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            %e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            
+            e = ( (norm(spm_vec(Y) -spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
             
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
@@ -1775,12 +1777,6 @@ search_method = step_method;
 % J = -gradient
 J      = -df0';
 
-% if aopt.factorise_gradients
-%     a = ones(size(J,2),1);
-%     [L,D] = ldl_smola(J',a);  
-%     J = L*(D./sum(diag(D)))*L';
-% end
-
 switch search_method
     case 1
         
@@ -1811,7 +1807,13 @@ switch search_method
 
     case 3
         
-        dFdpp  = -(J'*J);
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
         
         %Initial step 
         x3  = (4*red)./(1-dFdpp);
@@ -1886,7 +1888,13 @@ switch search_method
         
     case 7
         
-        dFdpp  = -(J'*J);
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
         
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);

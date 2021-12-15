@@ -352,9 +352,9 @@ while iterate
     % Normal search method
     if search_method ~= 100
         if ~ismimo
-            [a,J] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
+            [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
         else
-            [a,J] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
+            [a,J,nJ,L,D] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
             J = -df0(:);
         end
     else
@@ -362,7 +362,7 @@ while iterate
         % computations and pick the best
         steps   = [1 3 4 7]; 
         for ist = 1:length(steps)
-            [a{ist},J{ist}] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
+            [a{ist},J{ist},nJ,L,D] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
         end
     end
      
@@ -385,6 +385,11 @@ while iterate
     % Start counters
     improve = true;
     nfun    = 0;
+    
+    % Update prediction on variance
+    red = red.*diag(denan(D));
+    aopt.pC     = red;
+    params.aopt = aopt;
     
     % iterative descent on this (-gradient) trajectory
     %======================================================================
@@ -436,6 +441,8 @@ while iterate
         
         for istepm = 1:nlp
                         
+            red(isnan(red))=0;
+            
             % dx prediction from step method n
             dx = ddxm(:,istepm); 
         
@@ -579,7 +586,7 @@ while iterate
             params.aopt  = aopt;
             
             pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
-
+            
             if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
                 % Don't perform checks, assume all f(dx[i]) <= e1
                 % i.e. full gradient prediction over parameters is good and we
@@ -1380,32 +1387,13 @@ if isfield(params,'FS')
     
     if isnumeric(Q) && ~isempty(Q)
         n1 = length(y) - length(Q);
-        Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
+        if n1 > 0
+            Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
+        else
+            Q = eye(length(yfs));
+        end
     end
 end
-
-% Manipulations of the objective function for spectral fitting
-%--------------------------------------------------------------------------
-% includepeaksinerror = aopt.includepeaksinerror;
-% if includepeaksinerror
-%     % compute euclidean distances between peaks in the output - e.g. when
-%     % the user fun returns a power spectrum that we're fitting. Use sum of
-%     % these distances as a weighting on the log evidence
-%     
-%     [~,YI] = findpeaks(real(Y));
-%     [~,yi] = findpeaks(real(y));
-%     
-%     DX = cdist(YI,yi);
-%     D  = min(DX,[],2);
-%     
-%     if any(D)
-%         iD     = 1./(D+1);
-%         totalD = sum(iD);
-%     else
-%         totalD = 1;
-%     end
-%     
-% end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
@@ -1648,6 +1636,7 @@ J = [];
 % - note this can be used differently for multi-output systems
 if nargout == 2 || nargout == 7
     V    = aopt.pC;
+    V(isnan(V))=0;
     Ord  = aopt.order; 
     
     % Switch for different steps in numerical differentiation
@@ -1771,7 +1760,7 @@ function J = compute_step_J(df0,red,e0,step_method,params,x0,x3,df1)
     [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1);
 end
 
-function [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
+function [x3,J,sJ,L,D] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
 % Given the gradients (df0) & parameter variances (red)
 % compute the step, 'a' , in:
 %
@@ -1830,6 +1819,7 @@ switch search_method
         
         %x3 = (1/64);
         x3 = red(:);
+        dFdpp = J;
         
      case 6
         % low dimensional hyperparameter tuning based on clustering of the
@@ -1949,6 +1939,8 @@ switch search_method
         x3   = xbar;        
             
 end
+
+sJ = dFdpp;
 
 end
 

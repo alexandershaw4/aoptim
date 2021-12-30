@@ -1,5 +1,14 @@
 # aoptim
 
+AO is an optimisation algorithm for parameter estimation of nonlinear dynamical and state-space models. 
+
+It performs a 2nd order gradient (curvature) descent on a free-energy objective function using a sort of EM framework that incorporates MLE, line search, momentum acceleration and other options that implicitly try to minimise the error while maximising evidence and parameter probabilities. 
+
+It is inspired by theoretical models of neuronal computation - i.e. the way the brain optimises its own 'parameters' to minimise its objective. In this sense, when applied to relevant problems, it is an AI optimiser
+
+
+
+
 ```
 % A gradient/curvature descent optimisation routine, designed primarily 
 % for nonlinear model fitting / system identification & parameter estimation. 

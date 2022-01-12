@@ -51,7 +51,8 @@ op.doparallel = 0;
 op.DoMLE=0;
 op.factorise_gradients = 1;
 op.objective='rmse';
-op.EnforcePriorProb=1;
+op.EnforcePriorProb=0;
+op.order=4;
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

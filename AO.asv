@@ -352,9 +352,9 @@ while iterate
     % Normal search method
     if search_method ~= 100
         if ~ismimo
-            [a,J] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
+            [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0); 
         else
-            [a,J] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
+            [a,J,nJ,L,D] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0); 
             J = -df0(:);
         end
     else
@@ -362,7 +362,7 @@ while iterate
         % computations and pick the best
         steps   = [1 3 4 7]; 
         for ist = 1:length(steps)
-            [a{ist},J{ist}] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
+            [a{ist},J{ist},nJ,L,D] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
         end
     end
      
@@ -385,6 +385,11 @@ while iterate
     % Start counters
     improve = true;
     nfun    = 0;
+    
+    % Update prediction on variance
+    red = real(red.*diag(denan(D)));
+    aopt.pC     = red;
+    params.aopt = aopt;
     
     % iterative descent on this (-gradient) trajectory
     %======================================================================
@@ -436,6 +441,8 @@ while iterate
         
         for istepm = 1:nlp
                         
+            red(isnan(red))=0;
+            
             % dx prediction from step method n
             dx = ddxm(:,istepm); 
         
@@ -481,8 +488,37 @@ while iterate
             prplot(pt);
 
             % If WeightByProbability is set, use p(dx) as a weight on dx
+            % iteratively until all p(dx[i]) are > 0.98
+            % -------------------------------------------------------------
             if WeightByProbability
-                x1 = x1 + ( pt(:).*(dx-x1) );
+                dx = x1 + ( pt(:).*(dx-x1) );
+                
+                optimise = true;
+                num_optloop = 0;
+                while optimise
+                    pdx = pt*0;
+                    num_optloop = num_optloop + 1;
+                    
+                    for i = 1:length(x1)
+                        if red(i)
+                            vv     = real(sqrt( red(i) ))*2;
+                            if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+                            pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+                            pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                        else
+                        end
+                    end
+                    
+                    % update dx
+                    dx = x1 + ( pt(:).*(dx-x1) );
+                    
+                    % convergence
+                    if all(pdx(~~red) > 0.98) || num_optloop > 2000
+                        optimise = false;
+                    end
+                   
+                end
+                
             end
 
             % Save for computing gradient ascent on probabilities
@@ -579,7 +615,7 @@ while iterate
             params.aopt  = aopt;
             
             pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
-
+            
             if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
                 % Don't perform checks, assume all f(dx[i]) <= e1
                 % i.e. full gradient prediction over parameters is good and we
@@ -700,16 +736,22 @@ while iterate
             dx = ddxm(:,Ith);
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
-                
+          
+        % linear model prediction using history
+        %
+        if n > 1
+            %b_p = cat(2,Hist.p{:});
+            % Hist.e(n);
+            % Hist.p{n};
+            % Hist.J{n};
+        end
+        
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
         if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
             
-            % linear model prediction using history
-            %
-            
             % If the objective function has improved...
-            if nfun == 1; pupdate(loc,n,nfun,de,e1,'predict',toc); end
+            if nfun == 1; pupdate(loc,n,nfun,de,e1,'improve',toc); end
             
             % update the error & the (reduced) parameter set
             %--------------------------------------------------------------
@@ -828,16 +870,16 @@ while iterate
                 % this selective search....
                 %----------------------------------------------------------
                 if any(thisgood)
-
+                    
                     % Print & plot update
                     nupdate = [length(find(x0 - aopt.pp)) length(x0)];
                     pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
                     if doplot; params = makeplot(V*x0,x1,params);aopt.oerror = params.aopt.oerror; end
-
+                    
                     % Reset rejection counter & JPDtol
                     n_reject_consec = 0;
                     JPDtol = Initial_JPDtol;
-
+                    
                 else
                     % If we made it to here, then neither the full gradient
                     % predicted update, nore the selective search, managed
@@ -858,31 +900,58 @@ while iterate
                 % update global store of V
                 aopt.pC = V*red;
             end
+            
         else
-            % Don't panic; it's ok 
+            % Don't panic; it's ok
             
-            % If we get here, then there were not gradient steps across any
-            % parameters which improved the objective! So...
-            pupdate(loc,n,nfun,e0,e0,'reject ',toc);
+            if sample_mvn
+                % sample from a multivariate normal over parameter set
+                pupdate(loc,n,nfun,e0,e0,'sample ',toc);
+                for ilp = 1:length(gp)
+
+                    R    = x0 - mvnrnd(x0,aopt.Cp,1)';
+                    xnew = dx + R(:);
+                    enew = obj(xnew,params);
+
+                    if enew < (e0+abs(etol))
+                        x0  = V'*(xnew);
+                        df  = enew - e_orig;
+                        e0  = enew;
+
+                        % Print & plot update
+                        nupdate = [length(find(x0 - aopt.pp)) length(x0)];
+                        pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
+                    else
+                        df = 0;
+                    end
+                end
+
+            else
             
-            % Our (prior) 'variances' are probably too small
-            red = red*1.4; 
             
-            % Update global store of V & keep counting rejections
-            aopt.pC = V*red;
-            n_reject_consec = n_reject_consec + 1;
-            
-            warning off; try df; catch df = 0; end; warning on;
-            
-            % Loosen inclusion threshold on param probability (temporarily)
-            % i.e. specified variances aren't making sense.
-            % (applies to Bayes option only)
-            if BayesAdjust
-                JPDtol = JPDtol * 1e-10;
-                pupdate(loc,n,nfun,e0,e0,'TolAdj ',toc);
+                % If we get here, then there were not gradient steps across any
+                % parameters which improved the objective! So...
+                pupdate(loc,n,nfun,e0,e0,'reject ',toc);
+
+                % Our (prior) 'variances' are probably too small
+                red = red*1.4;
+
+                % Update global store of V & keep counting rejections
+                aopt.pC = V*red;
+                n_reject_consec = n_reject_consec + 1;
+
+                warning off; try df; catch df = 0; end; warning on;
+
+                % Loosen inclusion threshold on param probability (temporarily)
+                % i.e. specified variances aren't making sense.
+                % (applies to Bayes option only)
+                if BayesAdjust
+                    JPDtol = JPDtol * 1e-10;
+                    pupdate(loc,n,nfun,e0,e0,'TolAdj ',toc);
+                end
             end
         end
-                            
+        
     end
     
     % Stopping criteria, rules etc.
@@ -1374,32 +1443,13 @@ if isfield(params,'FS')
     
     if isnumeric(Q) && ~isempty(Q)
         n1 = length(y) - length(Q);
-        Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
+        if n1 > 0
+            Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
+        else
+            Q = eye(length(yfs));
+        end
     end
 end
-
-% Manipulations of the objective function for spectral fitting
-%--------------------------------------------------------------------------
-% includepeaksinerror = aopt.includepeaksinerror;
-% if includepeaksinerror
-%     % compute euclidean distances between peaks in the output - e.g. when
-%     % the user fun returns a power spectrum that we're fitting. Use sum of
-%     % these distances as a weighting on the log evidence
-%     
-%     [~,YI] = findpeaks(real(Y));
-%     [~,yi] = findpeaks(real(y));
-%     
-%     DX = cdist(YI,yi);
-%     D  = min(DX,[],2);
-%     
-%     if any(D)
-%         iD     = 1./(D+1);
-%         totalD = sum(iD);
-%     else
-%         totalD = 1;
-%     end
-%     
-% end
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
@@ -1597,10 +1647,10 @@ switch lower(method)
 
         case 'rmse'
             % rmse: root mean squaree error
-            %e = ( (norm(spm_vec(Y)-spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
-            e = ( (norm(spm_vec(Y) -spm_vec(y),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
+            er = spm_vec(Y)-spm_vec(y);
+            %er = er + atcm.fun.adct(er);
+            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+                        
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
             e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
@@ -1616,7 +1666,20 @@ switch lower(method)
             ED = cdist(spm_vec(Y),spm_vec(y));
             ED = ED*iS*ED';
             e  = sum(spm_vec(ED)).^2;
-        
+            
+        case 'mle';
+                        
+            % we can perform parameter estimation by maximum likelihood estimation 
+            % by minimising the negative log likelihood
+            warning off;
+                       
+            w  = (1:length(Y)).';
+            Y0 = fit(w,Y,'Gauss4');
+            y0 = fit(w,y,'Gauss4');
+            %e = log(sum(Y0(w)-y0(w)));
+            e = fitgmdist(Y0(w)-y0(w),2);
+            e = e.NegativeLogLikelihood;
+            warning on;
 
         case {'logistic' 'lr'}
             % logistic optimisation 
@@ -1640,6 +1703,7 @@ J = [];
 % - note this can be used differently for multi-output systems
 if nargout == 2 || nargout == 7
     V    = aopt.pC;
+    V(isnan(V))=0;
     Ord  = aopt.order; 
     
     % Switch for different steps in numerical differentiation
@@ -1763,7 +1827,7 @@ function J = compute_step_J(df0,red,e0,step_method,params,x0,x3,df1)
     [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1);
 end
 
-function [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
+function [x3,J,sJ,L,D] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
 % Given the gradients (df0) & parameter variances (red)
 % compute the step, 'a' , in:
 %
@@ -1822,11 +1886,23 @@ switch search_method
         
         %x3 = (1/64);
         x3 = red(:);
+        dFdpp = J;
         
      case 6
         % low dimensional hyperparameter tuning based on clustering of the
         % jacobian (works better if derivatives are computed as if the
         % system is not a mimo - i.e.not elementwise on the output function)
+        
+        
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
+        
+        J = dFdpp;
         
         Cp = params.aopt.Cp;
         Cp(isnan(Cp))=0;
@@ -1860,7 +1936,7 @@ switch search_method
 
             % hyperparameter tuning to find a in x + a*-J' using parameter
             % components - i.e. x + (p*V)*-J'
-            g = @(a) real(obj(x0 + (a*V)'.*-df1,params));
+            g = @(a) real(obj(x0 + (a*V)'.*J,params));
 
             if params.aopt.parallel
                 options = optimset('Display','off','UseParallel',true);
@@ -1884,7 +1960,7 @@ switch search_method
         end
             
         x3 = (p*V)';
-        J  = -df1;
+        %J  = -df1;
         
     case 7
         
@@ -1899,11 +1975,16 @@ switch search_method
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
-        %Leading SVD components
+        x3(isnan(x3))=0;
+        x3(isinf(x3))=0;
+        
+        % Components
         [u,s] = eig(x3);
-        [~,order] = sort(abs(diag(s)),'descend');
+        s     = diag(s);
+        %x3    = u*diag(s.*(s < 0))*u';
+        
+        [~,order] = sort(abs(s),'descend');
 
-        s = diag(s);
         s = s(order);
         u = u(:,order);
         
@@ -1927,6 +2008,8 @@ switch search_method
         x3   = xbar;        
             
 end
+
+sJ = dFdpp;
 
 end
 
@@ -2035,6 +2118,7 @@ X.WeightByProbability = 0;
 X.faster = 0;
 X.ext_linesearch = 0;
 X.factorise_gradients = 1;
+X.sample_mvn = 0;
 end
 
 function parseinputstruct(opts)

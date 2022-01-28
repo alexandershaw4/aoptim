@@ -1,8 +1,9 @@
 function [X,F,Cp,PP,Hist] = AO(funopts)
 % A gradient/curvature descent optimisation routine, designed primarily 
-% for nonlinear model fitting / system identification & parameter estimation. 
+% for nonlinear model fitting / system identification / parameter estimation. 
 % 
-% The objective function minimises the free energy (~ ELBO - evidence lower bound).
+% The objective function minimises the free energy (~ ELBO - evidence lower
+% bound), SSE or RMSE.
 %
 % Y0 = f(x) + e  
 %
@@ -76,6 +77,10 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %           
 %   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
 %   dx     = x - (a*b)
+%
+% With the Gaussian Process Regression option (do_gpr), a GP is fitted over
+% (gradient) predictions and best errors to re-estimate the parameter step
+% on each iteration.
 %  
 % The {free energy} objective function minimised is
 %==========================================================================
@@ -300,6 +305,9 @@ if step_method == 0
 else autostep = 0;
 end
 
+all_dx = [];
+all_ex = [];
+
 % start optimisation loop
 %==========================================================================
 while iterate
@@ -321,6 +329,10 @@ while iterate
     [e0,~,er] = obj( V*x0(ip),params );
     df0 = real(df0);
        
+    if normalise_gradients
+        df0 = df0./sum(df0);
+    end
+    
     % Update aopt structure and place in params
     aopt         = params.aopt;
     aopt.er      = er;
@@ -426,6 +438,11 @@ while iterate
             %lso = lineSearch(fobj,x1,(df0./norm(df0)),'none');
         end
         
+        if isGaussNewton
+            % make it explicitly a Gauss-Newton scheme
+            dx = x1 - spm_dx(L*D*L',x1,-2);
+        end
+
         % The following options are like 'E-steps' or line search options 
         % - i.e. they estimate the missing variables (parameter indices & 
         % values) that should be optimised in this iteration
@@ -437,8 +454,8 @@ while iterate
         % Loop if there are multiple steps being tested (i.e. ddxm is a matrix),
         % although this can also be because ismimo=1 (if dFdx was computed
         % on vector output), in which case stop it at 1
-        if ~ismimo; nlp = size(ddxm,2);
-        else;       nlp = 1;
+        if search_method == 100; nlp = size(ddxm,2);
+        else;                    nlp = 1;
         end
         
         for istepm = 1:nlp
@@ -618,6 +635,7 @@ while iterate
             
             pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
             
+            
             if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
                 % Don't perform checks, assume all f(dx[i]) <= e1
                 % i.e. full gradient prediction over parameters is good and we
@@ -714,7 +732,112 @@ while iterate
            ddxm(:,istepm) = dx; 
 
         end
+
+        % update global points store
+        all_dx = [all_dx dx(:)];
+        all_ex = [all_ex de(:)];
+        
+        % put polyfit optimisation here
+        if do_poly
+            % fit a Gaussian Process Regression model to the available
+            % points (this will have more points on each iteration)
+            pupdate(loc,n,nfun,e1,e1,'polyfit',toc);
+            de  = obj(dx,params);
+            
+            % predictors (errors) and parameters
+            if n > 1
+                %ex = [Hist.e(:); de];
+                %py = [cat(2,Hist.p{:}) dx]';
+                ex = all_ex';
+                py = all_dx';
+            else
+                ex = [e0 de]';
+                py = [x1 dx]';
+            end
+            
+            % model and prediction for each parameter
+            for ipn = 1:length(x1)
+                pf = polyfit(ex,py(:,ipn),2);
+                yp(ipn) = polyval(pf,criterion);
+            end
+            
+            if obj(yp(:),params) < de
+                newe = obj(yp(:),params);
+                pupdate(loc,n,nfun,e1,newe,'polpred',toc);
+                dx = yp(:);
+                de = newe;
+            end
+            
+        end
+        
+        % put GP optimisation here
+        if do_gpr
+            % fit a Gaussian Process Regression model to the available
+            % points (this will have more points on each iteration)
+            pupdate(loc,n,nfun,e1,e1,'GPR fit',toc);
+            de  = obj(dx,params);
+            
+            % predictors (errors) and parameters
+            if n > 1
+                %ex = [Hist.e(:); de];
+                %py = [cat(2,Hist.p{:}) dx]';
+                ex = all_ex';
+                py = all_dx';
+            else
+                ex = [e0 de]';
+                py = [x1 dx]';
+            end
+            
+            % model and prediction for each parameter
+            for ipn = 1:length(x1)
+                
+                gprm = fitrgp(ex,py(:,ipn));
+                [yp(ipn),se(ipn,:),yint(ipn,:)] = predict(gprm,criterion);
+            end
+            
+            % compute objective at mean and both upper and lower
+            % confidence intervals, use best
+            sample_posterior = 0;
+            if ~sample_posterior
+                opts   = [yp(:) yint];
+                emx(1) = obj(opts(:,1),params);
+                emx(2) = obj(opts(:,2),params);
+                emx(3) = obj(opts(:,3),params);
+                [~,selI] = min(emx);
+                yp = opts(:,selI);
+            else
+                % sample from the posterior distirbution of the GP
+                opts   = [yp(:) yint];
+                if n == 2
+                    disp(' ');
+                end
+                for isamp = 1:length(dx)*4
+                    %selc = randi([1 3],length(dx),1);
+                    for selp = 1:length(dx)
+                        %sam_dx(selp,isamp) = opts(selp,selc(selp));
+                        r = yint(selp,1) + (yint(selp,2)-yint(selp,1)) .* rand(1,1);
+                        sam_dx(selp,isamp) = r;
                         
+                    end
+                    emx(isamp) = obj(sam_dx(:,isamp),params);
+                end
+                [~,selI] = min(emx);
+                yp = sam_dx(:,selI);
+            end
+            
+            % new predicted dx & variance
+            if emx(selI) < de
+                pupdate(loc,n,nfun,e1,emx(selI),'GPRpred',toc);
+                dx  = yp(:);
+                de  = emx(selI);
+            end
+            
+            % save & return the GP prediction
+            Hist.GP{n} = [yp(:) yint(:,1) yint(:,2)];
+            Hist.GPi{n} = selI;
+        end
+        
+        
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         if givetol; etol = e1 * ( ( 0.5./(n*2) )  );
@@ -1651,8 +1774,7 @@ switch lower(method)
         case 'rmse'
             % rmse: root mean squaree error 
             er = spm_vec(Y)-spm_vec(y);
-            er = real(er'.*iS.*er)/2;
-            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
               
         case {'qrmse' 'q_rmse'}
             % rmse: root mean squaree error incorporating precision
@@ -1684,10 +1806,10 @@ switch lower(method)
             warning off;
                        
             w  = (1:length(Y)).';
-            Y0 = fit(w,Y,'Gauss4');
-            y0 = fit(w,y,'Gauss4');
+            Y0 =  Y;% fit(w,Y,'Gauss4');
+            y0 = y;% fit(w,y,'Gauss4');
             %e = log(sum(Y0(w)-y0(w)));
-            e = fitgmdist(Y0(w)-y0(w),2);
+            e = fitgmdist(Y0-y0,2);
             e = e.NegativeLogLikelihood;
             warning on;
 
@@ -1850,6 +1972,8 @@ search_method = step_method;
 
 % J = -gradient
 J      = -df0';
+L = 1;
+D = 1;
 
 switch search_method
     case 1
@@ -1882,11 +2006,15 @@ switch search_method
     case 3
         
         if aopt.factorise_gradients
-            a = ones(size(J,2),1);
-            [L,D] = ldl_smola(J',a);
-            dFdpp = -(L*(D./sum(diag(D)))*L');
+%             a = ones(size(J,2),1);
+%             [L,D] = ldl_smola(J',a);
+%             dFdpp = -(L'*(D./sum(diag(D)))*L);
+            L = 1;
+            D = 1;
+            J = J ./ abs(sum(J));
+            dFdpp  = -(J*J');
         else
-            dFdpp  = -(J'*J);
+            dFdpp  = -(J*J');
         end
         
         %Initial step 
@@ -2044,6 +2172,7 @@ elseif search_method == 2
     dx    = x1 + ddx;    
 elseif search_method == 3                % Rasmussen w/ varying p steps
     dx    = x1 + (a.*J);                 
+    %dx = x1 + (a*J');
 elseif search_method == 4                % Flat/generic descent
     dx    = x1 + (a.*J);
 elseif search_method == 5
@@ -2129,6 +2258,10 @@ X.faster = 0;
 X.ext_linesearch = 0;
 X.factorise_gradients = 1;
 X.sample_mvn = 0;
+X.do_gpr = 0;
+X.normalise_gradients=0;
+X.isGaussNewton = 0;
+X.do_poly=0;
 end
 
 function parseinputstruct(opts)

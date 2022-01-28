@@ -418,24 +418,8 @@ classdef AODCM < handle
         function surrogateopt(obj)
             
             
-        % surrogate model optimisation
-        %------------------------------------------------------------------
-        fprintf('Performing Surrogate-Model Optimisation\n');
-        
-        LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
-        UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
-        Px  = obj.opts.x0;
-        
-        fun = @(varargin)obj.wrapdm(varargin{:});
-        objective = @(x) errfun(obj,fun,x);
-        
-        opts = optimoptions('surrogateopt','PlotFcn','surrogateoptplot');
-        opts.ObjectiveLimit = 0.05;
-        opts.MaxFunctionEvaluations = 50*length(UB);
-        [obj.X,obj.F] = surrogateopt(objective,LB,UB,opts);
             
-         [~, P] = obj.opts.fun(spm_vec(obj.X));
-         obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);  
+            
             
         end
         

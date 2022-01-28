@@ -18,7 +18,7 @@ f = @(a,f,wd) makef(w,a,f,wd);
 
 fun  = @(dx) f(dx{:});
 cfun = @(dx) fun(spm_unvec(dx,x));
-g    = @(dx) spm_vec(sum( (sqrt(spm_vec(y)) - sqrt(spm_vec(cfun(dx))) ).^2 ));
+g    = @(dx) spm_vec(sum( ((spm_vec(y)) - (spm_vec(cfun(dx))) ).^2 ));
 
 lr = 1e-2; % learning rate
 e  = g(x); % start position
@@ -30,7 +30,7 @@ while e > crit
     
     n = n + 1;
         
-    j = jaco(g,spm_vec(x),lr*~~spm_vec(x),0,1);
+    j = jaco(g,spm_vec(x),lr*~~real(spm_vec(x)),0,1);
 
     j(isinf(j))=0;
     j(isnan(j))=0;
@@ -38,6 +38,7 @@ while e > crit
     x  = spm_unvec( spm_vec(x) - (lr * spm_vec(j)), x);
     
     e = g(x);
+    e
         
     if n == 4000
         break;

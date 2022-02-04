@@ -359,6 +359,7 @@ classdef AODCM < handle
         end
         
         function F = errfun(obj,f,x)
+            % error / cost function - precision weighted RMSE
             
             if istable(x)
                 x = x.Variables;
@@ -391,8 +392,32 @@ classdef AODCM < handle
 
         end
         
-        function ga(obj)
+        % EXTERNAL PARAMETER ESTMIMATORS - SA, GA, SURROG, BAYES...
+        %================================================================
+        
+        function sa(obj)
+            % simulated annealing
             
+            fprintf('Performing Simulated-Annealing Optimisation\n');
+
+            LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+            Px  = obj.opts.x0;
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            saopts = optimoptions('simulannealbnd','MaxTime', 86400/2); % 12hours
+
+            [obj.X,obj.F,exitFlag,output] = simulannealbnd(objective,Pc,LB,UB,saopts);
+            
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+            
+        end
+        
+        function ga(obj)
+            % genetic algorithm
             
             fprintf('Performing (Matlab) Genetic Algorithm Optimsation\n');
 
@@ -416,13 +441,45 @@ classdef AODCM < handle
         end
         
         function surrogateopt(obj)
+            % surrogate optimisation algorithm
             
+        % surrogate model optimisation
+        %------------------------------------------------------------------
+        fprintf('Performing Surrogate-Model Optimisation\n');
+        
+        LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
+        UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+        Px  = obj.opts.x0;
+        
+        fun = @(varargin)obj.wrapdm(varargin{:});
+        objective = @(x) errfun(obj,fun,x);
+        
+        opts = optimoptions('surrogateopt','PlotFcn','surrogateoptplot');
+        opts.ObjectiveLimit = 0.05;
+        opts.MaxFunctionEvaluations = 50*length(UB);
+        [obj.X,obj.F] = surrogateopt(objective,LB,UB,opts);
             
-            
-            
+         [~, P] = obj.opts.fun(spm_vec(obj.X));
+         obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);  
             
         end
         
+        function ps(obj)
+            
+            fprintf('Performing Particle-Swarm Optimisation\n');
+            
+            LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+            Px  = obj.opts.x0;
+
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+        
+            options = optimoptions('particleswarm','MaxTime', 86400/2);
+            options.InitialSwarmMatrix = Px';
+            [X,F(i)] = particleswarm(objective,length(Px),LB,UB,options);
+
+        end
         
         function bayesopt(obj)
             

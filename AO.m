@@ -350,8 +350,9 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------    
     % Compute step, a, in scheme: dx = x0 + a*-J
+    if ~isempty(steps_choice); nstp = length(steps_choice);else;nstp=4;end
     if     n == 1 && search_method~=100 ; a = red*0; 
-    elseif n == 1 && search_method==100 ; a = repmat({red*0},1,4); 
+    elseif n == 1 && search_method==100 ; a = repmat({red*0},1,nstp); 
     end
     
     % Setting step size to 6 invokes low-dimensional hyperparameter tuning
@@ -372,7 +373,10 @@ while iterate
     else
         % Greedy search method: force it to try a few different step 
         % computations and pick the best
-        steps   = [1 3 4 7]; 
+        if ~isempty(steps_choice);steps = steps_choice;
+        else;                     steps = [1 3 4 7]; 
+        end
+        
         for ist = 1:length(steps)
             [a{ist},J{ist},nJ,L,D] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
         end
@@ -2262,6 +2266,7 @@ X.do_gpr = 0;
 X.normalise_gradients=0;
 X.isGaussNewton = 0;
 X.do_poly=0;
+X.steps_choice = [];
 end
 
 function parseinputstruct(opts)

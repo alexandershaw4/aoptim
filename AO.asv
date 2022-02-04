@@ -305,6 +305,9 @@ if step_method == 0
 else autostep = 0;
 end
 
+all_dx = [];
+all_ex = [];
+
 % start optimisation loop
 %==========================================================================
 while iterate
@@ -347,8 +350,9 @@ while iterate
     % initial search direction (steepest) and slope
     %----------------------------------------------------------------------    
     % Compute step, a, in scheme: dx = x0 + a*-J
+    if ~isempty(steps_choice); nstp = length(steps_choice);else;nstp=4;end
     if     n == 1 && search_method~=100 ; a = red*0; 
-    elseif n == 1 && search_method==100 ; a = repmat({red*0},1,4); 
+    elseif n == 1 && search_method==100 ; a = repmat({red*0},1,nstp); 
     end
     
     % Setting step size to 6 invokes low-dimensional hyperparameter tuning
@@ -369,7 +373,10 @@ while iterate
     else
         % Greedy search method: force it to try a few different step 
         % computations and pick the best
-        steps   = [1 3 4 7]; 
+        if ~isempty(steps_choice);steps = steps_choice;
+        else;                     steps = [1 3 4 7]; 
+        end
+        
         for ist = 1:length(steps)
             [a{ist},J{ist},nJ,L,D] = compute_step(df0,red,e0,steps(ist),params,x0,a{ist},df0);
         end
@@ -632,46 +639,6 @@ while iterate
             
             pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
             
-%             if do_gpr
-%                 % fit a Gaussian Process Regression model to the available
-%                 % points (this will have more points on each iteration)
-%                 pupdate(loc,n,nfun,e1,e1,'GPR fit',toc);
-%                 de  = obj(dx,params);
-%                 
-%                 % predictors (errors) and parameters
-%                 if n > 1
-%                     ex = [Hist.e(:); de];
-%                     py = [cat(2,Hist.p{:}) dx]';
-%                 else
-%                     ex = [e0 de]';
-%                     py = [x1 dx]';
-%                 end
-%                 
-%                 % model and prediction for each parameter
-%                 for ipn = 1:length(x1)
-%                     gprm = fitrgp(ex,py(:,ipn));
-%                     [yp(ipn),se(ipn,:),yint(ipn,:)] = predict(gprm,criterion);
-%                 end
-%                                 
-%                 % compute objective at mean and both upper and lower
-%                 % confidence intervals, use best
-%                 opts   = [yp(:) yint];
-%                 emx(1) = obj(opts(:,1),params);
-%                 emx(2) = obj(opts(:,2),params);
-%                 emx(3) = obj(opts(:,3),params);
-%                 [~,selI] = min(emx);
-%                 yp = opts(:,selI);
-%                 
-%                 % new predicted dx & variance   
-%                 if emx(selI) < de
-%                     pupdate(loc,n,nfun,e1,emx(selI),'GPRupdt',toc);
-%                     dx  = yp(:); 
-%                 end
-%                 
-%                 % save & return the GP prediction
-%                 Hist.GP{n} = [yp(:) yint(:,1) yint(:,2)];
-%                 Hist.GPi{n} = selI;
-%             end
             
             if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
                 % Don't perform checks, assume all f(dx[i]) <= e1
@@ -769,7 +736,43 @@ while iterate
            ddxm(:,istepm) = dx; 
 
         end
-          
+
+        % update global points store
+        all_dx = [all_dx dx(:)];
+        all_ex = [all_ex de(:)];
+        
+        % put polyfit optimisation here
+        if do_poly
+            % fit a Gaussian Process Regression model to the available
+            % points (this will have more points on each iteration)
+            pupdate(loc,n,nfun,e1,e1,'polyfit',toc);
+            de  = obj(dx,params);
+            
+            % predictors (errors) and parameters
+            if n > 1
+                %ex = [Hist.e(:); de];
+                %py = [cat(2,Hist.p{:}) dx]';
+                ex = all_ex';
+                py = all_dx';
+            else
+                ex = [e0 de]';
+                py = [x1 dx]';
+            end
+            
+            % model and prediction for each parameter
+            for ipn = 1:length(x1)
+                pf = polyfit(ex,py(:,ipn),2);
+                yp(ipn) = polyval(pf,criterion);
+            end
+            
+            if obj(yp(:),params) < de
+                newe = obj(yp(:),params);
+                pupdate(loc,n,nfun,e1,newe,'polpred',toc);
+                dx = yp(:);
+                de = newe;
+            end
+            
+        end
         
         % put GP optimisation here
         if do_gpr
@@ -780,8 +783,10 @@ while iterate
             
             % predictors (errors) and parameters
             if n > 1
-                ex = [Hist.e(:); de];
-                py = [cat(2,Hist.p{:}) dx]';
+                %ex = [Hist.e(:); de];
+                %py = [cat(2,Hist.p{:}) dx]';
+                ex = all_ex';
+                py = all_dx';
             else
                 ex = [e0 de]';
                 py = [x1 dx]';
@@ -789,13 +794,14 @@ while iterate
             
             % model and prediction for each parameter
             for ipn = 1:length(x1)
-                gprm = fitrgp(ex,py(:,ipn),'KernelFunction','ardsquaredexponential');
+                
+                gprm = fitrgp(ex,py(:,ipn));
                 [yp(ipn),se(ipn,:),yint(ipn,:)] = predict(gprm,criterion);
             end
             
             % compute objective at mean and both upper and lower
             % confidence intervals, use best
-            sample_posterior = 1;
+            sample_posterior = 0;
             if ~sample_posterior
                 opts   = [yp(:) yint];
                 emx(1) = obj(opts(:,1),params);
@@ -813,6 +819,8 @@ while iterate
                     %selc = randi([1 3],length(dx),1);
                     for selp = 1:length(dx)
                         %sam_dx(selp,isamp) = opts(selp,selc(selp));
+                        r = yint(selp,1) + (yint(selp,2)-yint(selp,1)) .* rand(1,1);
+                        sam_dx(selp,isamp) = r;
                         
                     end
                     emx(isamp) = obj(sam_dx(:,isamp),params);
@@ -823,7 +831,7 @@ while iterate
             
             % new predicted dx & variance
             if emx(selI) < de
-                pupdate(loc,n,nfun,e1,emx(selI),'GPRupdt',toc);
+                pupdate(loc,n,nfun,e1,emx(selI),'GPRpred',toc);
                 dx  = yp(:);
                 de  = emx(selI);
             end
@@ -2257,6 +2265,8 @@ X.sample_mvn = 0;
 X.do_gpr = 0;
 X.normalise_gradients=0;
 X.isGaussNewton = 0;
+X.do_poly=0;
+X.steps_choice = [];
 end
 
 function parseinputstruct(opts)

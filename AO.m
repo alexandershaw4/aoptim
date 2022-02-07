@@ -866,14 +866,6 @@ while iterate
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
           
-        % linear model prediction using history
-        %
-        if n > 1
-            %b_p = cat(2,Hist.p{:});
-            % Hist.e(n);
-            % Hist.p{n};
-            % Hist.J{n};
-        end
         
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
@@ -1120,7 +1112,12 @@ while iterate
         pupdate(loc,n,nfun,e1,e0,'resetv');
         red     = diag(pC);
         aopt.pC = V*red;
-        a       = red;
+        %a       = red;
+        
+        if     n == 1 && search_method~=100 ; a = red*0;
+        elseif n == 1 && search_method==100 ; a = repmat({red*0},1,nstp);
+        end
+        
     end
     
     % stop at max iterations

@@ -318,7 +318,9 @@ while iterate
    
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
-    XX0 = x0;
+    XX0     = x0;
+    aopt.pp = x0(:);
+
         
     % compute gradients & search directions
     %----------------------------------------------------------------------
@@ -403,9 +405,9 @@ while iterate
     nfun    = 0;
     
     % Update prediction on variance
-    %red = real(red.*diag(denan(D)));
-    dst = real(red.*diag(denan(D))) - red;
-    red = red + (0.25 * dst);
+    red = real(red.*diag(denan(D)));
+    %dst = real(red.*diag(denan(D))) - red;
+    %red = red + (0.25 * dst);
     aopt.pC     = red;
     params.aopt = aopt;
     
@@ -1662,7 +1664,8 @@ if aopt.hyperparameters
         %==========================================================================
         clear P;
         nh  = length(Q);
-        S   = spm_inv(iS);
+        warning off;
+        S   = spm_inv(iS);warning on;
         ihC = speye(nh,nh)*exp(4);
         hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
         for i = 1:nh
@@ -1782,6 +1785,7 @@ switch lower(method)
             % components
             er = spm_vec(Y)-spm_vec(y);
             er = real(er'.*iS.*er)/2;
+            er = full(er);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
             
         case {'correlation','corr','cor','r2'}

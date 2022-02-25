@@ -30,7 +30,7 @@ V(3:4)=1/16;
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 7;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
@@ -55,7 +55,9 @@ op.objective='rmse';
 op.EnforcePriorProb=0;
 op.order=2;
 %op.do_gpr=1;
-op.do_poly=1;
+%op.do_poly=1;
+
+op.FS = @(x) [atcm.fun.HVG_DD(ifft(x,length(w)),w);sum(x)];
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

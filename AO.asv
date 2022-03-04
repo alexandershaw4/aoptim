@@ -318,7 +318,9 @@ while iterate
    
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
-    XX0 = x0;
+    %XX0     = x0;
+    %aopt.pp = x0(:);
+
         
     % compute gradients & search directions
     %----------------------------------------------------------------------
@@ -403,11 +405,11 @@ while iterate
     nfun    = 0;
     
     % Update prediction on variance
-    %red = real(red.*diag(denan(D)));
-    dst = real(red.*diag(denan(D))) - red;
-    red = red + (0.25 * dst);
-    aopt.pC     = red;
-    params.aopt = aopt;
+    red = real(red.*diag(denan(D)));
+    %dst = real(red.*diag(denan(D))) - red;
+    %red = red + (0.25 * dst);
+    %aopt.pC     = red;
+    %params.aopt = aopt;
     
     % iterative descent on this (-gradient) trajectory
     %======================================================================
@@ -679,6 +681,16 @@ while iterate
                     % Identify improver-parameters            
                     gp  = double(DFE < e0); % e0
                     gpi = find(gp);
+                    
+                    
+                    % in the case where all param predictions fail,
+                    % check whether flipping the sign of the gradient helps
+                    if ~any(gpi)
+                        tdx = dx - x0;
+                        
+                        
+                    end
+                    
                 end
 
                 if ~BayesAdjust
@@ -866,14 +878,6 @@ while iterate
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
           
-        % linear model prediction using history
-        %
-        if n > 1
-            %b_p = cat(2,Hist.p{:});
-            % Hist.e(n);
-            % Hist.p{n};
-            % Hist.J{n};
-        end
         
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
@@ -1039,8 +1043,9 @@ while iterate
                 xnew = x0;
                 for ilp = 1:length(x1)
 
-                    R    = x0 - mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
-                    xnew = xnew + R(:);
+                    %R    = x0 - mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
+                    %xnew = xnew + R(:);
+                    xnew = x0 - (red.^2).*mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
                     enew = obj(xnew,params);
 
                     if enew < (e0+abs(etol))
@@ -1120,7 +1125,12 @@ while iterate
         pupdate(loc,n,nfun,e1,e0,'resetv');
         red     = diag(pC);
         aopt.pC = V*red;
-        a       = red;
+        %a       = red;
+        
+        if     n == 1 && search_method~=100 ; a = red*0;
+        elseif n == 1 && search_method==100 ; a = repmat({red*0},1,nstp);
+        end
+        
     end
     
     % stop at max iterations
@@ -1665,7 +1675,8 @@ if aopt.hyperparameters
         %==========================================================================
         clear P;
         nh  = length(Q);
-        S   = spm_inv(iS);
+        warning off;
+        S   = spm_inv(iS);warning on;
         ihC = speye(nh,nh)*exp(4);
         hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
         for i = 1:nh
@@ -1785,6 +1796,7 @@ switch lower(method)
             % components
             er = spm_vec(Y)-spm_vec(y);
             er = real(er'.*iS.*er)/2;
+            er = full(er);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
             
         case {'correlation','corr','cor','r2'}
@@ -2010,13 +2022,13 @@ switch search_method
     case 3
         
         if aopt.factorise_gradients
-%             a = ones(size(J,2),1);
-%             [L,D] = ldl_smola(J',a);
-%             dFdpp = -(L'*(D./sum(diag(D)))*L);
-            L = 1;
-            D = 1;
-            J = J ./ abs(sum(J));
-            dFdpp  = -(J*J');
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L'*(D./sum(diag(D)))*L);
+            %L = 1;
+            %D = 1;
+            %J = J ./ abs(sum(J));
+            %dFdpp  = -(J*J');
         else
             dFdpp  = -(J*J');
         end

@@ -318,8 +318,8 @@ while iterate
    
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
-    XX0     = x0;
-    aopt.pp = x0(:);
+    %XX0     = x0;
+    %aopt.pp = x0(:);
 
         
     % compute gradients & search directions
@@ -408,8 +408,8 @@ while iterate
     red = real(red.*diag(denan(D)));
     %dst = real(red.*diag(denan(D))) - red;
     %red = red + (0.25 * dst);
-    aopt.pC     = red;
-    params.aopt = aopt;
+    %aopt.pC     = red;
+    %params.aopt = aopt;
     
     % iterative descent on this (-gradient) trajectory
     %======================================================================
@@ -681,6 +681,7 @@ while iterate
                     % Identify improver-parameters            
                     gp  = double(DFE < e0); % e0
                     gpi = find(gp);
+                                        
                 end
 
                 if ~BayesAdjust
@@ -1033,8 +1034,9 @@ while iterate
                 xnew = x0;
                 for ilp = 1:length(x1)
 
-                    R    = x0 - mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
-                    xnew = xnew + R(:);
+                    %R    = x0 - mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
+                    %xnew = xnew + R(:);
+                    xnew = x0 - (red.^2).*mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
                     enew = obj(xnew,params);
 
                     if enew < (e0+abs(etol))
@@ -1990,7 +1992,13 @@ switch search_method
         else
             dFdpp  = -(J'*J);
         end
-        
+
+        % sometimes unstable
+        dFdpp(isnan(dFdpp))=0;
+        dFdpp(isinf(dFdpp))=0;
+        red(isnan(red))=0;
+        red(isinf(red))=0;
+
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
@@ -2011,13 +2019,13 @@ switch search_method
     case 3
         
         if aopt.factorise_gradients
-%             a = ones(size(J,2),1);
-%             [L,D] = ldl_smola(J',a);
-%             dFdpp = -(L'*(D./sum(diag(D)))*L);
-            L = 1;
-            D = 1;
-            J = J ./ abs(sum(J));
-            dFdpp  = -(J*J');
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L'*(D./sum(diag(D)))*L);
+            %L = 1;
+            %D = 1;
+            %J = J ./ abs(sum(J));
+            %dFdpp  = -(J*J');
         else
             dFdpp  = -(J*J');
         end

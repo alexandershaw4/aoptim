@@ -59,8 +59,10 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % from the solution. In either case, note that the variance term V[p] on the
 % parameter distribution is a scaled version of the step size. 
 % 
-% Alternatively, step_method=6 invokes hyperparameter tuning of the step
-% size.
+% Alternatively:
+% -- step_method = 6 invokes hyperparameter tuning of the step size.
+% -- step_method = 8 converts the routine to a mirror descent with
+%    Bregman proximity term.
 %
 % By default momentum is included (opts.im=1). The idea is that we can 
 % have more confidence in parameters that are repeatedly updated in the 
@@ -80,7 +82,8 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %
 % With the Gaussian Process Regression option (do_gpr), a GP is fitted over
 % (gradient) predictions and best errors to re-estimate the parameter step
-% on each iteration.
+% on each iteration. This is applied as a "refinement" step on the gradient
+% predicted dx.
 %  
 % The {free energy} objective function minimised is
 %==========================================================================
@@ -1983,6 +1986,46 @@ L = 1;
 D = 1;
 
 switch search_method
+    
+    case 8 % mirror descent with Bregman distance proximity term
+        
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
+        % sometimes unstable
+        dFdpp(isnan(dFdpp))=0;
+        dFdpp(isinf(dFdpp))=0;
+        red(isnan(red))=0;
+        red(isinf(red))=0;
+
+        % steepest descent
+        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        
+        x3(isinf(x3))=0;
+        x3(isnan(x3))=0;
+        x3=full(x3);
+        x3 = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
+        
+        [uu,ss,vv] = spm_svd(x3);
+        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        
+        % convert step size x3 (aka a) to second term in mirror descent
+        proxim = cdist(aopt.pp,x0);
+        if all(proxim == 0)
+            proxim = 1e-3 + proxim;
+            pdif = ~(aopt.pp-x0);
+        else
+            pdif = (aopt.pp-x0);
+        end
+        
+        % load the whole rhs term onto x3 so that dx = x1*x3
+        x3 = J*(pdif)*(1./(2*x3')).*( proxim + 1e-3 );
+        
     case 1
         
         if aopt.factorise_gradients
@@ -2001,6 +2044,11 @@ switch search_method
 
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        
+        x3(isinf(x3))=0;
+        x3(isnan(x3))=0;
+        x3=full(x3);
+        x3 = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
         
         [uu,ss,vv] = spm_svd(x3);
         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
@@ -2053,7 +2101,7 @@ switch search_method
             dFdpp  = -(J'*J);
         end
         
-        J = dFdpp;
+        J = sum(dFdpp)';
         
         Cp = params.aopt.Cp;
         Cp(isnan(Cp))=0;
@@ -2061,10 +2109,10 @@ switch search_method
         [u,s] = eig(Cp);
         s=diag(s);
         [~,order] = sort(abs(s),'descend');
-        r = atcm.fun.findthenearest(cumsum(abs(s(order)))./sum(abs(s(order))),0.99);
+        r = atcm.fun.findthenearest(cumsum(abs(s(order)))./sum(abs(s(order))),0.75);
         r = round(r);
         
-        r = min(r,6);
+        %[r = min(r,6);
         r = max(r,2); % make sure its not 0
         
         if isempty(r)
@@ -2101,7 +2149,7 @@ switch search_method
 
             LB = p - 10;
             UB = p + 10;
-
+            
             p = fmincon(g,p,[],[],[],[],LB,UB,[],options);
             %p = fminsearch(g,p,options);
         
@@ -2128,6 +2176,9 @@ switch search_method
         
         x3(isnan(x3))=0;
         x3(isinf(x3))=0;
+        
+        x3  = full(x3);
+        x3  = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
         
         % Components
         [u,s] = eig(x3);
@@ -2156,8 +2207,8 @@ switch search_method
                         
         end
         
-        x3   = xbar;        
-            
+        x3   = xbar;    
+                    
 end
 
 sJ = dFdpp;
@@ -2173,7 +2224,7 @@ function dx = compute_dx(x1,a,J,red,search_method,params)
 
 aopt = params.aopt;
 
-if search_method == 1 || search_method == 7
+if search_method == 1 || search_method == 7 
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
     %dx = x1 + (sum(a).*J')';
@@ -2200,6 +2251,8 @@ elseif search_method == 5
 elseif search_method == 6
     % hyperparameter tuned step size
     dx = x1 + a.*J;
+elseif search_method == 8
+    dx = spm_vec(x1(:)'*a);
     
 end
 

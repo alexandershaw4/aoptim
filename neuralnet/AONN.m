@@ -153,6 +153,7 @@ classdef AONN < handle
             %obj.op.corrweight=1;
             obj.op.doparallel=0;
             %obj.op.ismimo=1;
+            obj.op.factorise_gradients=1;
         end
         
         function obj = dpdy(obj)

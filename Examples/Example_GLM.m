@@ -13,10 +13,10 @@ dat = load([fileparts(fileparts(mfilename('fullpath'))) '/src/test_glm_data.mat'
 [b,F,cp,fit] = ao_glm(dat.x,dat.y);
 
 % AO glm with no orthogonalisation
-%[b,F,cp,fit] = ao_glm_no(dat.x,dat.y);
+%[be,Fe,cpe,fite] = ao_glm_no(dat.x,dat.y);
 
 % AO pls
-%[b,F,cp,fit] = ao_glm_eig(dat.x,dat.y,3);
+%[be,Fe,cpe,fite] = ao_glm_eig(dat.x,dat.y,3);
 
 % run glmfit
 B = glmfit(dat.y,dat.x,'normal');

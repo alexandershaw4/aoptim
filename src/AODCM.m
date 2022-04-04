@@ -394,6 +394,69 @@ classdef AODCM < handle
         
         % EXTERNAL PARAMETER ESTMIMATORS - SA, GA, SURROG, BAYES...
         %================================================================
+        function vmbc(obj)
+            
+            % Variational Bayesian Monte Carlo
+            %------------------------------------------------------------------
+            fprintf('Performing Variational Bayesian Monte Carlo optimisation\n');
+            LB  = (obj.opts.x0-(0.5*sqrt(obj.opts.V)));
+            UB  = (obj.opts.x0+(0.5*sqrt(obj.opts.V)));
+                        
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+            
+            [obj.X,obj.F,elbo_sd] = vbmc(objective,obj.opts.x0',[],[],LB',UB');
+            
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+        
+        function rungekutteopt(obj)
+            
+            % Bayesian adaptive direct search
+            
+            fprintf('Performing Runge-Kutta Optimisation\n');
+            
+            LB  = (obj.opts.x0-(0.5*sqrt(obj.opts.V)));
+            UB  = (obj.opts.x0+(0.5*sqrt(obj.opts.V)));
+            Px  = obj.opts.x0;
+            
+            dim = length(Px);
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+            
+            SearchAgents_no = 12;
+            Max_iteration = 12;
+            
+            %[obj.F,obj.X,cg_curve]=SCA(SearchAgents_no,Max_iteration,LB',UB',dim,objective)
+            
+            [obj.F,obj.X,Convergence_curve]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,objective);
+            
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+        
+        function bads(obj)
+            
+            % Bayesian adaptive direct search
+            
+            fprintf('Performing Bayesian adaptive direct search\n');
+            
+            LB  = (obj.opts.x0-sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+sqrt(obj.opts.V));
+            Px  = obj.opts.x0;
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+            
+            options.Plot = 'profile';
+            
+            [obj.X,obj.F] = bads(objective,Px(:)',LB',UB',LB',UB',[],options);
+ 
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
         
         function sa(obj)
             % simulated annealing
@@ -409,7 +472,7 @@ classdef AODCM < handle
 
             saopts = optimoptions('simulannealbnd','MaxTime', 86400/2); % 12hours
 
-            [obj.X,obj.F,exitFlag,output] = simulannealbnd(objective,Pc,LB,UB,saopts);
+            [obj.X,obj.F,exitFlag,output] = simulannealbnd(objective,Px,LB,UB,saopts);
             
             [~, P] = obj.opts.fun(spm_vec(obj.X));
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
@@ -508,7 +571,7 @@ classdef AODCM < handle
             objective = @(x) errfun(obj,fun,x);
 
             
-            reps    = 32;
+            reps    = 132;
             explore = 0.2;
             RESULTS = bayesopt(objective,xvar,'IsObjectiveDeterministic',true,...
                 'ExplorationRatio',explore,'MaxObjectiveEvaluations',reps,...

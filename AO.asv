@@ -681,16 +681,7 @@ while iterate
                     % Identify improver-parameters            
                     gp  = double(DFE < e0); % e0
                     gpi = find(gp);
-                    
-                    
-                    % in the case where all param predictions fail,
-                    % check whether flipping the sign of the gradient helps
-                    if ~any(gpi)
-                        tdx = dx - x0;
-                        
-                        
-                    end
-                    
+                                        
                 end
 
                 if ~BayesAdjust
@@ -1992,6 +1983,44 @@ L = 1;
 D = 1;
 
 switch search_method
+    
+    case 8 % Bregman distance mirror descent
+        
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
+        % sometimes unstable
+        dFdpp(isnan(dFdpp))=0;
+        dFdpp(isinf(dFdpp))=0;
+        red(isnan(red))=0;
+        red(isinf(red))=0;
+
+        % steepest descent
+        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        
+        x3(isinf(x3))=0;
+        x3(isnan(x3))=0;
+        x3=full(x3);
+        x3 = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
+        
+        [uu,ss,vv] = spm_svd(x3);
+        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
+        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
+        
+        % convert step size x3 (aka a) to second term in mirror descent
+        proxim = cdist(aopt.pp',x0');
+        if proxim == 0
+            proxim = 1e-3;
+            pdif = ~(aopt.pp-x0);
+        else
+            pdif = 
+        end
+        x3 = J*(aopt.pp-x0)*(1./(2*x3')).*( proxim + 1e-3 );
+        
     case 1
         
         if aopt.factorise_gradients
@@ -2001,9 +2030,20 @@ switch search_method
         else
             dFdpp  = -(J'*J);
         end
-        
+
+        % sometimes unstable
+        dFdpp(isnan(dFdpp))=0;
+        dFdpp(isinf(dFdpp))=0;
+        red(isnan(red))=0;
+        red(isinf(red))=0;
+
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
+        
+        x3(isinf(x3))=0;
+        x3(isnan(x3))=0;
+        x3=full(x3);
+        x3 = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
         
         [uu,ss,vv] = spm_svd(x3);
         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
@@ -2056,7 +2096,7 @@ switch search_method
             dFdpp  = -(J'*J);
         end
         
-        J = dFdpp;
+        J = sum(dFdpp)';
         
         Cp = params.aopt.Cp;
         Cp(isnan(Cp))=0;
@@ -2064,10 +2104,10 @@ switch search_method
         [u,s] = eig(Cp);
         s=diag(s);
         [~,order] = sort(abs(s),'descend');
-        r = atcm.fun.findthenearest(cumsum(abs(s(order)))./sum(abs(s(order))),0.99);
+        r = atcm.fun.findthenearest(cumsum(abs(s(order)))./sum(abs(s(order))),0.75);
         r = round(r);
         
-        r = min(r,6);
+        %[r = min(r,6);
         r = max(r,2); % make sure its not 0
         
         if isempty(r)
@@ -2104,7 +2144,7 @@ switch search_method
 
             LB = p - 10;
             UB = p + 10;
-
+            
             p = fmincon(g,p,[],[],[],[],LB,UB,[],options);
             %p = fminsearch(g,p,options);
         
@@ -2131,6 +2171,9 @@ switch search_method
         
         x3(isnan(x3))=0;
         x3(isinf(x3))=0;
+        
+        x3  = full(x3);
+        x3  = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
         
         % Components
         [u,s] = eig(x3);
@@ -2159,8 +2202,8 @@ switch search_method
                         
         end
         
-        x3   = xbar;        
-            
+        x3   = xbar;    
+                    
 end
 
 sJ = dFdpp;
@@ -2176,7 +2219,7 @@ function dx = compute_dx(x1,a,J,red,search_method,params)
 
 aopt = params.aopt;
 
-if search_method == 1 || search_method == 7
+if search_method == 1 || search_method == 7 
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
     %dx = x1 + (sum(a).*J')';
@@ -2203,6 +2246,8 @@ elseif search_method == 5
 elseif search_method == 6
     % hyperparameter tuned step size
     dx = x1 + a.*J;
+elseif search_method == 8
+    dx = x1 + a;
     
 end
 

@@ -9,9 +9,10 @@ It is inspired by theoretical models of neuronal computation - i.e. the way the 
 
 ```
 % A gradient/curvature descent optimisation routine, designed primarily 
-% for nonlinear model fitting / system identification & parameter estimation. 
+% for nonlinear model fitting / system identification / parameter estimation. 
 % 
-% The objective function minimises the free energy (~ ELBO - evidence lower bound).
+% The objective function minimises the free energy (~ ELBO - evidence lower
+% bound), SSE or RMSE.
 %
 % Y0 = f(x) + e  
 %
@@ -67,8 +68,10 @@ It is inspired by theoretical models of neuronal computation - i.e. the way the 
 % from the solution. In either case, note that the variance term V[p] on the
 % parameter distribution is a scaled version of the step size. 
 % 
-% Alternatively, step_method=6 invokes hyperparameter tuning of the step
-% size.
+% Alternatively:
+% -- step_method = 6 invokes hyperparameter tuning of the step size.
+% -- step_method = 8 converts the routine to a mirror descent with
+%    Bregman proximity term.
 %
 % By default momentum is included (opts.im=1). The idea is that we can 
 % have more confidence in parameters that are repeatedly updated in the 
@@ -85,6 +88,11 @@ It is inspired by theoretical models of neuronal computation - i.e. the way the 
 %           
 %   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
 %   dx     = x - (a*b)
+%
+% With the Gaussian Process Regression option (do_gpr), a GP is fitted over
+% (gradient) predictions and best errors to re-estimate the parameter step
+% on each iteration. This is applied as a "refinement" step on the gradient
+% predicted dx.
 %  
 % The {free energy} objective function minimised is
 %==========================================================================

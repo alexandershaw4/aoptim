@@ -276,7 +276,7 @@ classdef AONN < handle
         function obj = train_bp(obj)
             
             f = @(p) obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x);
-            g = @(p) sum( (spm_vec(obj.y(:) - f(p) )).^2);
+            g = @(p) sum( (spm_vec(obj.y(:) - spm_vec(f(p)) )).^2);
                         
             if obj.islogistic
                   g = @(p) sum( (spm_vec(obj.y(:) - obj.logfun(f,p) )).^2);  

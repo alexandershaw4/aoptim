@@ -41,6 +41,7 @@ classdef AODCM < handle
         iserp   % switch to ERP models rather than spectral
         ftype   % swith between reduced and full model 
         hist
+        params
         
     end
     
@@ -293,12 +294,16 @@ classdef AODCM < handle
             % calls AO.m optimisation routine and returns outputs
             %
             
-            [X,F,CP,Pp,History] = AO(obj.opts);   
+            [X,F,CP,Pp,History,params] = AO(obj.opts);   
             
             %close; 
             drawnow;
             
-            [~, P] = obj.opts.fun(spm_vec(X));
+            if obj.ftype == 1
+                [~, P] = obj.opts.fun(spm_vec(X));
+            else
+                P = X;
+            end
             
             obj.X  = X;
             obj.F  = F;
@@ -307,6 +312,7 @@ classdef AODCM < handle
             obj.V  = obj.DD.cm;
             
             obj.history = History;
+            obj.params = params;
             
         end
         
@@ -386,6 +392,7 @@ classdef AODCM < handle
             
             er = spm_vec(Y)-spm_vec(y);
             er = real(er'.*iS.*er)/2;
+            %er(isnan(er))=inf;
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
             
             F    = e;%-sum(L);            

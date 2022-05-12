@@ -30,7 +30,7 @@ V(3:4)=1/16;
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 7;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
@@ -41,7 +41,7 @@ op.inner_loop   = 10;
 op.BTLineSearch = 0;
 op.DoMLE        = 0;
 op.ismimo       = 0;
-op.hyperparams  = 0;
+op.hyperparams  = 1;
 op.im           = 1;
 op.fsd          = 0;
 op.FS = @(x) x(:).^2.*(1:length(x))';
@@ -55,13 +55,11 @@ op.objective='rmse';
 op.EnforcePriorProb=0;
 op.order=2;
 %
-op.do_gpr=0;
+op.do_gpr=1;
 %op.do_poly=1;
-op.hypertune=1;
+op.hypertune=0;
 
 %op.WeightByProbability=1;
-
-op.memory_optimise=1;
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

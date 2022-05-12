@@ -19,6 +19,9 @@ op.V   = v;
 op.y   = y;
 op.step_method = 1;
 op.criterion = -2.7;
+op.maxit = 56;
+op.hypertune=1;
+op.objective='rmse';
 
 [X,F,CV] = AO(op);
 

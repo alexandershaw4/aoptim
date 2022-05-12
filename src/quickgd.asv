@@ -1,0 +1,23 @@
+function y = quickgd(f,x)
+
+j = dfdx(f,x);
+
+wh
+
+
+end
+
+function j = dfdx(f,x)
+
+fx = f(x);
+h  = 1/8;
+
+for i  = 1:length(x)
+    
+    x0    = x;
+    x0(i) = x0(i) + h;
+    
+    j(i)  = ( f(x0) - fx ) / h;
+
+end 
+end

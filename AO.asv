@@ -1,4 +1,4 @@
-function [X,F,Cp,PP,Hist] = AO(funopts)
+function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % A gradient/curvature descent optimisation routine, designed primarily 
 % for nonlinear model fitting / system identification / parameter estimation. 
 % 
@@ -59,8 +59,13 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % from the solution. In either case, note that the variance term V[p] on the
 % parameter distribution is a scaled version of the step size. 
 % 
-% Alternatively, step_method=6 invokes hyperparameter tuning of the step
-% size.
+% step methods:
+% -- step_method = 1 invokes steepest descent
+% -- step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
+% -- step_method = 6 invokes hyperparameter tuning of the step size.
+% -- step_method = 7 invokes an eigen decomp of the Jacobian matrix
+% -- step_method = 8 converts the routine to a mirror descent with
+%    Bregman proximity term.
 %
 % By default momentum is included (opts.im=1). The idea is that we can 
 % have more confidence in parameters that are repeatedly updated in the 
@@ -80,7 +85,16 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 %
 % With the Gaussian Process Regression option (do_gpr), a GP is fitted over
 % (gradient) predictions and best errors to re-estimate the parameter step
-% on each iteration.
+% on each iteration. This is applied as a "refinement" step on the gradient
+% predicted dx.
+%
+% Set opts.hypertune = 1 to append an exponential cost function to the chosen 
+% objective function. This is defined as:
+% 
+% c = t*exp(1/t * data - pred)
+% 
+% where t is a hyperparameter controlled through a separate gradient
+% descent routine.
 %  
 % The {free energy} objective function minimised is
 %==========================================================================
@@ -123,6 +137,16 @@ function [X,F,Cp,PP,Hist] = AO(funopts)
 % opts.FS = []              % feat selection function: FS(y)
 % opts.userplotfun = [];    % inject a user plot function into the main display
 % opts.corrweight = 1;      % weight error term by correlation
+% opts.WeightByProbability = 0; % weight parameter step update by prob
+% opts.faster = 0;          % make faster by limiting loops
+% opts.factorise_gradients = 1; % factorise gradients
+% opts.sample_mvn = 0;      % when stuck sample from a multivariate gauss
+% opts.do_gpr = 0;          % try to refine estimates using a Gauss process
+% opts.normalise_gradients=0;% normalise gradients to a pdf
+% opts.isGaussNewton = 0;   % explicitly make the update a Gauss-Newton
+% opts.do_poly=0;           % same as do_gpr but using polynomials
+% opts.steps_choice = [];   % use multiple step methods and pick best on-line
+% opts.hypertune  = 1;      % tune a hyperparameter using exponential cost
 %
 % [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
@@ -223,6 +247,7 @@ aopt.rankappropriate = rankappropriate; % ensure facorised rank aprop cov
 aopt.do_ssa          = ssa;
 aopt.corrweight      = corrweight;
 aopt.factorise_gradients = factorise_gradients;
+aopt.hypertune       = hypertune;
 
 BayesAdjust = mleselect; % Select params to update based in probability
 IncMomentum = im;        % Observe and use momentum data            
@@ -319,9 +344,17 @@ while iterate
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
     %XX0     = x0;
-    %aopt.pp = x0(:);
-
-        
+    
+    if WeightByProbability
+        aopt.pp = x0(:);
+    end
+    
+    % update precision hyperparameters matrix
+    %if ~isempty(Q)
+    %   [~,~,erx]  = obj( V*x0(ip),params );
+    %   aopt.Q = Q + diag(rescale(erx(1:length(Q))));
+    %end
+    
     % compute gradients & search directions
     %----------------------------------------------------------------------
     aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
@@ -343,6 +376,12 @@ while iterate
                      
     % print end of gradient computation (just so we know it's finished)
     pupdate(loc,n,0,e0,e0,'grd-fin',toc); 
+    
+    % update hyperparameter tuning plot
+    if hypertune; plot_hyper(params.hyper_tau); end
+    
+    % update h_opt plot
+    if hyperparams; plot_h_opt(params.h_opt); drawnow; end
     
     % Switching for different methods for calculating 'a' / step size
     if autostep; search_method = autostepswitch(n,e0,Hist);
@@ -443,7 +482,7 @@ while iterate
             %fobj = @(x) obj(x,params);
             %lso = lineSearch(fobj,x1,(df0./norm(df0)),'none');
         end
-        
+                    
         if isGaussNewton
             % make it explicitly a Gauss-Newton scheme
             dx = x1 - spm_dx(L*D*L',x1,-2);
@@ -513,10 +552,12 @@ while iterate
             prplot(pt);
 
             % If WeightByProbability is set, use p(dx) as a weight on dx
-            % iteratively until all p(dx[i]) are > 0.98
+            % iteratively until n% of p(dx[i]) are > threshold
             % -------------------------------------------------------------
             if WeightByProbability
                 dx = x1 + ( pt(:).*(dx-x1) );
+                
+                pupdate(loc,n,1,e1,e1,'OptP(p)',toc);
                 
                 optimise = true;
                 num_optloop = 0;
@@ -534,11 +575,11 @@ while iterate
                         end
                     end
                     
-                    % update dx
+                    % integrate (update) dx
                     dx = x1 + ( pt(:).*(dx-x1) );
                     
                     % convergence
-                    if all(pdx(~~red) > 0.98) || num_optloop > 2000
+                    if length(find(pdx(~~red) > 0.8))./length(pdx(~~red)) > 0.7 || num_optloop > 2000
                         optimise = false;
                     end
                    
@@ -629,6 +670,52 @@ while iterate
                 end
             end
 
+            
+%             % treat iterations as an optimisable quadratic integration scheme
+%             % i.e. dx_dot = dx + w([t-1])*history(dx[t-1]) + w([t-2]*h([t-2]) ...
+%             %
+%             % this effectively equips the optimisation with a 'memory' over
+%             % iteration cycles, with which to finess the gradient flow
+%             
+%             integration_nc=1;
+%             %if integration_nc && n == 1;Hist.hyperdx(maxit+1,maxit) = nan;end
+%             
+%             if integration_nc && n > 1
+%                 pupdate(loc,n,nfun,e1,e1,'quadint',toc);
+%                  
+%                  % fminsearch memory-hyperparmeter options
+%                  options.MaxIter = 50;
+%                  options.UseParallel = 1;
+%                  options.Display = 'off';
+%                            
+%                  %k  = [cat(2,Hist.p{:}) dx];
+%                  %hp = zeros(n+1,1); 
+%                  %hp(end)=1;
+%                  
+%                  k  = [Hist.p{end} dx];
+%                  hp = [1/32 31/32]';
+%                  
+%                  % memory [k] and weights [x]
+%                  gx = @(x) obj(k*x,params);
+%                  X  = fminsearch(gx,hp,options);
+%                                   
+%                  dx = k*X;
+%                  
+%                  Hist.hyperdx(:,n) = X;
+%                  
+%                  % plot
+%                  s(1) = subplot(4,3,12);cla;
+%                  plot(Hist.hyperdx'); hold on;
+%                  grid on;
+%                  title('Memory Tune','color','w','fontsize',18);
+%                  %xlabel('Iteration','color','w');
+%                  s(1).YColor = [1 1 1];
+%                  s(1).XColor = [1 1 1];
+%                  s(1).Color  = [.3 .3 .3];
+%                  legend({'Memory', 'Gradient Flow'});
+%                  
+%             end
+                        
             % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
             % Either by:
             % (1) just update all parameters
@@ -678,9 +765,20 @@ while iterate
 
                     DFE  = real(DFE(:));
 
-                    % Identify improver-parameters            
-                    gp  = double(DFE < e0); % e0
+                    % Identify improver-parameters   
+                    if nfun == 1
+                        gp  = double(DFE < e0); % e0
+                    else
+                        gp  = double(DFE < e1); % e0
+                    end
+                    
                     gpi = find(gp);
+                    
+                    if isempty(gp)
+                        gp  = ones(1,length(x0));
+                        gpi = find(gp);
+                        DFE = ones(1,length(x0))*de; 
+                    end
                                         
                 end
 
@@ -733,8 +831,9 @@ while iterate
                 end            
             end
             
-            fprintf('--> euc dist(dp) = %d\n',cdist(dx',x1'));
-
+            thisdist = cdist(dx',x1');
+            fprintf('--> euc dist(dp) = %d\n',thisdist);
+            
            % Save for this step method...
            ddxm(:,istepm) = dx; 
 
@@ -843,8 +942,7 @@ while iterate
             Hist.GP{n} = [yp(:) yint(:,1) yint(:,2)];
             Hist.GPi{n} = selI;
         end
-        
-        
+                
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
         if givetol; etol = e1 * ( ( 0.5./(n*2) )  );
@@ -856,7 +954,7 @@ while iterate
         end
         
         deltap = cdist(dx',x1');
-        deltaptol = 1e-3;
+        deltaptol = 1e-6;
         
         % if running multiple search (step) methods, now is the time to
         % evaluate and commit to one for the remainder of the iteration
@@ -869,6 +967,89 @@ while iterate
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
           
+        
+        % put memory optimisation here?
+        
+        % treat iterations as an optimisable quadratic integration scheme
+        % i.e. dx_dot = dx + w([t-1])*history(dx[t-1]) + w([t-2]*h([t-2]) ...
+        %
+        % this effectively equips the optimisation with a 'memory' over
+        % iteration cycles, with which to finess the gradient flow
+        
+        integration_nc=memory_optimise;
+        %if integration_nc && n == 1;Hist.hyperdx(maxit+1,maxit) = nan;end
+        
+        if integration_nc && n > 1
+            pupdate(loc,n,nfun,e1,e1,'mem int',toc);
+            
+            % fminsearch memory-hyperparmeter options
+            options.MaxIter = 25;
+            options.Display = 'off';
+            if doparallel
+                options.UseParallel = 1;
+            end
+            
+            k  = [cat(2,Hist.p{:}) dx];
+            
+            try; k = k(:,end-4:end); end
+            
+            hp = zeros(size(k,2),1);
+            hp(end)=1;
+            
+            %k  = [XX0 x1 dx];
+            %hp = [0 0 1]';
+            
+            % memory [k] and weights [x]
+            gx = @(x) obj(k*x,params);
+            X  = fminsearch(gx,hp,options);
+            
+            %X = fmincon(gx,hp,[],[],[],[],0*hp,2*ones(size(hp)),[],options);
+            
+            %J  = jaco(gx,hp,ones(size(hp))*1e-3,0,2);
+            %dx = k*(hp - (hp.*J));
+            %X  = J;
+            
+            %X = fminunc(gx,hp,options);
+            %X = X./sum(X);
+            
+            dx = k*X;
+            de = obj(dx,params);
+            
+            if n < 3
+               Hist.hyperdx(:,n) = [X];
+            else
+                Hist.hyperdx(:,n) = Hist.hyperdx(:,n)X(end-2:end);
+            end
+            
+            %Hist.hyperdx(1:size(k,2),n) = X;
+            
+            % plot
+            s(1) = subplot(4,3,11);cla;
+            %surf(Hist.hyperdx'); shading interp;
+            %hold on;
+            imagesc(Hist.hyperdx);
+            caxis([-1 1]*.01);
+            colormap(cmocean('balance'));
+            %grid off;
+            title('Update Rate','color','w','fontsize',18);
+            %xlabel('Iteration','color','w');
+            s(1).YColor = [1 1 1];
+            s(1).XColor = [1 1 1];
+            s(1).Color  = [.3 .3 .3];
+            set(gca,'ytick',1:3,'yticklabel',{'Mem1' 'Mem2' 'GradFlow'});
+            
+            %ylim([-.2 1.2]);
+            %view([-38.4169   78.1306]);
+            %legend({'Wt: Baseline' 'Wt: Memory', 'Wt: Gradient Flow'},'color','w','location','southoutside');
+            %legend({'Gradient Flow' 'Memories'},'color','w','location','southoutside');
+            
+        end
+
+        
+        
+        % log deltaxs
+        Hist.dx(:,n) = dx;
+        
         
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
@@ -955,7 +1136,7 @@ while iterate
         
         % *If didn't improve: invoke much more selective parameter update
         %==================================================================
-        pupdate(loc,n,nfun,e1,e0,'parslct',toc);    
+        pupdate(loc,n,nfun,e1,e0,'linsrch',toc);    
         e_orig = e0;
         
         % select only parameters whose steps improved the objective
@@ -1015,6 +1196,11 @@ while iterate
                     
                     warning off;try df; catch df = 0; end;warning on;
                     
+                    % OK, 2022: do this on every fail
+                    %-------------------------------
+                    %red     = diag(pC);
+                    %aopt.pC = V*red;
+                    
                     % Halt this while loop % Keep counting rejections
                     improve1 = 0;
                     n_reject_consec = n_reject_consec + 1;
@@ -1026,8 +1212,6 @@ while iterate
             end
             
         else
-            % Don't panic; it's ok
-            
             if sample_mvn
                 % sample from a multivariate normal over parameter set
                 pupdate(loc,n,nfun,e0,e0,'sample ',toc);
@@ -1061,6 +1245,11 @@ while iterate
 
                 % Our (prior) 'variances' are probably too small
                 red = red*1.4;
+                
+                % OK, 2022: do this on every fail
+                %-------------------------------
+                %red     = diag(pC);
+                %aopt.pC = V*red;                
 
                 % Update global store of V & keep counting rejections
                 aopt.pC = V*red;
@@ -1112,7 +1301,7 @@ while iterate
     end
     
     % If 3 fails, reset the reduction term (based on the specified variance)
-    if n_reject_consec == 3
+    if n_reject_consec == 2
         pupdate(loc,n,nfun,e1,e0,'resetv');
         red     = diag(pC);
         aopt.pC = V*red;
@@ -1171,7 +1360,7 @@ while iterate
     end
     
     % give up after 10 failed iterations
-    if n_reject_consec == 5
+    if n_reject_consec == 6
         fprintf(loc,'Failed to converge...\n');
         
             % Return current best
@@ -1301,6 +1490,42 @@ s(4).Color  = [.3 .3 .3];
 drawnow;
 end
 
+function plot_h_opt(x)
+
+s(1) = subplot(4,3,11);
+
+try
+    plot(spm_vec(x(:,end-1)),'w:','linewidth',3); hold on;
+end
+
+plot(spm_vec(x(:,end)),'linewidth',3,'Color',[1 .7 .7]);
+
+grid on;
+title('Precision Hyperprm','color','w','fontsize',18);hold off;
+
+s(1).YColor = [1 1 1];
+s(1).XColor = [1 1 1];
+s(1).Color  = [.3 .3 .3];    
+
+end
+
+function plot_hyper(x)
+
+% if hypertune; plot_hyper(params.hyper_tau); end
+
+s(1) = subplot(4,3,12);
+
+plot(spm_vec(x),'w:','linewidth',3); hold on;
+grid on;
+title('Exp Hypr Tune','color','w','fontsize',18);
+xlabel('Iteration','color','w');
+s(1).YColor = [1 1 1];
+s(1).XColor = [1 1 1];
+s(1).Color  = [.3 .3 .3];
+
+
+end
+
 function pl_init(x,params)
 % A subplot in the main figure of the start point of the algorithm
 [Y,y] = GetStates(x,params);
@@ -1310,7 +1535,7 @@ function pl_init(x,params)
 Y = spm_unvec( real(spm_vec(Y)), Y);
 y = spm_unvec( real(spm_vec(y)), Y);
 
-s(1) = subplot(4,3,[10 11]);
+s(1) = subplot(4,3,[10]);
 
 plot(spm_vec(Y),'w:','linewidth',3); hold on;
 plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1383,7 +1608,7 @@ aopt = params.aopt;
 % note: this plot will be added to the main AO optimisation figure in
 % position subplot(4,3,12) and coloured appropriately...
 if isfield(params,'userplotfun') && ~isempty(params.userplotfun);
-    subplot(4,3,12);
+    subplot(4,3,12);hold off;
     feval(params.userplotfun,x,params);
     ax        = gca;
     ax.YColor = [1 1 1];
@@ -1606,23 +1831,23 @@ if ~isfield(aopt,'precisionQ')
     nq  = ny ./ length(Q);
 elseif isfield(aopt,'precisionQ')
     Q   = {aopt.precisionQ};
-    %clear Q;
-    %lpq = length(aopt.precisionQ);
-    %for ijq = 1:length(aopt.precisionQ)
-    %    Q{ijq} = sparse(ijq,ijq,aopt.precisionQ(ijq,ijq),lpq,lpq);
-    %end
+    clear Q;
+    lpq = length(aopt.precisionQ);
+    for ijq = 1:length(aopt.precisionQ)
+       Q{ijq} = sparse(ijq,ijq,aopt.precisionQ(ijq,ijq),lpq,lpq);
+    end
     ny  = length(spm_vec(y));
     nq  = ny ./ length(Q{1});
 end
 
-if ~isfield(aopt,'h');
+if ~isfield(aopt,'h') || ~aopt.hyperparameters
     h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
 else
     h = aopt.h;
 end
 
-if isinf(h)
-    h = 1/8;
+if any(isinf(h))
+    h = denan(h)+1/8;
 end
 
 iS = sparse(0);
@@ -1630,6 +1855,8 @@ iS = sparse(0);
 for i  = 1:length(Q)
     iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 end
+
+%h
 
 e   = (spm_vec(Y) - spm_vec(y)).^2;
 %e   = (spm_vec(Y) - spm_vec(y));
@@ -1653,13 +1880,13 @@ if any(isnan(Cp(:)))
 end
 
 if aopt.hyperparameters
-    if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && params.aopt.computeh
-        %fprintf('using precomputed hyperparam while differentiating\n');
-        h = params.aopt.h;
-        ihC = params.aopt.ihC;
-        d = params.aopt.d;
-        Ch = params.aopt.Ch;
-    else
+%     if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && params.aopt.computeh
+%         %fprintf('using precomputed hyperparam while differentiating\n');
+%         h = params.aopt.h;
+%         ihC = params.aopt.ihC;
+%         d = params.aopt.d;
+%         Ch = params.aopt.Ch;
+%     else
         %fprintf('\n\n\ncomputing h\n\n\n');
         % pulled directly from SPM's spm_nlsi_GN.m ...
         % ascent on h / precision {M-step}
@@ -1711,8 +1938,17 @@ if aopt.hyperparameters
             aopt.d   = d;
             aopt.ihC = ihC;
         end
-    end
+  %  end
 end % end of if hyperparams (from spm) ... 
+
+% record hyperparameter h over iterations
+if aopt.hyperparameters && aopt.updateh
+    if isfield(params,'h_opt') && ~isempty(params.h_opt) 
+        params.h_opt = [params.h_opt h];
+    else
+        params.h_opt = h;
+    end
+end
 
 % FREE ENERGY TERMS
 %==========================================================================
@@ -1786,10 +2022,17 @@ switch lower(method)
             % rmse: root mean squaree error incorporating precision
             % components
             er = spm_vec(Y)-spm_vec(y);
-            er = real(er'.*iS.*er)/2;
+            
+            % which Q ?
+            if aopt.hyperparameters
+                er = real(er'.*iS.*er)/2;
+            else
+                er = real(er'.*aopt.precisionQ.*er)/2;
+            end
+            
             er = full(er);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
+                        
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
             e = 1 - ( corr( spm_vec(Y), spm_vec(y) ).^2 );
@@ -1806,6 +2049,46 @@ switch lower(method)
             ED = ED*iS*ED';
             e  = sum(spm_vec(ED)).^2;
             
+        case {'rmse_euc' 'bregman'}
+            % rmse: root mean squaree error incorporating precision
+            % components
+            er = spm_vec(Y)-spm_vec(y);
+            er = real(er'.*iS.*er)/2;
+            er = full(er);
+            dv = cdist(Y,y);
+            er = (er.*dv);
+            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            
+        case 'hellinger'
+            Y = rescale(Y);
+            y = rescale(y);
+            er = ( sqrt(spm_vec(Y))-sqrt(spm_vec(y)) ).^2;
+            e = (1./sqrt(2))*sum(er);
+            
+        case {'g_kld' 'gkld' 'gkl' 'generalised_kld'}
+             e = sum( denan(Y.*log(Y./y)) ) - sum(Y) - sum(y);
+
+         case {'itakura-saito' 'is' 'isd'};
+             e = sum( (Y./y) - denan(log(Y./y)) - 1 );
+        
+        case {'exp' 'ec' 'exp_cost'}
+             t  = .5;
+             fc = @(t) t*exp( (1./t)*sum( (Y-y).^2) );
+             
+             t = hypertune(fc,t);
+%              % hyperparam tuning by descent on hyperparameter
+%              jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+%              dt = t + jc*1e-3;
+%              
+%              while fc(dt) < fc(t)
+%                  t = dt;
+%                  jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+%                  dt = t + jc*1e-3;
+%              end
+            
+             % return (tuned) error
+             e = fc(t);
+             
         case 'mle';
                         
             % we can perform parameter estimation by maximum likelihood estimation 
@@ -1825,11 +2108,59 @@ switch lower(method)
             e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
 end
 
+
+% hyperparameter [noise] tuning by GD - by placing this here it can easily
+% be applied to any of the above cost functions
+%--------------------------------------------------------------------------
+if aopt.hypertune
+    if isfield(params,'hyper_tau') && length(params.hyper_tau) > 1
+        t = params.hyper_tau(end);
+    else
+        t  = .5;
+    end
+    
+    %t  = .5;
+    fc = @(t) t*exp( (1./t)*e );
+    t  = hypertune(fc,t);
+    e  = fc(t);
+
+    % return the tuned parameter for plotting
+    try;
+        params.hyper_tau = [params.hyper_tau; t];
+    catch
+        params.hyper_tau = t;
+    end
+end
+
+%if aopt.hyperparameters
+%    e = e - L(3);
+%end
+
+% if aopt.hypertune && length(params.hyper_tau)>1
+%     if fc(params.hyper_tau(end-1)) < fc(t)
+%         params.hyper_tau(end) = params.hyper_tau(end-1);
+%         e = fc(params.hyper_tau(end));
+%         fprintf('Retaining prious hyperparam\n');
+%     end
+% end
+
 % Error along output vector (when fun is a vector output function)
 er = ( spm_vec(y) - spm_vec(Y) ).^2;
 mp = spm_vec(y);
 
 
+function t = hypertune(fc,t)
+    % hyperparam tuning by descent on hyperparameter
+    jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+    dt = t + jc*1e-3;
+    
+    while fc(dt) < fc(t)
+        t  = dt;
+        jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+        dt = t + jc*1e-3;
+    end
+end
+        
 % This wraps obj to return only the third output for MIMOs
 % when we want the derivatives w.r.t. each output of fun
 function er  = inter(x0,params)
@@ -1850,7 +2181,9 @@ if nargout == 2 || nargout == 7
         V = (~~V)*1e-3;
     elseif aopt.fixedstepderiv == -1
         V = V + ( (~~V) .* abs(randn(size(V))) );
-    elseif aopt.fixedstepderiv > 1
+    elseif aopt.fixedstepderiv == 0
+        V = V;
+    else %aopt.fixedstepderiv 
         V = (~~V)*aopt.fixedstepderiv;
     end
     
@@ -1983,8 +2316,8 @@ L = 1;
 D = 1;
 
 switch search_method
-    
-    case 8 % Bregman distance mirror descent
+        
+    case 8 % mirror descent with Bregman distance proximity term
         
         if aopt.factorise_gradients
             a = ones(size(J,2),1);
@@ -1993,33 +2326,23 @@ switch search_method
         else
             dFdpp  = -(J'*J);
         end
+        
         % sometimes unstable
         dFdpp(isnan(dFdpp))=0;
         dFdpp(isinf(dFdpp))=0;
-        red(isnan(red))=0;
-        red(isinf(red))=0;
-
-        % steepest descent
-        x3  = repmat(red,[1 length(red)])./(1-dFdpp);
-        
-        x3(isinf(x3))=0;
-        x3(isnan(x3))=0;
-        x3=full(x3);
-        x3 = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
-        
-        [uu,ss,vv] = spm_svd(x3);
-        nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
-        x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
         
         % convert step size x3 (aka a) to second term in mirror descent
-        proxim = cdist(aopt.pp',x0');
-        if proxim == 0
-            proxim = 1e-3;
+        proxim = (aopt.pp - x0).^2;
+        if all(proxim == 0)
+            proxim = 1e-3 + proxim;
             pdif = ~(aopt.pp-x0);
         else
-            pdif = 
+            pdif = (aopt.pp-x0);
         end
-        x3 = J*(aopt.pp-x0)*(1./(2*x3')).*( proxim + 1e-3 );
+        
+        % load the whole rhs term onto x3 so that dx = x1*x3
+        %x3 = J*(pdif)*(1./(2*x3')).*( proxim + 1e-3 );
+        x3 = J'.*(pdif).*(1./(2*red)).*proxim;
         
     case 1
         
@@ -2043,9 +2366,14 @@ switch search_method
         x3(isinf(x3))=0;
         x3(isnan(x3))=0;
         x3=full(x3);
-        x3 = x3 + 1e-3; % add some regularisation before (x'*x).^1/2
+        %x3 = x3 + 1e-6; % add some regularisation before (x'*x).^1/2
         
-        [uu,ss,vv] = spm_svd(x3);
+        try
+            [uu,ss,vv] = spm_svd(x3);
+        catch
+            [uu,ss,vv] = spm_svd(denan(x3) + 1e-4);
+        end
+        
         nc = min(find(cumsum(diag(full(ss)))./sum(diag(ss))>=.95));
         x3 = full(uu(:,1:nc)*ss(1:nc,1:nc)*vv(:,1:nc)');
                         
@@ -2247,7 +2575,7 @@ elseif search_method == 6
     % hyperparameter tuned step size
     dx = x1 + a.*J;
 elseif search_method == 8
-    dx = x1 + a;
+    dx = spm_vec(x1(:).*a(:));
     
 end
 
@@ -2324,6 +2652,9 @@ X.normalise_gradients=0;
 X.isGaussNewton = 0;
 X.do_poly=0;
 X.steps_choice = [];
+X.isCCA = 0;
+X.hypertune = 0;
+X.memory_optimise = 0;
 end
 
 function parseinputstruct(opts)
@@ -2388,7 +2719,64 @@ end
 %---------------------------------------------
 
 
-
+%                  if n == 2
+%                        k1 = Hist.dx(:,1);
+%                        k2 = dx;
+%                        hp = [1/8 1];
+%                        fx = @(hp) (hp(1)*k1) + (hp(2)*k2);
+%                        gx = @(hp) obj(fx(hp),params);
+%                                               
+%                        X  = fminsearch(gx,hp,options);
+%                        dx = fx(X);
+%                        
+%                        Hist.hyperdx(1:2,n) = X;
+%                        
+%                  elseif n == 3
+%                        k1 = Hist.dx(:,1);
+%                        k2 = Hist.dx(:,2);
+%                        k3 = dx;
+%                        hp = [1/8 1/8 1];
+%                        %dx = ((2*dt)/45) * 7*k1 + 32*k2 + 12*k3;
+%                        fx = @(hp) (hp(1)*k1) + (hp(2)*k2) + (hp(3)*k3);
+%                        gx = @(hp) obj(fx(hp),params);
+%                        
+%                        X  = fminsearch(gx,hp,options);
+%                        dx = fx(X);
+%                        
+%                        Hist.hyperdx(1:3,n) = X;
+%                        
+%                  elseif n == 4
+%                        k1 = Hist.dx(:,1);
+%                        k2 = Hist.dx(:,2);
+%                        k3 = Hist.dx(:,3);
+%                        k4 = dx;
+%                        hp = [1/8 1/8 1/8 1];
+%                        %dx = ((2*dt)/45) * 7*k1 + 32*k2 + 12*k3 + 32*k4;
+%                        fx = @(hp) (hp(1)*k1) + (hp(2)*k2) + (hp(3)*k3) + (hp(4)*k4);
+%                        gx = @(hp) obj(fx(hp),params);
+%                        
+%                        X  = fminsearch(gx,hp,options);
+%                        dx = fx(X);
+%                        
+%                        Hist.hyperdx(1:4,n) = X;
+%                        
+%                  elseif n > 4
+%                        k1 = Hist.dx(:,end-3);
+%                        k2 = Hist.dx(:,end-2);
+%                        k3 = Hist.dx(:,end-1);
+%                        k4 = Hist.dx(:,end);
+%                        k5 = dx;
+%                        hp = [1/8 1/8 1/8 1/8 1];
+%                        %dx = ((2*dt)/45) * 7*k1 + 32*k2 + 12*k3 + 32*k4 + 7*k5;
+%                        fx = @(hp) (hp(1)*k1) + (hp(2)*k2) + (hp(3)*k3) + (hp(4)*k4) + (hp(5)*k5);
+%                        gx = @(hp) obj(fx(hp),params);
+%                        
+%                        X  = fminsearch(gx,hp,options);
+%                        dx = fx(X);
+%                        
+%                        Hist.hyperdx(1:5,n) = X;
+                 %end
+                 
         % (option) Probability constraint
         %------------------------------------------------------------------
 %         if BayesAdjust

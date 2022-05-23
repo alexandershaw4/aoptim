@@ -6,6 +6,7 @@ It performs a 2nd order gradient (curvature) descent on a free-energy objective 
 
 It is inspired by theoretical models of neuronal computation - i.e. the way the brain optimises its own 'parameters' to minimise its objective. In this sense, when applied to relevant problems, it is an AI.
 
+![overview](AO_optim_overview.png)
 
 ```
 % A gradient/curvature descent optimisation routine, designed primarily 
@@ -180,3 +181,4 @@ It is inspired by theoretical models of neuronal computation - i.e. the way the 
 Here's a video of the the optimiser solving a system of nonlinear differential equations that describe a mean-field neural mass model - fitting it's spectral output to some real data:
 
 ![screenshot](OptimisationGIF.gif)
+

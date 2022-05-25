@@ -444,7 +444,7 @@ while iterate
     nfun    = 0;
     
     % Update prediction on variance
-    red = real(red.*diag(denan(D)));
+    %red = real(red.*diag(denan(D)));
     %dst = real(red.*diag(denan(D))) - red;
     %red = red + (0.25 * dst);
     %aopt.pC     = red;
@@ -670,52 +670,6 @@ while iterate
                 end
             end
 
-            
-%             % treat iterations as an optimisable quadratic integration scheme
-%             % i.e. dx_dot = dx + w([t-1])*history(dx[t-1]) + w([t-2]*h([t-2]) ...
-%             %
-%             % this effectively equips the optimisation with a 'memory' over
-%             % iteration cycles, with which to finess the gradient flow
-%             
-%             integration_nc=1;
-%             %if integration_nc && n == 1;Hist.hyperdx(maxit+1,maxit) = nan;end
-%             
-%             if integration_nc && n > 1
-%                 pupdate(loc,n,nfun,e1,e1,'quadint',toc);
-%                  
-%                  % fminsearch memory-hyperparmeter options
-%                  options.MaxIter = 50;
-%                  options.UseParallel = 1;
-%                  options.Display = 'off';
-%                            
-%                  %k  = [cat(2,Hist.p{:}) dx];
-%                  %hp = zeros(n+1,1); 
-%                  %hp(end)=1;
-%                  
-%                  k  = [Hist.p{end} dx];
-%                  hp = [1/32 31/32]';
-%                  
-%                  % memory [k] and weights [x]
-%                  gx = @(x) obj(k*x,params);
-%                  X  = fminsearch(gx,hp,options);
-%                                   
-%                  dx = k*X;
-%                  
-%                  Hist.hyperdx(:,n) = X;
-%                  
-%                  % plot
-%                  s(1) = subplot(4,3,12);cla;
-%                  plot(Hist.hyperdx'); hold on;
-%                  grid on;
-%                  title('Memory Tune','color','w','fontsize',18);
-%                  %xlabel('Iteration','color','w');
-%                  s(1).YColor = [1 1 1];
-%                  s(1).XColor = [1 1 1];
-%                  s(1).Color  = [.3 .3 .3];
-%                  legend({'Memory', 'Gradient Flow'});
-%                  
-%             end
-                        
             % Given (gradient) predictions, dx[i..n], optimise obj(dx) 
             % Either by:
             % (1) just update all parameters
@@ -834,11 +788,40 @@ while iterate
             thisdist = cdist(dx',x1');
             fprintf('--> euc dist(dp) = %d\n',thisdist);
             
+%             if thisdist == 0
+%                 continue;
+%             end
+            
            % Save for this step method...
            ddxm(:,istepm) = dx; 
 
         end
 
+        
+        % runge-kutta optimisation block: fine tune dx
+        if rungekutta > 0
+            pupdate(loc,n,nfun,e1,e1,'RK lnsr',toc);
+            
+            LB  = dx - sqrt(red)*2;
+            UB  = dx + sqrt(red)*2;
+            Px  = dx;
+            dim = length(Px);
+            
+            SearchAgents_no = rungekutta;
+            Max_iteration = rungekutta;
+            
+            fun = @(x) obj(x,params);
+            
+            [Frk,dx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun);     
+            dx = dx(:);
+            de = obj(dx,params);
+            
+            pupdate(loc,n,nfun,de,e1,'RK fini',toc);
+            
+        end
+        
+        
+        
         % update global points store
         all_dx = [all_dx dx(:)];
         all_ex = [all_ex de(:)];
@@ -966,8 +949,7 @@ while iterate
             dx = ddxm(:,Ith);
             fprintf('\nSelecting step method %d\n',steps(Ith));
         end
-          
-        
+                
         % put memory optimisation here?
         
         % treat iterations as an optimisable quadratic integration scheme
@@ -2660,6 +2642,7 @@ X.steps_choice = [];
 X.isCCA = 0;
 X.hypertune = 0;
 X.memory_optimise = 0;
+X.rungekutta = 0;
 end
 
 function parseinputstruct(opts)

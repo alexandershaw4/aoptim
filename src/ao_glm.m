@@ -32,6 +32,7 @@ op.maxit = 1000;
 %op.hypertune=1;
 op.memory_optimise=1;
 op.hyperparams=0;
+op.rungekutta=8;
 
 [b,F,Cp] = AO(op);
 

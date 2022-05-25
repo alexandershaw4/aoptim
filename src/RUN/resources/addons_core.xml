@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addonCore>
+  <label>Runge Kutta optimization (RUN)</label>
+  <version>1.1.0</version>
+  <type>Toolbox</type>
+  <identifier>d00cfe26-871c-4c72-ada5-6d977ab80a61</identifier>
+  <summary>This study attempts to go beyond the traps of metaphors and introduce a novel metaphor-free population-based optimization method.</summary>
+  <description>#&lt;AddOns::Entities::Description:0x00005590a2deb3d0&gt;</description>
+  <createdBy name="iman ahmadianfar"/>
+  <image>resources/screenshot.png</image>
+</addonCore>

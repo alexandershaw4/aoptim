@@ -58,7 +58,7 @@ op.order=2;
 op.do_gpr=0;
 %op.do_poly=1;
 op.hypertune=1;
-
+op.rungekutta=8;
 %op.WeightByProbability=1;
 
 op.memory_optimise=1;

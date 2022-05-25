@@ -171,10 +171,11 @@ classdef AODCM < handle
         function [yy,PP] = wrapd_gauss(obj,Px,varargin)
                 [y,PP,s,t] = wrapdm(obj,Px,varargin);
                 w = obj.DCM.xY.Hz;
-                oy = real(y);
+                oy = real(y);w
                 cf = fit(w.',oy,'Gauss3');
 
-                yy = coeffvalues(cf);
+                %yy = coeffvalues(cf);
+                yy = cf(w);
                 
         end
         
@@ -517,17 +518,18 @@ classdef AODCM < handle
         %------------------------------------------------------------------
         fprintf('Performing Surrogate-Model Optimisation\n');
         
-        LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
-        UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+        LB  = (obj.opts.x0-(4*sqrt(obj.opts.V)));
+        UB  = (obj.opts.x0+(4*sqrt(obj.opts.V)));
         Px  = obj.opts.x0;
         
         fun = @(varargin)obj.wrapdm(varargin{:});
         objective = @(x) errfun(obj,fun,x);
         
-        opts = optimoptions('surrogateopt','PlotFcn','surrogateoptplot');
-        opts.ObjectiveLimit = 0.05;
-        opts.MaxFunctionEvaluations = 50*length(UB);
-        [obj.X,obj.F] = surrogateopt(objective,LB,UB,opts);
+        opts1 = optimoptions('surrogateopt','PlotFcn','surrogateoptplot');
+        opts1.ObjectiveLimit = 0.05;
+        opts1.MaxFunctionEvaluations = 50*length(UB);
+        opts1.InitialPoints=Px;
+        [obj.X,obj.F] = surrogateopt(objective,LB,UB,opts1);
             
          [~, P] = obj.opts.fun(spm_vec(obj.X));
          obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);  

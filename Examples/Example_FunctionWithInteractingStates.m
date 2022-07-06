@@ -26,12 +26,19 @@ op.step_method = 1;   % aggressive steps = 1, careful = 3, vanilla = 4.
 op.maxit       = 128; % maximum number of iterations
 
 op.inner_loop = 2;
-op.BTLineSearch = 0;
 op.fsd=0;
 op.DoMLE = 0;
 op.doimagesc=1;
 
-op.objective='rmse';
+op.objective='mvgkl';
+
+op.hypertune=1;
+op.rungekutta=8;
+op.memory_optimise=1;
+op.hyperparams=1;
+
+op.ismimo=1;
+op.DoMAP_Bayes=1;
 
 [X,F,CV] = AO(op);    % RUN IT
 

@@ -27,10 +27,12 @@ f  = @(x) (makef(w,spm_unvec(abs(x),S)));
 
 V(3:4)=1/16;
 
+V = V*8;
+
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 7;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
@@ -38,30 +40,37 @@ op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
 op.maxit        = 16; % maximum number of iterations
 op.inner_loop   = 10;
-op.BTLineSearch = 0;
-op.DoMLE        = 0;
-op.ismimo       = 0;
-op.hyperparams  = 0;
-op.im           = 1;
-op.fsd          = 0;
+op.DoMLE        = 0; % do use MLE for param estimation
+op.ismimo       = 1; % compute jacobian on full model output not objective
+op.hyperparams  = 0; % estimate noise hyperparameters
+op.im           = 1; % use momentum acceleration
+op.fsd          = 0; % fixed-step for derivative computation
 op.FS = @(x) x(:).^2.*(1:length(x))';
-op.FS = @(x) sqrt(x);
-op.criterion  = 1e-3;
-op.doparallel = 0;
-op.DoMLE=0;
-op.factorise_gradients = 1;
-op.normalise_gradients=0;
-op.objective='rmse';
-op.EnforcePriorProb=0;
-op.order=2;
-%
-op.do_gpr=0;
-%op.do_poly=1;
-op.hypertune=1;
-op.rungekutta=8;
-%op.WeightByProbability=1;
+op.FS = @(x) sqrt(x); % feature selection function
 
-op.memory_optimise=1;
+op.criterion  = -inf; 1e-3;
+op.doparallel = 0; % compute stuff using parfor
+op.DoMLE=0;
+op.factorise_gradients = 1; % factorise/normalise grads
+op.normalise_gradients=0;
+op.objective='mvgkl'; % set objective fun: multivariate gaussian KL div
+op.EnforcePriorProb=0;
+op.order=2; % second order gradients
+%
+
+op.do_gpr=0; % dont do gaussian process regression to learn Jac
+op.hypertune=1; % do hypertuning 
+op.rungekutta=8; % do an RK-line search
+op.updateQ=1; % update the precision matrix on each iteration
+op.Q = eye(length(w));
+op.WeightByProbability=0;
+
+op.memory_optimise=1; % remember & include (optimise) prev update steps when considering new steps
+op.crit = [0 0 0 0];
+
+% use a Bayesian MAP projection to estimate parameters
+op.DoMAP_Bayes = 1;
+
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

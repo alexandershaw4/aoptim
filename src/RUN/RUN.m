@@ -34,10 +34,20 @@
 %---------------------------------------------------------------------------------------------------------------------------
 
 
-function [Best_Cost,Best_X,Convergence_curve]=RUN(nP,MaxIt,lb,ub,dim,fobj)
-
+function [Best_Cost,Best_X,Convergence_curve]=RUN(nP,MaxIt,lb,ub,dim,fobj,init_x,v)
+rng('default')
 Cost=zeros(nP,1);                % Record the Fitness of all Solutions
 X=initialization(nP,dim,ub,lb);  % Initialize the set of random solutions   
+
+if nargin == 8
+    % alex replaced with laplacian sampling 
+    X = (init_x + sqrt(v./32).*rand(size(init_x,1),nP))';
+end
+
+if nargin == 7
+    X(1,:) = init_x;
+end
+
 Xnew2=zeros(1,dim);
 
 Convergence_curve = zeros(1,MaxIt);
@@ -165,7 +175,7 @@ while it<MaxIt
 % Save Best Solution at each iteration    
 Convergence_curve(it) = Best_Cost;
 %disp(['it : ' num2str(it) ', Best Cost = ' num2str(Convergence_curve(it) )]);
-fprintf('|%d              |          |                   | Best: %06d |\n',it,(Convergence_curve(it)));
+%fprintf('|%d              |          |                   | Best: %06d |\n',it,(Convergence_curve(it)));
 
 end
 

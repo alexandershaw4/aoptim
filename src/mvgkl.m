@@ -47,3 +47,5 @@ logDetS2 = 2*sum(log(diag(R2)));    % log |S2|
 kl = trace(R2\(R2'\S1)) + sqTerm - d + logDetS2 - logDetS1;
 kl = kl / 2;
 end
+
+% 

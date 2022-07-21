@@ -383,20 +383,42 @@ classdef AODCM < handle
             nq = length(Q);
             ny = length(e);
             
-            %L(1) = real(e'*Q*e)/2; 
-            iS = sparse(0);
-            h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
+%             %L(1) = real(e'*Q*e)/2; 
+%             iS = sparse(0);
+%             h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
+%             
+%             for i  = 1:length(Q)
+%                 iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+%             end
+%             
+%             er = spm_vec(Y)-spm_vec(y);
+%             er = real(er'.*iS.*er)/2;
+%             %er(isnan(er))=inf;
+%             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+%             
+%             F    = e;%-sum(L);         
             
-            for i  = 1:length(Q)
-                iS = iS + Q{i}*(exp(-32) + exp(h(i)));
-            end
+            covQ = obj.opts.Q;
+            covQ(covQ<0)=0;
+            covQ = (covQ + covQ')/2;
             
-            er = spm_vec(Y)-spm_vec(y);
-            er = real(er'.*iS.*er)/2;
-            %er(isnan(er))=inf;
-            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            % pad for when using FS(y) ~= length(y)
+            padv = length(Y) - length(covQ);
+            covQ(end+1:end+padv,end+1:end+padv)=.1;
             
-            F    = e;%-sum(L);            
+            % make sure its positive semidefinite
+            lbdmin = min(eig(covQ));
+            boost = 2;
+            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+            
+            % truth [Y] first = i.e. inclusive, mean-seeking
+            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+            e = mvgkl(spm_vec(Y),covQ,spm_vec(y),covQ);
+            
+            e(e<0)=-e;
+%             
+            F = e;
+            
 
         end
         
@@ -419,7 +441,11 @@ classdef AODCM < handle
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
         end
         
-        function rungekutteopt(obj)
+        function rungekutteopt(obj,n)
+            
+            if nargin < 1 || isempty(n)
+                n = 64;
+            end
             
             % Bayesian adaptive direct search
             
@@ -435,7 +461,7 @@ classdef AODCM < handle
             objective = @(x) errfun(obj,fun,x);
             
             SearchAgents_no = 12;
-            Max_iteration = 12;
+            Max_iteration = n;
             
             %[obj.F,obj.X,cg_curve]=SCA(SearchAgents_no,Max_iteration,LB',UB',dim,objective)
             
@@ -465,6 +491,26 @@ classdef AODCM < handle
             [~, P] = obj.opts.fun(spm_vec(obj.X));
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
         end
+        
+        function kalman(obj)
+            
+            % Bayesian adaptive direct search
+            
+            fprintf('Performing Kalman Filtering Optimisation\n');
+            
+            Px  = obj.opts.x0;
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+            
+                    
+            [obj.X,obj.F] = ekfopt(objective,Px(:),1e-4);
+
+ 
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+
         
         function sa(obj)
             % simulated annealing

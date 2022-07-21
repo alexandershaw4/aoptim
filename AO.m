@@ -91,6 +91,15 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
 %   dx     = x - (a*b)
 %
+% Similarly, setting DoMAP = 1 or DoMAP_Bayes = 1 will result in maximum
+% aposteriori estimates for parameters using a hyperparameter-tuned GaussNewton/
+% Levenberg-Marquardt scheme: 
+%
+%   dx = x  - ( [lambda*eye(D)] + j*j' )\(j*r0);
+%
+% where the regularisation parameter lambda is optimised. r0 is the redisual. 
+% (Note that inv(lambda*eye(D)+j*j') is the Fisher-information matrix).
+%
 % With the Gaussian Process Regression option (do_gpr), a GP is fitted over
 % (gradient) predictions and best errors to re-estimate the parameter step
 % on each iteration. This is applied as a "refinement" step on the gradient
@@ -119,7 +128,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
 %  F    = -sum(L);
 %
-% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' ... 
+% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' 'mvgkl'... 
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -275,6 +284,10 @@ ExLineSearch = ext_linesearch;
 params.aopt = aopt;      % Need to move form global aopt to a structure
 params.userplotfun = userplotfun;
 
+if save_constant
+    name = ['optim_' date];
+end
+
 % parameter and step / distribution vectors
 x0  = full(x0(:));
 XX0 = x0;
@@ -309,7 +322,7 @@ Vb         = V;
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
-    setfig(); params = makeplot(x0,x0,params); aopt.oerror = params.aopt.oerror;
+    f = setfig(); params = makeplot(x0,x0,params); aopt.oerror = params.aopt.oerror;
     pl_init(x0,params)
 end
 
@@ -356,11 +369,17 @@ Hist.e = [];
 % start optimisation loop
 %==========================================================================
 while iterate
-    
+        
     % counter
     %----------------------------------------------------------------------
     n = n + 1;    tic;
    
+    % Save each step if requested
+    if save_constant
+        save(name,'x0','Hist');
+    end
+    
+    
     pupdate(loc,n,0,e0,e0,'gradnts',toc);
         
     if WeightByProbability
@@ -711,10 +730,10 @@ while iterate
             end
             
             if DoMAP_Bayes
-                % Do MAP estimation of parameter values with lambda as a
-                % hyperparameter
+                % Fully Bayesian MAP estimation of parameter values with 
+                % lambda as an optimisable hyperparameter
                 
-                pupdate(loc,n,n,e1,e1,'MAPbest',toc);
+                pupdate(loc,n,nfun,e1,e1,'bMAPest',toc);
                 
                 % retrieve derivatives
                 if ~ismimo;  j  = J(:)*er';
@@ -723,19 +742,22 @@ while iterate
                 
                 % remove extra stuff in Jacobian added by feature selection
                 j = j(:,1:size(y,1));
-                   
-                %jtj = sum(j.^2,2);
-                %j = denan(jtj.\j);
                 
+                % largest eigenvalue normalisation
+                [ev,ei] = eig(j*j');
+                j = j ./ max(diag(ei));
+                                
                 lambda = 1/8;
                 
                 D = size(j,1);
-                                
+                
+                % inject warning silence to anon function 'map'
                 warning('off','MATLAB:singularMatrix')
                 wn = @() warning('off','MATLAB:nearlysingularMatrix');
                 wwn = @() suppress(wn);
                 warning('off','MATLAB:curvefit:fit:noStartPoint');
                 
+                % compute residual and weight
                 r0 = spm_vec(y) - spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0))); 
                 if length(aopt.iS) == length(r0)
                     r0 = r0.*aopt.iS.*r0';
@@ -754,6 +776,17 @@ while iterate
                                 
                 % recover dx
                 dx = x1 - red.*map(ddx);
+                
+                % recover (co)variance
+                cv = inv((ddx/2)^(-2)*(j*j')+(ddx/2)^(-2)*eye(D));
+                cv = cv ./ norm(cv);
+                
+                dx = x1 - cv*map(ddx);
+                
+                %dx = x1 - ((lambda*eye(D)+pinv(cv))+j*j')\(j*r0);
+                
+                % note.
+                % inv(lambda*eye(D)+j*j') is the Fisher-information matrix
                 
             end
             
@@ -794,7 +827,7 @@ while iterate
             pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
             
             
-            if obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels
+            if (obj(dx,params) < obj(x1,params) && ~BayesAdjust && ~aopt.forcels) || nocheck
                 % Don't perform checks, assume all f(dx[i]) <= e1
                 % i.e. full gradient prediction over parameters is good and we
                 % don't want to be explicitly Bayesian about it ...
@@ -1525,10 +1558,12 @@ while iterate
      end
 end
     
+
 end
 
 % Subfunctions: Plotting & printing updates to the console / log...
 %==========================================================================
+
 
 function refdate(loc)
 fprintf(loc,'\n');
@@ -1600,13 +1635,13 @@ end
 end
         
 
-function setfig()
+function f = setfig()
 % Main figure initiation
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
 figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
 figpos = [816         405        1082        1134];
-figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
+f = figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -2200,6 +2235,11 @@ switch lower(method)
             e = 1 - corr(spm_vec(Y),spm_vec(y)).^2;
             e = e * abs( finddelay(spm_vec(Y),spm_vec(y)) );
             
+        case 'xcorr'
+             er = xcorr(Y,Y) - xcorr(Y,y);
+             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+             
+            
         case 'mvgkl'
             % multivariate gaussian kullback lieb div
             
@@ -2221,6 +2261,64 @@ switch lower(method)
             e = mvgkl(Y,covQ,spm_vec(y),covQ);
             
             e(e<0)=-e;
+            
+        case 'log_mvgkl'
+                % multivariate gaussian kullback lieb div
+
+                [YY,gmY] = atcm.fun.Sig2GM(Y,5);
+                [yy,gmy] = atcm.fun.Sig2GM(y,5);
+                
+                e = gmY.pdf(1:length(Y)) - gmy.pdf(1:length(Y));
+                
+                e = sum( e.^2 );
+                
+                %e = norm(pinv(e'*iS*e)*(Y-y));
+                
+%                 covQ = aopt.Q;
+%                 covQ(covQ<0)=0;
+%                 covQ = (covQ + covQ')/2;
+% 
+%                 % pad for when using FS(y) ~= length(y)
+%                 padv = length(Y) - length(covQ);
+%                 covQ(end+1:end+padv,end+1:end+padv)=.1;
+% 
+%                 % make sure its positive semidefinite
+%                 lbdmin = min(eig(covQ));
+%                 boost = 2;
+%                 covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+% 
+%                 % truth [Y] first = i.e. inclusive, mean-seeking
+%                 % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+%                 e = mvgkl(Y,covQ,spm_vec(y),covQ);
+% 
+%                 e(e<0)=-e;
+%                 e = log(e);
+
+        case 'mvgkl_me'
+            % multivariate gaussian kullback lieb div
+
+            covQ = aopt.Q;
+            covQ(covQ<0)=0;
+            covQ = (covQ + covQ')/2;
+
+            % pad for when using FS(y) ~= length(y)
+            padv = length(Y) - length(covQ);
+            covQ(end+1:end+padv,end+1:end+padv)=.1;
+
+            % make sure its positive semidefinite
+            lbdmin = min(eig(covQ));
+            boost = 2;
+            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+
+            % truth [Y] first = i.e. inclusive, mean-seeking
+            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+            e = mvgkl(Y,covQ,spm_vec(y),covQ);
+
+            e(e<0)=-e;
+
+            er   = (spm_vec(Y) - spm_vec(y)).^2;
+
+            e = log(e) + real(er'*iS*er)/2;
             
         case 'hm'
                 
@@ -3075,6 +3173,8 @@ X.updateQ = 1;
 X.DoMAP = 0;
 X.DoMAP_Bayes = 0;
 X.crit = [0 0 0 0 0 0 0 0];
+X.save_constant = 0; 
+X.nocheck = 0;
 end
 
 function parseinputstruct(opts)

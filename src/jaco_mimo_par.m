@@ -290,6 +290,9 @@ elseif ismember(order,5)
     
 
 elseif ismember(order,0)
+    clear f0 f1
+    f0 = cell(1,nout);;
+    [f0{1}{:}] = feval(IS,P);
     
     % 0 order diff, i.e. f(x+d) - f(x) / d
     % this is a cheap approximation but requires half the number of
@@ -303,8 +306,15 @@ elseif ismember(order,0)
                 if d == 0;d = 0.01;end
 
                 P0(i)  = P0(i) + d  ;
-                f0     = spm_vec(spm_cat(feval(IS,P0)));
-                j(i,:) = (f0 - fx) / (d);
+                
+                f1{i} = cell(1,nout);
+                
+                [f1{i}{:}] = feval(IS,P0);
+                
+                %j(i,:) = ( (spm_vec(f0) - spm_vec(fx)) / (d) );
+                
+                j(i,:) = spm_unvec( ( spm_vec(f0{i}) - spm_vec(f1{i}) ) / (2 * d) , {fx} );
+                
             end
     end
 

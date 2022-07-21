@@ -53,7 +53,7 @@ op.doparallel = 0; % compute stuff using parfor
 op.DoMLE=0;
 op.factorise_gradients = 1; % factorise/normalise grads
 op.normalise_gradients=0;
-op.objective='mvgkl'; % set objective fun: multivariate gaussian KL div
+op.objective='log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
 op.order=2; % second order gradients
 %
@@ -71,6 +71,8 @@ op.crit = [0 0 0 0];
 % use a Bayesian MAP projection to estimate parameters
 op.DoMAP_Bayes = 1;
 
+op.save_constant = 0;
+%op.nocheck=1;
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...
@@ -88,4 +90,4 @@ S
 spm_unvec(X,S)
 
 
-
+[X,F] = AO_basin_hop(op,1)

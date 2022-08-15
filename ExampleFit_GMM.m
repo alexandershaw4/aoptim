@@ -27,7 +27,7 @@ f  = @(x) (makef(w,spm_unvec(abs(x),S)));
 
 V(3:4)=1/16;
 
-V = V*8;
+%V = V*8;
 
 % Setting up the optimiser
 %-------------------------------------------------------------
@@ -53,7 +53,7 @@ op.doparallel = 0; % compute stuff using parfor
 op.DoMLE=0;
 op.factorise_gradients = 1; % factorise/normalise grads
 op.normalise_gradients=0;
-op.objective='log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
+op.objective='mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
 op.order=2; % second order gradients
 %
@@ -69,9 +69,17 @@ op.memory_optimise=1; % remember & include (optimise) prev update steps when con
 op.crit = [0 0 0 0];
 
 % use a Bayesian MAP projection to estimate parameters
-op.DoMAP_Bayes = 1;
+op.DoMAP_Bayes = 0;
 
+% use a Gauss Newton scheme
+op.isGaussNewton=0;
+
+% make regular saves of the optimimsation
 op.save_constant = 0;
+
+% use QR factorisation to predict dx from Jaco and residual
+op.isQR=1;
+
 %op.nocheck=1;
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width

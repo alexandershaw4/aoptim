@@ -3,7 +3,7 @@ function PHI = apolybasis(X,D)
 % AS
 
 N = length(X);
-D = 4;
+%D = 4;
 
 PHI=zeros(N,D);
 for i=1:N

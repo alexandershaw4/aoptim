@@ -504,6 +504,25 @@ while iterate
         end
 
         
+        if NatGrad
+            % retrieve derivatives
+            if ~ismimo;  j  = J(:)*er';
+            else;        j = aopt.J;
+            end
+            
+            % remove extra stuff in Jacobian added by feature selection
+            j = j(:,1:size(y,1));
+            
+            lambda = 1/8;
+            D = size(j,1);
+
+            % compute natural gradient
+            fim = inv(lambda*eye(D)+j*j');
+            
+            dx = x1 - sum(fim*j,2);
+
+        end
+        
         % The following options are like 'E-steps' or line search options 
         % - i.e. they estimate the missing variables (parameter indices & 
         % values) that should be optimised in this iteration
@@ -2191,6 +2210,11 @@ switch lower(method)
             
             e(e<0)=-e;
             
+        case 'q'
+                                 
+            er = (AGenQ(Y)-AGenQ(y));
+            e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            
         case 'log_mvgkl'
                 % multivariate gaussian kullback lieb div
 
@@ -3125,6 +3149,7 @@ X.crit = [0 0 0 0 0 0 0 0];
 X.save_constant = 0; 
 X.nocheck = 0;
 X.isQR = 0;
+X.NatGrad = 0;
 end
 
 function parseinputstruct(opts)

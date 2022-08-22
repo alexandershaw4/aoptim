@@ -53,7 +53,7 @@ op.doparallel = 0; % compute stuff using parfor
 op.DoMLE=0;
 op.factorise_gradients = 1; % factorise/normalise grads
 op.normalise_gradients=0;
-op.objective='mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
+op.objective='Q';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
 op.order=2; % second order gradients
 %
@@ -69,7 +69,7 @@ op.memory_optimise=1; % remember & include (optimise) prev update steps when con
 op.crit = [0 0 0 0];
 
 % use a Bayesian MAP projection to estimate parameters
-op.DoMAP_Bayes = 0;
+op.DoMAP_Bayes = 1;
 
 % use a Gauss Newton scheme
 op.isGaussNewton=0;
@@ -78,7 +78,9 @@ op.isGaussNewton=0;
 op.save_constant = 0;
 
 % use QR factorisation to predict dx from Jaco and residual
-op.isQR=1;
+%op.isQR=1;
+
+%op.NatGrad = 1;
 
 %op.nocheck=1;
 

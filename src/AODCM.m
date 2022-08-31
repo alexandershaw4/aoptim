@@ -424,6 +424,51 @@ classdef AODCM < handle
         
         % EXTERNAL PARAMETER ESTMIMATORS - SA, GA, SURROG, BAYES...
         %================================================================
+        function mh(obj)
+            % res = mh(y,x0,@genfunc,[LB,UB,params])
+            %
+            % Compulsory Parameters
+            %   y        = data (Nx1)
+            %   x0       = initial parameters (Px1)
+            %   @genfunc = generative model
+            %
+            %   Output is nsamples*P where nsamples=njumps/sampleevery
+            %
+            % Example:
+            %   % define a forward model (here y=a*exp(-bx))
+            %   myfun=@(x,c)(exp(-x(1)*c)+x(2));
+            %   % generate some noisy data
+            %   true_x = [1;2];
+            %   c=linspace(1,10,100);
+            %   y=myfun(true_x,c) + .05*randn(1,100);
+            %   % estimate parameters
+            %   x0=[1;2]; % you can get x0 using nonlinear opt
+            %   samples=mh(y,x0,@(x)(myfun(x,c)));
+            %   figure,plot(samples)
+            %
+            % Other Parameters
+            %   LB = lower bounds on x (default=[-inf]*ones(size(x0)))
+            %   UB = upper bounds on x (default=[+inf]*ones(size(x0)))
+            %   params.burnin = #burnin iterations (default=1000)
+            %   params.njumps = #jumps (default=5000)
+            %   params.sampleevery = keep every n jumps (default=10)
+            %   params.update = update proposal every n jumps (default=20)
+
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            x0  = obj.opts.x0(:);
+            y   = obj.opts.y;
+            
+            LB = x0-2;
+            UB = x0+2;
+            
+            pparams.burnin = 1;
+            pparams.njumps = 25;
+            pparams.sampleevery=10;
+            pparams.update = 10;
+            
+            res = mh(y,x0,fun,LB,UB, pparams);
+            
+        end
         function vmbc(obj)
             
             % Variational Bayesian Monte Carlo

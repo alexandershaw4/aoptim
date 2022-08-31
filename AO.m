@@ -329,6 +329,7 @@ search          = 0;
 % Initial probability threshold for inclusion (i.e. update) of a parameter
 Initial_JPDtol = 1e-10;
 JPDtol = Initial_JPDtol;
+etol = 0;
 
 % parameters (in reduced space)
 %--------------------------------------------------------------------------
@@ -360,6 +361,7 @@ end
 all_dx = [];
 all_ex = [];
 Hist.e = [];
+%etol   = 0;
 
 % start optimisation loop
 %==========================================================================
@@ -484,44 +486,53 @@ while iterate
                 
         % Log number of function calls on this iteration
         nfun = nfun + 1;
-                                        
+        
         % Compute The Parameter Step (from gradients and step sizes):
         % % x[p,t+1] = x[p,t] + a[p]*-dfdx[p] 
         %------------------------------------------------------------------if
         dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );
                     
-        if isGaussNewton
+        if isGaussNewton && ismimo
             % Make it explicitly a Gauss-Newton scheme
-            dx = x1 - spm_dx(L*D*L',x1,-2);
+            %dx = x1 - spm_dx(L*D*L',x1,-2);
+            
+            j  = aopt.J;
+            cj = -j*j';
+            
+            [E,D] = eig(cj);
+            D     = diag(D);
+            cj    = E*diag(D.*(D < 0))*E';
+            
+            dp  = spm_dx(full(real(cj)),full(real(j*er)),{log(1/8)});
+            dx  = x1 + dp;
+            
         end
-        
-        if isQR && ismimo
-            % Use QR factorisation to estimate dx from jacobian and
-            % residual - i.e. under assumption local-linearity 
-            % (ensure ismimo = 1)
-            [q,r] = qr(params.aopt.J);
-            dx = q\((r./norm(r))*er);
-        end
-
-        
+            
         if NatGrad
             % retrieve derivatives
             if ~ismimo;  j  = J(:)*er';
             else;        j = aopt.J;
             end
             
-            % remove extra stuff in Jacobian added by feature selection
-            j = j(:,1:size(y,1));
-            
             lambda = 1/8;
             D = size(j,1);
-
             % compute natural gradient
             fim = inv(lambda*eye(D)+j*j');
-            
             dx = x1 - sum(fim*j,2);
-
         end
+        
+        if isQR && ismimo
+            pupdate(loc,n,nfun,e1,e1,'QRmodel',toc);
+            % Use QR factorisation to estimate dx from jacobian and
+            % residual - i.e. under assumption local-linearity 
+            % (ensure ismimo = 1)
+            
+            % note this is the QR equivalent of the normal equations for a
+            % linear least squares problem
+            [q,r] = qr(params.aopt.J);
+            dx = q\((r./norm(r))*er);
+        end
+
         
         % The following options are like 'E-steps' or line search options 
         % - i.e. they estimate the missing variables (parameter indices & 
@@ -530,7 +541,8 @@ while iterate
         
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)        
-        pupdate(loc,n,nfun,e1,e1,'p dists',toc);
+        
+        
         
         % [Prior] distributions
         pt  = zeros(1,length(x1));
@@ -1047,7 +1059,9 @@ while iterate
                 
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
-        if givetol; etol = e1 * ( ( 0.5./(n*2) )  );
+        if givetol; 
+                    %etol = e1 * ( ( 0.5./(n*2) )  );
+                    etol = 1./1+exp(1./(n))/(maxit*2);
         else;       etol = 0; 
         end
         
@@ -1121,10 +1135,14 @@ while iterate
             dx = k*X;
             de = obj(dx,params);
             
-            if n < 3
-               Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + [X];
-            else
-                Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + X(end-2:end);
+            try
+                if n < 3
+                   Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + [X];
+                else
+                    Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + X(end-2:end);
+                end
+            catch 
+                Hist.hyperdx(:,n) = [X];
             end
             
             %Hist.hyperdx(1:size(k,2),n) = X;
@@ -1586,8 +1604,13 @@ function f = setfig()
 % Main figure initiation
 
 %figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',[1088 122 442 914]);
-figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
-figpos = [816         405        1082        1134];
+%figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
+%figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 910 842];
+figpos = get(0,'defaultfigureposition');
+
+%1          87        1024        1730
+
+%figpos = [816         405        1082        1134];
 f = figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
@@ -2192,7 +2215,7 @@ switch lower(method)
             % multivariate gaussian kullback lieb div
             
             covQ = aopt.Q;
-            covQ(covQ<0)=0;
+            covQ(covQ<0)=-covQ(covQ<0);
             covQ = (covQ + covQ')/2;
             
             % pad for when using FS(y) ~= length(y)
@@ -2445,8 +2468,9 @@ switch lower(method)
             er = spm_vec(Y)-spm_vec(y);
             %e  = (mean(ed)*(length(ed)-5)).^2;
             e  = er'*(ed.^2)*er;   
+        case 'lognorm'
             
-            
+            e=length(Y)/2*log(norm(Y-y));
             
         case {'qrmse' 'q_rmse'}
             % rmse: root mean squaree error incorporating precision

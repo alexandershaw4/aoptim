@@ -160,13 +160,23 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % opts.WeightByProbability = 0; % weight parameter step update by prob
 % opts.faster = 0;          % make faster by limiting loops
 % opts.factorise_gradients = 1; % factorise gradients
-% opts.sample_mvn = 0;      % when stuck sample from a multivariate gauss
+% opts.sample_mvn = 0;      % when  stuck sample from a multivariate gauss
 % opts.do_gpr = 0;          % try to refine estimates using a Gauss process
 % opts.normalise_gradients=0;% normalise gradients to a pdf
 % opts.isGaussNewton = 0;   % explicitly make the update a Gauss-Newton
 % opts.do_poly=0;           % same as do_gpr but using polynomials
 % opts.steps_choice = [];   % use multiple step methods and pick best on-line
 % opts.hypertune  = 1;      % tune a hyperparameter using exponential cost
+% opts.memory_optimise = 1; % switch on memory (recommend)
+% opts.rungekutta = 1;      % RK line search (recommend)
+% opts.updateQ = 1;         % update precision on each iteration(recommend)
+% opts.DoMAP = 0;           % maximum a posteriori
+% opts.DoMAP_Bayes = 0;     % Bayesian MAP (recommend, make sure mimo=1)
+% opts.crit = [0 0 0 0 0 0 0 0];
+% opts.save_constant = 0;   % save .mat on each iteration
+% opts.nocheck = 0;         % skip some checks to make faster
+% opts.isQR = 0;            % use QR decomp to solve for dx 
+% opts.NatGrad = 0;         % work in natural gradients
 %
 % [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
@@ -376,31 +386,26 @@ while iterate
         save(name,'x0','Hist');
     end
     
-    
-    pupdate(loc,n,0,e0,e0,'gradnts',toc);
-        
     if WeightByProbability
         aopt.pp = x0(:);
     end
     
     % update precision hyperparameters matrix
+    % integrate error-weighted Q over iterations: Q(t+1) = dt * Q(t) + dfdQ  
     if ~isempty(Q) && updateQ
-      fprintf('| Updating Q...\n');
-      [~,~,erx]  = obj( V*x0(ip),params );
-      
-      % integrate error-weighted Q over iterations: Q(t+1) = dt * Q(t) + dfdQ
-      if n == 1
-        aopt.Q = Q + diag(rescale(real(erx(1:length(Q)))));
+        fprintf('| Updating Q...\n');
+        [~,~,erx]  = obj( V*x0(ip),params );
+        
+        RSE = rescale(real(erx(1:length(Q))));
+        aopt.Q = (Q + AGenQ(RSE) );
         QQ(n,:) = rescale(real(erx(1:length(Q))));
-      else
-        aopt.Q = Q + diag(rescale(real(erx(1:length(Q))))) + diag(QQ(n-1,:)) / 2;
-        QQ(n,:) = rescale(real(erx(1:length(Q))));
-      end
     end
     
     % compute gradients & search directions
     %----------------------------------------------------------------------
     aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
+    
+    pupdate(loc,n,0,e0,e0,'gradnts',toc);
     
     % Second order partial derivates of F w.r.t x0 using Jaco.m
     [e0,df0,~,~,~,~,params]  = obj( V*x0(ip),params );
@@ -410,6 +415,9 @@ while iterate
     if normalise_gradients
         df0 = df0./sum(df0);
     end
+    
+    % catch instabilities in the gradient - ie explosive parameters
+    df0(isinf(df0)) = 0;
     
     % Update aopt structure and place in params
     aopt         = params.aopt;
@@ -444,7 +452,7 @@ while iterate
     else
         pupdate(loc,n,0,e0,e0,'hyprprm',toc);
     end
-    
+            
     % Normal search method
     if ~ismimo
         [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0);
@@ -473,12 +481,42 @@ while iterate
     improve = true;
     nfun    = 0;
     
-    % Update prediction on variance
-    %red = real(red.*diag(denan(D)));
-    %dst = real(red.*diag(denan(D))) - red;
-    %red = red + (0.25 * dst);
-    %aopt.pC     = red;
-    %params.aopt = aopt;
+    % check norm of gradients (def gradtol = 1e-4)
+    if norm(J) < gradtol
+        [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
+        return;
+    end
+    
+    % Update expectation on variance (2nd moments) using Jacobian
+    if variance_estimation
+        if n > 1
+            % this is also a prediction of the step size for the next iter
+            ored = red;
+            Jn   = abs(J);
+            Jn   = Jn./norm(Jn);
+            red  = red + Hist.e(n-1) / Hist.e(end) * Jn(:);
+            
+            % update saved inverse
+            %params.aopt.ipC   = spm_inv(diag(red));
+            
+            % update plot
+            s = subplot(5,3,14);
+            b = bar([red-ored]);
+            
+            %b(1).FaceColor = [1 1 1];
+            b(1).FaceColor = [1 .7 .7];
+            
+            title('Step Change','color','w','fontsize',18);
+            ax       = gca;
+            ax.XGrid = 'off';
+            ax.YGrid = 'on';
+            s.YColor = [1 1 1];
+            s.XColor = [1 1 1];
+            s.Color  = [.3 .3 .3];
+            drawnow;
+            
+        end
+    end
     
     % iterative descent on this (-gradient) trajectory
     %======================================================================
@@ -493,19 +531,16 @@ while iterate
         dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );
                     
         if isGaussNewton && ismimo
-            % Make it explicitly a Gauss-Newton scheme
-            %dx = x1 - spm_dx(L*D*L',x1,-2);
+            % note for this full Newton method you need both Hess and Grad
+            % from the jaco_par.m function because the step size is
+            % determined by the inverse of the inner prouect of the hessian
             
-            j  = aopt.J;
-            cj = -j*j';
-            
-            [E,D] = eig(cj);
-            D     = diag(D);
-            cj    = E*diag(D.*(D < 0))*E';
-            
-            dp  = spm_dx(full(real(cj)),full(real(j*er)),{log(1/8)});
-            dx  = x1 + dp;
-            
+            % by using the variance (red) as a lambda on the inverse
+            % Hessian, this becomes a relaxed or 'damped' Newton scheme
+            H = [aopt.J];
+            H = (red.*H)./norm(H);
+            Hstep = pinv(H*H')*cat(1,aopt.Jo{:,1});
+            dx = x1 - Hstep;
         end
             
         if NatGrad
@@ -541,7 +576,6 @@ while iterate
         
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)        
-        
         
         
         % [Prior] distributions
@@ -718,6 +752,7 @@ while iterate
         if DoMAP_Bayes
             % Fully Bayesian MAP estimation of parameter values with
             % lambda as an optimisable hyperparameter
+            % -- also provides an updated expectation for the variance
             
             pupdate(loc,n,nfun,e1,e1,'bMAPest',toc);
             
@@ -764,19 +799,21 @@ while iterate
             dx = x1 - red.*map(ddx);
             
             % recover (co)variance
-            cv = inv((ddx/2)^(-2)*(j*j')+(ddx/2)^(-2)*eye(D));
-            cv = cv ./ norm(cv);
+            %if variance_estimation
+            %    cv = inv((ddx/2)^(-2)*(j*j')+(ddx/2)^(-2)*eye(D));
+            %    %cv = cv ./ norm(cv);
+            %    red = 2*sqrt(diag(cv));
+            %    aopt.pC     = red;
+            %    params.aopt = aopt;
+            %end
             
-            dx = x1 - cv*map(ddx);
-            
+            %dx = x1 - cv*map(ddx);
             %dx = x1 - ((lambda*eye(D)+pinv(cv))+j*j')\(j*r0);
             
             % note.
             % inv(lambda*eye(D)+j*j') is the Fisher-information matrix
-            
         end
-        
-        
+                
         % (option) Momentum inclusion
         %------------------------------------------------------------------
         if n > 2 && IncMomentum
@@ -798,7 +835,6 @@ while iterate
                 dx  = dx + ( ddx .* (moments./n) );
             end
         end
-        
         
         % Given (gradient) predictions, dx[i..n], optimise obj(dx)
         % Either by:
@@ -849,11 +885,16 @@ while iterate
                 
                 DFE  = real(DFE(:));
                 
+                if givetol;
+                            etol = 1./1+exp(1./(n))/(maxit*2);
+                else;       etol = 0;
+                end
+                
                 % Identify improver-parameters
                 if nfun == 1
-                    gp  = double(DFE < e0); % e0
+                    gp  = double(DFE < (e0+abs(etol))); % e0
                 else
-                    gp  = double(DFE < e1); % e0
+                    gp  = double(DFE < (e1+abs(etol))); % e0
                 end
                 
                 gpi = find(gp);
@@ -915,13 +956,20 @@ while iterate
             end
         end
         
+        % James-Stein estimator (shrinkage)
+%         JSE  = 1 - (np-2)./sum(dx.^2);
+%         ddx  = dx - x1;
+%         dx   = x1 + JSE.*ddx; 
+%         de   = obj(dx,params);
+%         pupdate(loc,n,nfun,de,e1,'JSteinE',toc);
+        
         
         % runge-kutta optimisation block: fine tune dx
         if rungekutta > 0
-            pupdate(loc,n,nfun,e1,e1,'RK lnsr',toc);
+            pupdate(loc,n,nfun,de,e1,'RK lnsr',toc);
             
-            LB  = dx - (sqrt(red));
-            UB  = dx + (sqrt(red));
+            LB  = dx - (sqrt(red))*2;
+            UB  = dx + (sqrt(red))*2;
             
             %LB = dx - (dx.*red)*2;
             %UB = dx + (dx.*red)*2;
@@ -932,17 +980,19 @@ while iterate
             dim = length(dx);
             fun = @(x) obj(x,params);
             
-            [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
+            try
+                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
             
-            rdx = rdx(:);
-            dde = obj(rdx,params);
-            
-            if dde < de
-                dx = rdx(:);
-                de = dde;
+                rdx = rdx(:);
+                dde = obj(rdx,params);
+
+                if dde < de
+                    dx = rdx(:);
+                    de = dde;
+                end
+
+                pupdate(loc,n,nfun,de,e1,'RK fini',toc);
             end
-            
-            pupdate(loc,n,nfun,de,e1,'RK fini',toc);
             
         end
         
@@ -961,7 +1011,7 @@ while iterate
         if do_poly
             % fit a Gaussian Process Regression model to the available
             % points (this will have more points on each iteration)
-            pupdate(loc,n,nfun,e1,e1,'polyfit',toc);
+            pupdate(loc,n,nfun,de,e1,'polyfit',toc);
             de  = obj(dx,params);
             
             % predictors (errors) and parameters
@@ -1048,6 +1098,7 @@ while iterate
             % new predicted dx & variance
             if emx(selI) < de
                 pupdate(loc,n,nfun,e1,emx(selI),'GPRpred',toc);
+                un  = yp(:) - dx(:);
                 dx  = yp(:);
                 de  = emx(selI);
             end
@@ -1090,79 +1141,87 @@ while iterate
         if integration_nc && n > 1
             pupdate(loc,n,nfun,e1,e1,'mem int',toc);
             
-            % fminsearch memory-hyperparmeter options
-            options.MaxIter = 25;
-            options.Display = 'off';
-            if doparallel
-                options.UseParallel = 1;
-            end
-            
-            k  = [cat(2,Hist.p{:}) dx];
-            
-            try; k = k(:,end-4:end); end
-            
-            hp = zeros(size(k,2),1);
-            hp(end)=1;
-            
-            %k  = [XX0 x1 dx];
-            %hp = [0 0 1]';
-            
-            % memory [k] and weights [x]
-            gx = @(x) obj(k*x,params);
-            %X  = fminsearch(gx,hp,options);
-            
-            LB = zeros(size(hp));
-            UB = ones(size(hp))+2;
-            dim = length(hp);
-                        
-            SearchAgents_no = 6;
-            Max_iteration = 6;
-                        
-            fun = @(x) obj(k*x(:),params);
-                        
-            [Frk,X,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,hp,ones(size(hp))/8);              
-            X=X(:);
-                        
-            %X = fmincon(gx,hp,[],[],[],[],0*hp,2*ones(size(hp)),[],options);
-            
-            %J  = jaco(gx,hp,ones(size(hp))*1e-3,0,2);
-            %dx = k*(hp - (hp.*J));
-            %X  = J;
-            
-            %X = fminunc(gx,hp,options);
-            %X = X./sum(X);
-            
-            dx = k*X;
-            de = obj(dx,params);
-            
             try
-                if n < 3
-                   Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + [X];
-                else
-                    Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + X(end-2:end);
+            
+                % fminsearch memory-hyperparmeter options
+                options.MaxIter = 25;
+                options.Display = 'off';
+                if doparallel
+                    options.UseParallel = 1;
                 end
-            catch 
-                Hist.hyperdx(:,n) = [X];
+
+                k  = [cat(2,Hist.p{:}) dx];
+
+                try; k = k(:,end-4:end); end
+
+                hp = zeros(size(k,2),1);
+                hp(end)=1;
+
+                %k  = [XX0 x1 dx];
+                %hp = [0 0 1]';
+
+                % memory [k] and weights [x]
+                gx = @(x) obj(k*x,params);
+                %X  = fminsearch(gx,hp,options);
+
+                LB = zeros(size(hp));
+                UB = ones(size(hp))+2;
+                dim = length(hp);
+
+                SearchAgents_no = 6;
+                Max_iteration = 6;
+
+                fun = @(x) obj(k*x(:),params);
+
+                [Frk,X,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,hp,ones(size(hp))/8);              
+                X=X(:);
+
+                %X = fmincon(gx,hp,[],[],[],[],0*hp,2*ones(size(hp)),[],options);
+
+                %J  = jaco(gx,hp,ones(size(hp))*1e-3,0,2);
+                %dx = k*(hp - (hp.*J));
+                %X  = J;
+
+                %X = fminunc(gx,hp,options);
+                %X = X./sum(X);
+
+                dx = k*X;
+                de = obj(dx,params);
+
+                try
+                    if n < 3
+                       Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + [X];
+                    else
+                        Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + X(end-2:end);
+                    end
+                catch 
+                    try
+                        Hist.hyperdx(:,n) = [X];
+                    catch
+                        Hist.hyperdx(:,n) = 0;
+                    end
+                end
+
+                %Hist.hyperdx(1:size(k,2),n) = X;
+
+                % plot
+                s(1) = subplot(5,3,11);cla;
+                %surf(Hist.hyperdx'); shading interp;
+                %hold on;
+                block = Hist.hyperdx;
+                %block(3,:) = block(3,:) * .001;
+                imagesc(block);
+                caxis([-1 1]*.01);
+                colormap(cmocean('balance'));
+                %grid off;
+                title('Update Rate','color','w','fontsize',18);
+                %xlabel('Iteration','color','w');
+                s(1).YColor = [1 1 1];
+                s(1).XColor = [1 1 1];
+                s(1).Color  = [.3 .3 .3];
+                set(gca,'ytick',1:3,'yticklabel',{'Mem1' 'Mem2' 'GradFlow'});
+                
             end
-            
-            %Hist.hyperdx(1:size(k,2),n) = X;
-            
-            % plot
-            s(1) = subplot(4,3,11);cla;
-            %surf(Hist.hyperdx'); shading interp;
-            %hold on;
-            block = Hist.hyperdx;
-            %block(3,:) = block(3,:) * .001;
-            imagesc(block);
-            caxis([-1 1]*.01);
-            colormap(cmocean('balance'));
-            %grid off;
-            title('Update Rate','color','w','fontsize',18);
-            %xlabel('Iteration','color','w');
-            s(1).YColor = [1 1 1];
-            s(1).XColor = [1 1 1];
-            s(1).Color  = [.3 .3 .3];
-            set(gca,'ytick',1:3,'yticklabel',{'Mem1' 'Mem2' 'GradFlow'});
             
             %ylim([-.2 1.2]);
             %view([-38.4169   78.1306]);
@@ -1170,8 +1229,6 @@ while iterate
             %legend({'Gradient Flow' 'Memories'},'color','w','location','southoutside');
             
         end
-
-        
         
         % log deltaxs
         Hist.dx(:,n) = dx;
@@ -1358,7 +1415,7 @@ while iterate
 
                     %R    = x0 - mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
                     %xnew = xnew + R(:);
-                    xnew = x0 - (red.^2).*mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
+                    xnew = x0 - (red.^2).*(8*mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1))';
                     enew = obj(xnew,params);
 
                     if enew < (e0+abs(etol))
@@ -1412,7 +1469,7 @@ while iterate
     
     % Stopping criteria, rules etc.
     %======================================================================
-    crit = [ (abs(df) < 1e-3) crit(1:end - 1) ]; 
+    crit = [ (abs(df(1)) < min_df) crit(1:end - 1) ]; 
     clear df;
     
     if all(crit)
@@ -1421,24 +1478,9 @@ while iterate
         
     if localminflag == 3
         fprintf(loc,'We''re either stuck or converged...stopping.\n');
-        
-        % Return current best
-        X = V*(x0(ip));
-        F = e0;
-               
-        % Use best covariance estimate
-        if doparallel
-            aopt = params.aopt;
-            Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
-        else
-            Cp = aopt.Cp;
-        end
-        
-        % Peform Bayesian Inference
-        PP = BayesInf(x0,Ep,diag(red));
-        
-        if writelog;fclose(loc);end
+        [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
         return;
+        
     end
     
     % If 3 fails, reset the reduction term (based on the specified variance)
@@ -1446,9 +1488,7 @@ while iterate
         pupdate(loc,n,nfun,e1,e0,'resetv');
         red     = diag(pC);
         aopt.pC = V*red;
-        %a       = red;
-        
-        if     n == 1 && search_method~=100 ; a = red*0;
+        if n == 1 && search_method~=100 ; a = red*0;
         end
         
     end
@@ -1456,70 +1496,22 @@ while iterate
     % stop at max iterations
     if n == maxit
         fprintf(loc,'Reached maximum iterations: stopping.\n');
-        
-        % Return current best
-        X = V*(x0(ip));
-        F = e0;
-               
-        % Use best covariance estimate
-        if doparallel
-            aopt = params.aopt;
-            Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
-        else
-            Cp = aopt.Cp;
-        end
-        
-        % Peform Bayesian Inference
-        PP = BayesInf(x0,Ep,diag(red));
-                
-        if writelog;fclose(loc);end
+        [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
         return;
     end
     
     % check for convergence
     if e0 <= criterion
         fprintf(loc,'Convergence.\n');
-        
-        % Return current best
-        X = V*(x0(ip));
-        F = e0;
-               
-        % Use best covariance estimate
-        if doparallel
-            aopt = params.aopt;
-            Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
-        else
-            Cp = aopt.Cp;
-        end
-        
-        % Peform Bayesian Inference
-        PP = BayesInf(x0,Ep,diag(red));
-        
-        if writelog;fclose(loc);end
+        [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
         return;
     end
     
     % give up after 10 failed iterations
     if n_reject_consec == 6
         fprintf(loc,'Failed to converge...\n');
-        
-            % Return current best
-            X = V*(x0(ip));
-            F = e0;
-
-            % Use best covariance estimate
-            if doparallel
-                aopt = params.aopt;
-                Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
-            else
-                Cp = aopt.Cp;
-            end
-
-            % Peform Bayesian Inference
-            PP = BayesInf(x0,Ep,diag(red));
-
-            if writelog;fclose(loc);end
-            return;
+        [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
+        return;
      end
 end
     
@@ -1529,6 +1521,28 @@ end
 % Subfunctions: Plotting & printing updates to the console / log...
 %==========================================================================
 
+function [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
+
+fprintf(loc,'Finishing up...\n');
+
+% Return current best
+X = V*(x0(ip));
+F = e0;
+
+% Use best covariance estimate
+if doparallel
+    aopt = params.aopt;
+    Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
+else
+    Cp = aopt.Cp;
+end
+
+% Peform Bayesian Inference
+PP = BayesInf(x0,Ep,diag(red));
+
+if writelog;fclose(loc);end
+        
+end
 
 function refdate(loc)
 fprintf(loc,'\n');
@@ -1569,7 +1583,7 @@ else
     st = sprintf('\n| PROGRESS SUMMARY:\n|-----------------------------\n| Main It: %04i \n| Num FunEval: %04i \n| Curr F: %04i \n| Best F: %04i \n| Status: %s \n\n',it,nfun,err,best,action);
 end
 
-s = subplot(4,3,3);
+s = subplot(5,3,3);
 delete(tx);
 tx = text(0,.5,st,'FontSize',18,'Color','w');
 ax = gca;
@@ -1611,7 +1625,7 @@ figpos = get(0,'defaultfigureposition');
 %1          87        1024        1730
 
 %figpos = [816         405        1082        1134];
-f = figure('Name','AO','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
+f = figure('Name','AO Optimiser','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -1621,9 +1635,9 @@ end
 function BayesPlot(x,pr,po)
 % Update the Bayes plot
 
-s(3) = subplot(3,2,5);
+s(3) = subplot(5,2,5);
 imagesc(pr);
-s(4) = subplot(3,2,6);
+s(4) = subplot(5,2,6);
 imagesc(po);
 
 ax = gca;
@@ -1640,7 +1654,7 @@ end
 
 function plot_h_opt(x)
 
-s(1) = subplot(4,3,11);
+s(1) = subplot(5,3,13);
 
 try
     plot(spm_vec(x(:,end-1)),'w:','linewidth',3); hold on;
@@ -1661,7 +1675,7 @@ function plot_hyper(x,y)
 
 % if hypertune; plot_hyper(params.hyper_tau); end
 
-s(1) = subplot(4,3,12);
+s(1) = subplot(5,3,12);
 
 plot3(1:length(x),spm_vec(x),y,'Color',[1 .7 .7],'linewidth',3); hold on;
 scatter3(1:length(x),spm_vec(x),y,30,'w','filled');
@@ -1688,7 +1702,7 @@ function pl_init(x,params)
 Y = spm_unvec( real(spm_vec(Y)), Y);
 y = spm_unvec( real(spm_vec(y)), Y);
 
-s(1) = subplot(4,3,[10]);
+s(1) = subplot(5,3,[10]);
 
 plot(spm_vec(Y),'w:','linewidth',3); hold on;
 plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1702,7 +1716,7 @@ end
 function prplot(pt)
 % Updating probability subplot
 
-s = subplot(4,3,8);
+s = subplot(5,3,8);
     bar(real( pt(:) ),'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('P(dp)','color','w','fontsize',18);
     ylabel('P(dp)');
@@ -1724,7 +1738,7 @@ function probplot(growth,thresh,oo)
 growth=growth(oo);
 growth(isnan(growth))=0;
     these = find(growth>thresh);
-    s = subplot(4,3,[9]);
+    s = subplot(5,3,[9]);
     bar(real(growth),'FaceColor',[1 .7 .7],'EdgeColor','w');
     %plot(growth,'w','linewidth',3);hold on
     %plot(these,growth(these),'linewidth',3,'Color',[1 .7 .7]);
@@ -1761,7 +1775,7 @@ aopt = params.aopt;
 % note: this plot will be added to the main AO optimisation figure in
 % position subplot(4,3,12) and coloured appropriately...
 if isfield(params,'userplotfun') && ~isempty(params.userplotfun);
-    subplot(4,3,12);hold off;
+    subplot(5,3,12);hold off;
     feval(params.userplotfun,x,params);
     ax        = gca;
     ax.YColor = [1 1 1];
@@ -1799,16 +1813,16 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     drawnow;
 else
     if ~aopt.doimagesc
-        s(1) = subplot(4,3,[1 2]);
+        s(1) = subplot(5,3,[1 2]);
 
         plot(spm_vec(Y),'w:','linewidth',3); hold on;
         plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
-        grid on;grid minor;title('AO Parameter Estimation: Current Best','color','w','fontsize',18);
+        grid on;grid minor;title('AO MAP Estimation: Current Best','color','w','fontsize',18);
         s(1).YColor = [1 1 1];
         s(1).XColor = [1 1 1];
         s(1).Color  = [.3 .3 .3];
     else
-        s(1) = subplot(4,3,1);
+        s(1) = subplot(5,3,1);
         %imagesc(spm_unvec(spm_vec(Y),aopt.yshape));
         if iscell(aopt.yshape)
             surf(spm_unvec(spm_vec(Y),spm_cat(aopt.yshape)),'EdgeColor','none');
@@ -1821,7 +1835,7 @@ else
         s(1).XColor = [1 1 1];
         s(1).ZColor = [1 1 1];
         s(1).Color  = [.3 .3 .3];
-        s(6) = subplot(4,3,2);
+        s(6) = subplot(5,3,2);
         %imagesc(spm_unvec(spm_vec(y),aopt.yshape));
         if iscell(aopt.yshape)
             surf(spm_unvec(spm_vec(y),spm_cat(aopt.yshape)),'EdgeColor','none');
@@ -1837,7 +1851,7 @@ else
     end
 
     %s(2) = subplot(412);
-    s(2) = subplot(4,3,[6]);
+    s(2) = subplot(5,3,[6]);
     %bar([former_error new_error]);
     plot(former_error,'w--','linewidth',3); hold on;
     plot(new_error,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1849,7 +1863,7 @@ else
     
     
     %s(3) = subplot(413);
-    s(3) = subplot(4,3,7);
+    s(3) = subplot(5,3,7);
     bar(real([ x(:)-ox(:) ]),'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
     ylabel('Δ prior');
@@ -1862,7 +1876,7 @@ else
     s(3).Color  = [.3 .3 .3];
     drawnow;
     
-    s(4) = subplot(4,3,[4 5]);
+    s(4) = subplot(5,3,[4 5]);
     plot(spm_vec(Y),'w:','linewidth',3);
     hold on;
     plot(spm_vec(Y)-aopt.oerror,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1882,7 +1896,7 @@ else
         params.r2 = corr(spm_vec(Y),spm_vec(y)).^2;
     end
     
-    s(5) = subplot(4,3,9);
+    s(5) = subplot(5,3,9);
     plot(spm_vec(params.r2),'w:','linewidth',3);
     %hold on;
     %plot(spm_vec(Y)-aopt.oerror,'linewidth',3,'Color',[1 .7 .7]); hold off;
@@ -1963,6 +1977,14 @@ warning on;
 Y  = aopt.y;
 Q  = aopt.Q;
 
+% More chekcks - attempt to catch the case where optimisation has pushed the
+% parameters such that the system is unstable and returning empty or nan or
+% inf etc. 
+y = denan(y);
+if length(y) == 0
+    y = Y*0 + inf;
+end
+
 % Feature selection
 %--------------------------------------------------------------------------
 if isfield(params,'FS')
@@ -2034,6 +2056,10 @@ end
 %h
 
 e   = (spm_vec(Y) - spm_vec(y)).^2;
+
+%S = atcm.fun.QtoGauss(Y,12) - atcm.fun.QtoGauss(y,12);
+%e = max(S')';
+
 %e   = (spm_vec(Y) - spm_vec(y));
 ipC = aopt.ipC;
 
@@ -2193,6 +2219,15 @@ switch lower(method)
             er = spm_vec(Y)-spm_vec(y);
             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
 
+        case 'rmse_peaks'
+            
+            er  = spm_vec(Y)-spm_vec(y);
+            erp = isort(Y) - isort(y);
+            
+            e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2) + ...
+                 ( (norm(full(erp),2).^2)/numel(spm_vec(Y)) ).^(1/2) ;   
+            
+            
         case 'rmse_ksden'
             % rmse: root mean squaree error 
             er = spm_vec(atcm.fun.vmd(Y,'NumIMFs',2))-spm_vec(atcm.fun.vmd(y,'NumIMFs',2));
@@ -2231,7 +2266,9 @@ switch lower(method)
             % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
             e = mvgkl(Y,covQ,spm_vec(y),covQ);
             
-            e(e<0)=-e;
+            %e(e<0)=-e;
+            
+            %e = abs(e);
             
         case 'q'
                                  
@@ -2312,6 +2349,45 @@ switch lower(method)
             e = er1 + 4*er2;
             
             
+        case {'gauss' 'gp'}
+            
+            %e = mvgkl(Y,makeposdef(AGenQn(Y,12)),y,makeposdef(AGenQn(y,12)));
+            
+            %S = eye(length(Y));
+            %e = norm( sqrt(det(S)) * exp( - 0.5 * (Y-AGenQn(Y,12))'* S * (y-AGenQn(y,12)) ) );
+            
+            S = atcm.fun.QtoGauss(Y,12) - atcm.fun.QtoGauss(y,12);
+                        
+            e = norm( max(S) );
+            
+            e = e + sum( (Y(:)-y(:)).^2 );
+            
+            if aopt.hyperparameters
+                % (3) Complexity minus accuracy of precision
+                %----------------------------------------------------------------------
+                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
+            end
+            
+%             % covarince componebnts
+%             covQ = aopt.Q;
+%             covQ(covQ<0)=0;
+%             covQ = (covQ + covQ')/2;
+% 
+%             % pad for when using FS(y) ~= length(y)
+%             padv = length(Y) - length(covQ);
+%             covQ(end+1:end+padv,end+1:end+padv)=.1;
+%             
+%             % Gaussian error term
+%             e  = -GaussianBasisFunction(Y,y,covQ);
+            
+            %nP = length(aopt.Q);
+            
+            %YY = atcm.fun.lsq_widfit(Y(1:nP));
+            %yy = atcm.fun.lsq_widfit(y(1:nP));
+            
+            %e  = -GaussianBasisFunction(YY,yy,covQ);
+            
+            % y = sqrt(det(S)) * exp( - 0.5 * (x-c)'* S * (x-c) );
             
         case 'haus';
             
@@ -2340,6 +2416,8 @@ switch lower(method)
             % truth [Y] first = i.e. inclusive, mean-seeking
             % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
             e = 0.5*mvgkl(Y,covQ,y(:),covQ) + 0.5*mvgkl(y(:),covQ,Y,covQ);
+            
+            e = abs(e);
                         
         case 'mvgkl_rmse'
             % multivariate gaussian kullback lieb div
@@ -2486,7 +2564,34 @@ switch lower(method)
             
             er = full(er);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-                        
+                       
+        case 'qdist'
+            
+            YY = AGenQn(Y,8);
+            yy = AGenQn(y,8);
+            
+            SY = svd(YY);
+            Sy = svd(yy);
+            
+            A = sqrt(sum( SY.^2 ));
+            B = sqrt(sum( Sy.^2 ));
+            
+            e = A - B;
+            
+            %Y = makeposdef((YY+YY'));
+            %yy = makeposdef((yy+yy'));
+            
+            %e = mvgkl(Y,YY,y,yy);
+            
+            %E = cdist(YY,yy);
+            
+            % pad for when using FS(y) ~= length(y)
+            %dQ = aopt.Q;
+            %padv = length(Y) - length(dQ);
+            %dQ(end+1:end+padv,end+1:end+padv)=.1;
+            
+            %e = norm( E.*dQ );
+            
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
             e = 1 - ( distcorr( spm_vec(Y), spm_vec(y) ).^2 );
@@ -2720,7 +2825,7 @@ if nargout == 2 || nargout == 7
         else
             % option 2: dfdp, parallel, 1 output
             %----------------------------------------------------------
-            [J,ip] = jacopar(@obj,x0,V,0,Ord,{params});
+            [J,ip,Jo] = jacopar(@obj,x0,V,0,Ord,{params});
         end
     elseif aopt.mimo == 1
         nout   = 3;
@@ -2731,7 +2836,7 @@ if nargout == 2 || nargout == 7
         else
             % option 4: dfdp, parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            [J,ip] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
+            [J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
         end
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
@@ -2779,6 +2884,11 @@ if nargout == 2 || nargout == 7
     if  aopt.updatej
         aopt.J       = J;
         aopt.updatej = false;     % (when triggered always switch off)
+        
+        try
+            % the GaussNewton scheme needs both Grad & Hess 
+            aopt.Jo      = Jo;
+        end
     end
     
     % Accumulate gradients / memory of gradients
@@ -2997,13 +3107,17 @@ switch search_method
             [L,D] = ldl_smola(J',a);
             dFdpp = -(L*(D./sum(diag(D)))*L');
             
+            %dFdpp = ( J'./max(abs(J)') )';
+            
+            %dFdpp = -(dFdpp'*dFdpp);
+            
             %A = trace(J'*J);
             
             %dFdpp = -(J'*J)/A;
         else
             dFdpp  = -(J'*J);
         end
-        
+                
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);
         
@@ -3060,6 +3174,12 @@ aopt = params.aopt;
 if search_method == 1 || search_method == 7 
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
+    
+    if ~isvector(dx)
+        % when the jacobian vector gets transposed
+        dx  = x1 + (sum(a)'.*J(:));
+    end
+        
     %dx = x1 + (sum(a).*J')';
 elseif search_method == 2
     dFdp  = a;
@@ -3174,6 +3294,8 @@ X.save_constant = 0;
 X.nocheck = 0;
 X.isQR = 0;
 X.NatGrad = 0;
+X.variance_estimation = 0;
+X.gradtol = 1e-4;
 end
 
 function parseinputstruct(opts)

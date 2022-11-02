@@ -42,7 +42,7 @@ classdef AODCM < handle
         ftype   % swith between reduced and full model 
         hist
         params
-        
+        Pp
     end
     
     methods
@@ -314,6 +314,7 @@ classdef AODCM < handle
             
             obj.history = History;
             obj.params = params;
+            %obj.Pp = Pp;
             
         end
         
@@ -390,34 +391,34 @@ classdef AODCM < handle
 %             for i  = 1:length(Q)
 %                 iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 %             end
+            
+            er = spm_vec(Y)-spm_vec(y);
+            %er = real(er'.*iS.*er)/2;
+            %er(isnan(er))=inf;
+            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+            
+            F    = e;%-sum(L);         
+            
+%             covQ = obj.opts.Q;
+%             covQ(covQ<0)=0;
+%             covQ = (covQ + covQ')/2;
 %             
-%             er = spm_vec(Y)-spm_vec(y);
-%             er = real(er'.*iS.*er)/2;
-%             %er(isnan(er))=inf;
-%             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+%             % pad for when using FS(y) ~= length(y)
+%             padv = length(Y) - length(covQ);
+%             covQ(end+1:end+padv,end+1:end+padv)=.1;
 %             
-%             F    = e;%-sum(L);         
-            
-            covQ = obj.opts.Q;
-            covQ(covQ<0)=0;
-            covQ = (covQ + covQ')/2;
-            
-            % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-            
-            % truth [Y] first = i.e. inclusive, mean-seeking
-            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-            e = mvgkl(spm_vec(Y),covQ,spm_vec(y),covQ);
-            
-            e(e<0)=-e;
+%             % make sure its positive semidefinite
+%             lbdmin = min(eig(covQ));
+%             boost = 2;
+%             covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
 %             
-            F = e;
+%             % truth [Y] first = i.e. inclusive, mean-seeking
+%             % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+%             e = mvgkl(spm_vec(Y),covQ,spm_vec(y),covQ);
+%             
+%             e(e<0)=-e;
+% %             
+%             F = e;
             
 
         end

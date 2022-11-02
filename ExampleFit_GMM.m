@@ -25,6 +25,11 @@ V  = ~~spm_vec(P)/8;
 V(9:12)=0;
 f  = @(x) (makef(w,spm_unvec(abs(x),S)));
 
+% f  = @(x) (makef(w,spm_unvec(abs(x),S))).*hnoisebasis(length(w),x(13:14))';
+% 
+% x0(13:14)=1;
+% V(13:14)=1/8;
+
 V(3:4)=1/16;
 
 %V = V*8;
@@ -53,7 +58,7 @@ op.doparallel = 0; % compute stuff using parfor
 op.DoMLE=0;
 op.factorise_gradients = 1; % factorise/normalise grads
 op.normalise_gradients=0;
-op.objective='mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
+op.objective='gauss';%'mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
 op.order=2; % second order gradients
 %
@@ -69,13 +74,15 @@ op.memory_optimise=1; % remember & include (optimise) prev update steps when con
 op.crit = [0 0 0 0];
 
 % use a Bayesian MAP projection to estimate parameters
-op.DoMAP_Bayes = 0;
+op.DoMAP_Bayes = 1;
 
 % use a Gauss Newton scheme
-op.isGaussNewton=1;
+op.isGaussNewton=0;
 
 % make regular saves of the optimimsation
 op.save_constant = 0;
+
+op.variance_estimation = 1;
 
 % use QR factorisation to predict dx from Jaco and residual
 %op.isQR=1;
@@ -83,6 +90,8 @@ op.save_constant = 0;
 %op.NatGrad = 1;
 
 %op.nocheck=1;
+
+%op.Q = (eye(length(w)) + AGenQ(Y));
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

@@ -136,12 +136,16 @@ if ismember(order,[1 2 3 4])
                            ( (fx - f1) / (2*d) ) ) ./2;
             end
             
+            j1(i,:) = j(i,:);
+            
             if order == 2 
-                %j1(i,:) = j(i,:); % keep first order
+                j1(i,:) = j(i,:); % keep first order
                 % Alternatively, include curvature
                 deriv1 = (f0 - f1) / 2 / d;
                 deriv2 = (f0 - 2 * fx + f1) / d ^ 2;
                 j(i,:) = ( full( deriv1 ./ deriv2 ) );
+                
+                %j(i,:) = (f0 - 2 * fx + f1) / d ^ 2;
             elseif order == 4
                 % curvature using the 3-point routine
                 deriv1a = (f0 - fx) / (2*d);

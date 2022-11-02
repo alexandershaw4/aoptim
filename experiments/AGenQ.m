@@ -45,6 +45,7 @@ Q = a + at  + ab  + ...
     
 Q = smooth2(Q,4);
 
+
 if nargout == 2
     %Q  = cdist(x,x) .* Q;
     A  = Q .* ~eye(length(Q));

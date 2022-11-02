@@ -22,7 +22,7 @@ if size(covQ,1) == size(covQ,2)
 else
     
     Q = covQ;
-    covQ = (covQ * covQ')/2;
+    covQ = sqrt(covQ * covQ');
     
     % regularise
     covQ(isnan(covQ))=tol;

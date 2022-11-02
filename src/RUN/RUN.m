@@ -1,46 +1,21 @@
-%---------------------------------------------------------------------------------------------------------------------------
-
+function [Best_Cost,Best_X,Convergence_curve]=RUN(nP,MaxIt,lb,ub,dim,fobj,init_x,v)
 % RUNge Kutta optimizer (RUN)
 % RUN Beyond the Metaphor: An Efficient Optimization Algorithm Based on Runge Kutta Method
 % Codes of RUN:http://imanahmadianfar.com/codes/
 % Website of RUN:http://www.aliasgharheidari.com/RUN.html
-
+%
 % Iman Ahmadianfar, Ali asghar Heidari, Amir H. Gandomi , Xuefeng  Chu, and Huiling Chen  
+%
+% *updated by AS 2022 to employ Laplacian sampling
+%
+%
 
-%  Last update: 04-22-2021
-
-%  e-Mail: im.ahmadian@gmail.com,i.ahmadianfar@bkatu.ac.ir.
-%  e-Mail: as_heidari@ut.ac.ir, aliasghar68@gmail.com,
-%  e-Mail (Singapore): aliasgha@comp.nus.edu.sg, t0917038@u.nus.edu
-%---------------------------------------------------------------------------------------------------------------------------
-%  Co-author: Ali Asghar Heidari(as_heidari@ut.ac.ir),Amir H Gandomi,Xuefeng Chu, Huiling Chen(chenhuiling.jlu@gmail.com), 
-%---------------------------------------------------------------------------------------------------------------------------
-
-% After use, please refer to the main paper:
-% Iman Ahmadianfar, Ali Asghar Heidari,Amir H Gandomi,Xuefeng Chu,Huiling Chen,  
-% RUN Beyond the Metaphor: An Efficient Optimization Algorithm Based on Runge Kutta Method
-% Expert Systems With Applications, 2021, 115079, https://doi.org/10.1016/j.eswa.2021.115079 (Q1, 5-Year Impact Factor: 5.448, H-INDEX: 184)
-%---------------------------------------------------------------------------------------------------------------------------
-% You can also follow the paper for related updates in researchgate: https://www.researchgate.net/profile/Iman_Ahmadianfar
-% Researchgate: https://www.researchgate.net/profile/Ali_Asghar_Heidari.
-
-%  Website of RUN:%  http://www.aliasgharheidari.com/RUN.html
-
-% You can also use and compare with our other new optimization methods:
-                                                                       %(GBO)-2020-http://www.imanahmadianfar.com/codes.
-                                                                       %(HGS)-2021- http://www.aliasgharheidari.com/HGS.html
-                                                                       %(SMA)-2020- http://www.aliasgharheidari.com/SMA.html
-                                                                       %(HHO)-2019- http://www.aliasgharheidari.com/HHO.html  
-%---------------------------------------------------------------------------------------------------------------------------
-
-
-function [Best_Cost,Best_X,Convergence_curve]=RUN(nP,MaxIt,lb,ub,dim,fobj,init_x,v)
 rng('default')
 Cost=zeros(nP,1);                % Record the Fitness of all Solutions
 X=initialization(nP,dim,ub,lb);  % Initialize the set of random solutions   
 
 if nargin == 8
-    % alex replaced with laplacian sampling 
+    %NOTE:  alex replaced with Laplacian sampling 
     X = (init_x + sqrt(v./32).*rand(size(init_x,1),nP))';
 end
 
@@ -116,6 +91,14 @@ while it<MaxIt
         
         if CostNew<Cost(i)
             X(i,:)=Xnew;
+            
+            %alex
+            %if i > 1
+            %    fprintf('It = %d, Search: %d, Last = %d, New = %d\n',it,i,Cost(i-1),CostNew);
+            %else
+            %   fprintf('It = 1, Search: %d, Initial Best = %d\n',i,CostNew);
+            %end
+            
             Cost(i)=CostNew;
         end
 %% Enhanced solution quality (ESQ)  (Eq. 19)      

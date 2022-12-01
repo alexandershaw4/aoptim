@@ -2,14 +2,15 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % A (Bayesian) gradient/curvature descent optimisation routine, designed primarily 
 % for nonlinear model fitting / system identification / parameter estimation. 
 %
-% The algorithm combines a Gauss-Newton-like gradient routine (& optionally
+% The algorithm combines a Newton-like gradient routine (& optionally
 % MAP and ML) with line search and an optimisation on the composition of update 
 % parameters from a combination of the gradient flow and memories of previous updates.
 % It further implements an exponential cost function hyperparameter which
 % is tuned independently, and an iteratively updating precision operator.
 % 
-% The objective function minimises the free energy (~ ELBO - evidence lower
-% bound), SSE or RMSE. Or a precision-weighted RMSE, 'qrmse'.
+% The objective function minimises a smooth Gaussian process eror term, or 
+% alternatively the free energy (~ ELBO - evidence lower bound), SSE or RMSE. 
+% Or a precision-weighted RMSE, 'qrmse'.
 %
 % General idea:
 % Y0 = f(x) + e  
@@ -94,6 +95,18 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % where the regularisation parameter lambda is optimised. r0 is the redisual. 
 % (Note that inv(lambda*eye(D)+j*j') is the Fisher-information matrix).
+%
+% NOTE - the default option [2022] is now to use a regularised Newton routine:
+%---------------------------------------------------------------------------
+% 
+%     dx = x + inv(H*L*H)*-J
+%
+% whewre H is the Hessian and J the jacobian (dFdx). L is a regularisation
+% term that is optimised independently. 
+%
+%
+%
+% Other stuff:
 %
 % With the Gaussian Process Regression option (do_gpr), a GP is fitted over
 % (gradient) predictions and best errors to re-estimate the parameter step
@@ -226,8 +239,6 @@ if nargin == 1 && strcmp(lower(funopts),'options');
     X = DefOpts; return;
 end
 
-
-
 % Inputs & Defaults...
 %--------------------------------------------------------------------------
 if isstruct(funopts)
@@ -312,6 +323,7 @@ red   = (diag(pC));
 aopt.updateh = true; % update hyperpriors
 aopt.pC  = red;      % store for derivative & objective function access
 aopt.ipC = ipC;      % store ^
+red_x0 = red;
 
 % initial probs
 aopt.pt = zeros(length(x0),1) + (1/length(x0));
@@ -473,6 +485,10 @@ while iterate
     Hist.J{n} = df0;
     Hist.a{n} = a;
     
+    if ismimo
+        Hist.Jfull{n} = aopt.J;
+    end
+    
     % Make copies of error and param set for inner while loops
     x1  = x0;
     e1  = e0;
@@ -483,21 +499,31 @@ while iterate
     
     % check norm of gradients (def gradtol = 1e-4)
     if norm(J) < gradtol
+        fprintf('Gradient step below tolerance (%d)\n',norm(J));
         [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
         return;
     end
     
     % Update expectation on variance (2nd moments) using Jacobian
+    Hist.red(n,:) = red;
     if variance_estimation
         if n > 1
             % this is also a prediction of the step size for the next iter
             ored = red;
-            Jn   = abs(J);
-            Jn   = Jn./norm(Jn);
-            red  = red + Hist.e(n-1) / Hist.e(end) * Jn(:);
+            %Jn   = abs(J);
+            %Jn   = Jn./norm(Jn);
+            %red  = red_x0 + Hist.e(n-1) / Hist.e(end) * Jn(:);
+            
+            
+            for l = 1:np
+                PR(l) = normcdf(mean(Hist.Jfull{end}(l,:)),mean(Hist.Jfull{end-1}(l,:)),std(Hist.Jfull{end-1}(l,:)));
+            end
+            
+            red = red_x0 + (red_x0(:) .* PR(:));
             
             % update saved inverse
             %params.aopt.ipC   = spm_inv(diag(red));
+           % aopt.red = red;
             
             % update plot
             s = subplot(5,3,14);
@@ -531,16 +557,78 @@ while iterate
         dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );
                     
         if isGaussNewton && ismimo
+            % [note this is now just a newton method, not gn!]
+            %
             % note for this full Newton method you need both Hess and Grad
             % from the jaco_par.m function because the step size is
             % determined by the inverse of the inner prouect of the hessian
+            pupdate(loc,n,nfun,e1,e1,'Newton ',toc);
             
             % by using the variance (red) as a lambda on the inverse
             % Hessian, this becomes a relaxed or 'damped' Newton scheme
             H = [aopt.J];
-            H = (red.*H)./norm(H);
-            Hstep = pinv(H*H')*cat(1,aopt.Jo{:,1});
-            dx = x1 - Hstep;
+            H = (red.*H);%./norm(H);
+            %Hstep = pinv(H*H')*cat(1,aopt.Jo{:,1});
+            
+            % the non-parallel finite different functions return gradients
+            % in reduced space - embed in full vector space
+            Jo = cat(1,aopt.Jo{:,1});
+            JJ = x0*0;
+            JJ(find(diag(pC))) = Jo;
+            
+            % use cholesky factorisation of H (ensuring posdef)
+            R = chol( abs(makeposdef(H*(1*eye(length(H)))*H'))+ 1e-3*eye(length(x0)) );
+            
+            Hstep  = ( -R \ (R'*JJ));
+            
+            Gdx = x1 - Hstep;
+            
+            if obj(Gdx,params) < obj(dx,params) && ~docompare
+                dx = Gdx;
+                fprintf('Selected Newton Step\n');
+            end
+        end
+        
+        if isGaussNewtonReg && ismimo
+            % [note this is now just a newton method, not gn!]
+            %
+            % note for this full Newton method you need both Hess and Grad
+            % from the jaco_par.m function because the step size is
+            % determined by the inverse of the inner prouect of the hessian
+            pupdate(loc,n,nfun,e1,e1,'Newton ',toc);
+            
+            % by using the variance (red) as a lambda on the inverse
+            % Hessian, this becomes a relaxed or 'damped' Newton scheme
+            H = [aopt.J];
+            H = (red.*H./norm(H));%./norm(H);
+            
+            % the non-parallel finite different functions return gradients
+            % in reduced space - embed in full vector space
+            Jo = cat(1,aopt.Jo{:,1});
+            if length(Jo) ~= length(x1)
+                JJ = x0*0;
+                JJ(find(diag(pC))) = Jo;
+            else
+                JJ = Jo;
+            end
+            
+            % tunable regularisation function
+            Gf  = @(L) pinv(H*(L*eye(length(H)))*H');
+            Gff = @(x) obj(x1 - Gf(x)*JJ,params);
+            
+            [XX] = fminsearch(Gff,1);
+            
+            Hstep = pinv(H*(XX*eye(length(H)))*H')*JJ;
+                        
+            GRdx = x1 - Hstep;
+            %dx = GRdx;
+            % only take a Newton step if its better than the vanilla
+            % gradient step
+            
+            if obj(GRdx,params) < obj(dx,params) && ~docompare
+                dx = GRdx;
+                fprintf('Selected Regularised Newton Step\n');
+            end
         end
             
         if NatGrad
@@ -610,7 +698,8 @@ while iterate
                 vv     = real(sqrt( red(i) ))*2;
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                 pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
+                %pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
             else
             end
         end
@@ -637,7 +726,9 @@ while iterate
                         vv     = real(sqrt( red(i) ))*2;
                         if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                         pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                        pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                        
+                        pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
+                        %pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
                     else
                     end
                 end
@@ -796,7 +887,11 @@ while iterate
             ddx = fminsearch(gmap,1/8);
             
             % recover dx
-            dx = x1 - red.*map(ddx);
+            Bdx = x1 - red.*map(ddx);
+            
+            if obj(Bdx,params) < obj(dx,params) && ~docompare
+                dx = Bdx;
+            end
             
             % recover (co)variance
             %if variance_estimation
@@ -813,7 +908,27 @@ while iterate
             % note.
             % inv(lambda*eye(D)+j*j') is the Fisher-information matrix
         end
+        
+        if docompare
+            
+            pupdate(loc,n,nfun,e1,e1,'compare',toc);
+            
+            OP = [dx(:) Gdx(:) Bdx(:) GRdx(:)];
+            K  = [1 1 1 1]/4;
+            
+            if params.aopt.parallel
+                options = optimset('Display','off','UseParallel',true);
+            else
+                options = optimset('Display','off');
+            end
+            
+            gx = @(K) obj(OP*K',params);
+            X  = fminsearch(gx,K,options);
+            dx = OP*X';
+            
+        end
                 
+                            
         % (option) Momentum inclusion
         %------------------------------------------------------------------
         if n > 2 && IncMomentum
@@ -968,8 +1083,11 @@ while iterate
         if rungekutta > 0
             pupdate(loc,n,nfun,de,e1,'RK lnsr',toc);
             
-            LB  = dx - (sqrt(red))*2;
-            UB  = dx + (sqrt(red))*2;
+            LB  = dx - exp(sqrt(red))*2;
+            UB  = dx + exp(sqrt(red))*2;
+            
+            %LB = LB.*(~~red);
+            %UB = UB.*(~~red);
             
             %LB = dx - (dx.*red)*2;
             %UB = dx + (dx.*red)*2;
@@ -989,9 +1107,12 @@ while iterate
                 if dde < de
                     dx = rdx(:);
                     de = dde;
+                    
                 end
 
                 pupdate(loc,n,nfun,de,e1,'RK fini',toc);
+                
+                
             end
             
         end
@@ -1152,6 +1273,7 @@ while iterate
 
                 k  = [cat(2,Hist.p{:}) dx];
 
+                % limit memory depth
                 try; k = k(:,end-4:end); end
 
                 hp = zeros(size(k,2),1);
@@ -1169,7 +1291,7 @@ while iterate
                 dim = length(hp);
 
                 SearchAgents_no = 6;
-                Max_iteration = 6;
+                Max_iteration = 6*2;
 
                 fun = @(x) obj(k*x(:),params);
 
@@ -1184,9 +1306,12 @@ while iterate
 
                 %X = fminunc(gx,hp,options);
                 %X = X./sum(X);
-
-                dx = k*X;
-                de = obj(dx,params);
+                
+                if obj(k*X,params) < obj(dx,params)
+                    dx = k*X;
+                    de = obj(dx,params);
+                    fprintf('Memory helped improve gradient flow update\n');
+                end
 
                 try
                     if n < 3
@@ -1229,7 +1354,7 @@ while iterate
             %legend({'Gradient Flow' 'Memories'},'color','w','location','southoutside');
             
         end
-        
+                
         % log deltaxs
         Hist.dx(:,n) = dx;
         
@@ -1322,7 +1447,7 @@ while iterate
         
         n_reject_consec = 0;              % monitors consec rejections
         JPDtol          = Initial_JPDtol; % resets prob threshold for update
-
+        
     else
         
         % *If didn't improve: invoke much more selective parameter update
@@ -1520,6 +1645,25 @@ end
 
 % Subfunctions: Plotting & printing updates to the console / log...
 %==========================================================================
+
+% function [X,F,Cp,PP] = userstop(x,y,varargin)
+% 
+% if strcmp(y.Character,'c')
+%     disp('User stop initiated');
+% 
+%     % send it back to the caller (AO.m)
+%     C = {'V','x0','ip','e0','doparallel','params','J','Ep','red','writelog','loc','aopt'};
+% 
+%     
+% %st = dbstack('-completenames');
+% %    this = find(strcmp('AO',{st.name}));
+%         
+%     
+%     [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
+%     return;
+%     
+% end
+% end
 
 function [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
 
@@ -1775,12 +1919,12 @@ aopt = params.aopt;
 % note: this plot will be added to the main AO optimisation figure in
 % position subplot(4,3,12) and coloured appropriately...
 if isfield(params,'userplotfun') && ~isempty(params.userplotfun);
-    subplot(5,3,12);hold off;
+    subplot(5,3,15);hold off;
     feval(params.userplotfun,x,params);
     ax        = gca;
     ax.YColor = [1 1 1];
     ax.XColor = [1 1 1];
-    ax.Color  = [.3 .3 .3];hold on;
+    ax.Color  = [.3 .3 .3];
 end
 
 
@@ -2356,8 +2500,19 @@ switch lower(method)
             %S = eye(length(Y));
             %e = norm( sqrt(det(S)) * exp( - 0.5 * (Y-AGenQn(Y,12))'* S * (y-AGenQn(y,12)) ) );
             
-            S = atcm.fun.QtoGauss(Y,12) - atcm.fun.QtoGauss(y,12);
-                        
+            S = atcm.fun.QtoGauss(Y,12*2) - atcm.fun.QtoGauss(y,12*2);
+            
+%             VY = GaussEIG(Y);
+%             vy = GaussEIG(y);
+%             
+%             try 
+%                 S = VY(:,1) - vy(:,1);
+%             catch
+%                 S = Y*inf;
+%             end
+%             
+%             e = sum( S.^2 );
+            
             e = norm( max(S) );
             
             e = e + sum( (Y(:)-y(:)).^2 );
@@ -2820,7 +2975,7 @@ if nargout == 2 || nargout == 7
         if ~aopt.parallel
             % option 1: dfdp, not parallel, 1 output
             %----------------------------------------------------------
-            [J,ip] = jaco(@obj,x0,V,0,Ord,[],{params});... df[e]   /dx [MISO]
+            [J,ip,Jo] = jaco(@obj,x0,V,0,Ord,[],{params});... df[e]   /dx [MISO]
             %objfunn = @(x) obj(x,params);[J,~] = spm_diff(objfunn,x0,1);
         else
             % option 2: dfdp, parallel, 1 output
@@ -2832,7 +2987,7 @@ if nargout == 2 || nargout == 7
         if ~aopt.parallel
             % option 3: dfdp, not parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            [J,ip] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+            [J,ip,Jo] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
         else
             % option 4: dfdp, parallel, ObjF has multiple outputs
             %----------------------------------------------------------
@@ -3238,10 +3393,10 @@ end
 
 function X = DefOpts()
 % Returns an empty options structure with defaults
-X.step_method = 3;
+X.step_method = 7;
 X.im          = 1;
 X.mleselect   = 0;
-X.objective   = 'fe';
+X.objective   = 'gauss';
 X.writelog    = 0;
 X.order       = 2;
 X.min_df      = 0;
@@ -3259,10 +3414,10 @@ X.hyperparams  = 1;
 X.force_ls     = 0;
 X.doplot       = 1;
 X.smoothfun    = 0;
-X.ismimo       = 0;
+X.ismimo       = 1;
 X.gradmemory   = 0;
 X.doparallel   = 0;
-X.fsd          = 1;
+X.fsd          = 0;
 X.allow_worsen = 0;
 X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
@@ -3285,7 +3440,7 @@ X.steps_choice = [];
 X.isCCA = 0;
 X.hypertune = 1;
 X.memory_optimise = 1;
-X.rungekutta = 1;
+X.rungekutta = 6;
 X.updateQ = 1;
 X.DoMAP = 0;
 X.DoMAP_Bayes = 0;
@@ -3296,6 +3451,8 @@ X.isQR = 0;
 X.NatGrad = 0;
 X.variance_estimation = 0;
 X.gradtol = 1e-4;
+X.docompare = 0;
+X.isGaussNewtonReg = 1;
 end
 
 function parseinputstruct(opts)

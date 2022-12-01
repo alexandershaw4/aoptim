@@ -81,7 +81,7 @@ end
 
 % The subfunction -
 warning off; % suppress matrix singularity warnings in unstable systems
-[j]  = jacf(IS,P,ip,verbose,V,order,nout);
+[j,j1]  = jacf(IS,P,ip,verbose,V,order,nout);
 warning on;
 
 if isnumeric(j)
@@ -169,6 +169,8 @@ if ismember(order,[1 2 3 4])
                                     ((spm_vec(fx) - spm_vec(f1)) ./ (2*d) ) ./2 , fx);  
                 
             end
+            
+            j1(i,:) = j(i,:); 
             
             if order == 2 
                 j1(i,:) = j(i,:); % keep first order

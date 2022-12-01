@@ -169,6 +169,8 @@ if ismember(order,[1 2 3 4])
                 
             end
             
+            j1(i,:) = j(i,:);
+            
             if order == 2 
                 j1(i,:) = j(i,:); % keep first order
                 

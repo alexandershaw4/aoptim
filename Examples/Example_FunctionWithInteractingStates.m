@@ -38,7 +38,7 @@ op.memory_optimise=1;
 op.hyperparams=1;
 
 op.ismimo=1;
-op.DoMAP_Bayes=1;
+op.DoMAP_Bayes=0;
 
 [X,F,CV] = AO(op);    % RUN IT
 

@@ -672,7 +672,7 @@ classdef AODCM < handle
             objective = @(x) errfun(obj,fun,x);
 
             
-            reps    = 132;
+            reps    = 64;
             explore = 0.2;
             RESULTS = bayesopt(objective,xvar,'IsObjectiveDeterministic',true,...
                 'ExplorationRatio',explore,'MaxObjectiveEvaluations',reps,...

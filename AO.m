@@ -629,6 +629,12 @@ while iterate
                 dx = GRdx;
                 fprintf('Selected Regularised Newton Step\n');
             end
+            
+            if forcenewton
+                dx = GRdx;
+                fprintf('Forced Newton Step\n');
+            end
+            
         end
             
         if NatGrad
@@ -664,7 +670,8 @@ while iterate
         
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)        
-        
+        dx = real(dx);
+        x1 = real(x1);
         
         % [Prior] distributions
         pt  = zeros(1,length(x1));
@@ -1821,8 +1828,8 @@ function plot_hyper(x,y)
 
 s(1) = subplot(5,3,12);
 
-plot3(1:length(x),spm_vec(x),y,'Color',[1 .7 .7],'linewidth',3); hold on;
-scatter3(1:length(x),spm_vec(x),y,30,'w','filled');
+plot3(1:length(x),real(spm_vec(x)),real(y),'Color',[1 .7 .7],'linewidth',3); hold on;
+scatter3(1:length(x),real(spm_vec(x)),real(y),30,'w','filled');
 grid on;
 title('Exp Hypr Tune','color','w','fontsize',18);
 xlabel('Iteration','color','w');
@@ -2942,9 +2949,11 @@ if nargout == 2 || nargout == 7
     
     % Switch for different steps in numerical differentiation
     if aopt.fixedstepderiv == 1
-        V = (~~V)*1e-3;
+        V = (~~V)*exp(-8);
     elseif aopt.fixedstepderiv == -1
-        V = V + ( (~~V) .* abs(randn(size(V))) );
+        nds = max(1e-7*ones(1,length(x0)),abs(x0(:)')*1e-4);
+        V = nds(:).*(~~V);
+        %V = V + ( (~~V) .* abs(randn(size(V))) );
     elseif aopt.fixedstepderiv == 0
         V = V;
     else %aopt.fixedstepderiv 
@@ -3018,6 +3027,16 @@ if nargout == 2 || nargout == 7
         JI(find(ip)) = J0;
         J0  = JI;        
                 
+    end
+    
+    if aopt.mimo
+        
+        % Gaussian smoothing along oputput vector
+        for i = 1:size(J,1)
+           [QM,GL] = AGenQn(J(i,:),8);
+           J(i,:) = J(i,:)*QM;
+        end
+        
     end
     
     % Embed J in full parameter space
@@ -3453,6 +3472,7 @@ X.variance_estimation = 0;
 X.gradtol = 1e-4;
 X.docompare = 0;
 X.isGaussNewtonReg = 1;
+X.forcenewton = 0;
 end
 
 function parseinputstruct(opts)

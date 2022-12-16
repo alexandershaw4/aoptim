@@ -68,7 +68,7 @@ op.hypertune=1; % do hypertuning
 op.rungekutta=8; % do an RK-line search
 op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
-op.WeightByProbability=1;
+%op.WeightByProbability=1;
 
 op.memory_optimise=1; % remember & include (optimise) prev update steps when considering new steps
 op.crit = [0 0 0 0];
@@ -86,6 +86,7 @@ op.variance_estimation = 0;
 
 op.isGaussNewton=0;
 op.isGaussNewtonReg=1;
+%op.forcenewton=1;
 
 % use QR factorisation to predict dx from Jaco and residual
 %op.isQR=1;

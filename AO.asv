@@ -510,17 +510,16 @@ while iterate
         if n > 1
             % this is also a prediction of the step size for the next iter
             ored = red;
-            Jn   = abs(J);
-            Jn   = Jn./norm(Jn);
-            red  = red_x0 + Hist.e(n-1) / Hist.e(end) * Jn(:);
+            %Jn   = abs(J);
+            %Jn   = Jn./norm(Jn);
+            %red  = red_x0 + Hist.e(n-1) / Hist.e(end) * Jn(:);
             
             
             for l = 1:np
-                %PR(l) = makedist('normal','mu', mean(Hist.Jfull{end-1}(l,:)),'sigma', std(Hist.Jfull{end-1}(l,:)));
                 PR(l) = normcdf(mean(Hist.Jfull{end}(l,:)),mean(Hist.Jfull{end-1}(l,:)),std(Hist.Jfull{end-1}(l,:)));
-            
             end
             
+            red = red_x0 + (red_x0(:) .* PR(:));
             
             % update saved inverse
             %params.aopt.ipC   = spm_inv(diag(red));
@@ -620,7 +619,7 @@ while iterate
             [XX] = fminsearch(Gff,1);
             
             Hstep = pinv(H*(XX*eye(length(H)))*H')*JJ;
-            
+                        
             GRdx = x1 - Hstep;
             %dx = GRdx;
             % only take a Newton step if its better than the vanilla
@@ -630,6 +629,12 @@ while iterate
                 dx = GRdx;
                 fprintf('Selected Regularised Newton Step\n');
             end
+            
+            if forcenewton
+                dx = GRdx;
+                fprintf('Forced Newton Step\n');
+            end
+            
         end
             
         if NatGrad
@@ -699,7 +704,8 @@ while iterate
                 vv     = real(sqrt( red(i) ))*2;
                 if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                 pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
+                %pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
             else
             end
         end
@@ -726,7 +732,9 @@ while iterate
                         vv     = real(sqrt( red(i) ))*2;
                         if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                         pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                        pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                        
+                        pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
+                        %pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
                     else
                     end
                 end
@@ -909,10 +917,6 @@ while iterate
         
         if docompare
             
-            %e_0(1) = obj(dx,params);
-            %e_0(2) = obj(Gdx,params);
-            %e_0(3) = obj(Bdx,params);
-            
             pupdate(loc,n,nfun,e1,e1,'compare',toc);
             
             OP = [dx(:) Gdx(:) Bdx(:) GRdx(:)];
@@ -928,31 +932,6 @@ while iterate
             X  = fminsearch(gx,K,options);
             dx = OP*X';
             
-%             LB = zeros(size(hp));
-%             UB = ones(size(hp))+2;
-%             dim = length(hp);
-%             
-%             SearchAgents_no = 6;
-%             Max_iteration = 6*2;
-%             
-%             fun = @(x) obj(k*x(:),params);
-%             
-%             [Frk,X,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,hp,ones(size(hp))/8);
-%             X=X(:);
-            
-            
-            %[~,I] = min(e_0);
-            
-%             if I == 1
-%                 dx = dx;
-%                 pupdate(loc,n,nfun,e1,e1,'SimplSt',toc);
-%             elseif I == 2
-%                 dx = Gdx;
-%                 pupdate(loc,n,nfun,e1,e1,'NewtStp',toc);
-%             elseif I == 3
-%                 dx = Bdx;
-%                 pupdate(loc,n,nfun,e1,e1,'MAP_stp',toc);
-%             end
         end
                 
                             
@@ -1112,6 +1091,9 @@ while iterate
             
             LB  = dx - exp(sqrt(red))*2;
             UB  = dx + exp(sqrt(red))*2;
+            
+            %LB = LB.*(~~red);
+            %UB = UB.*(~~red);
             
             %LB = dx - (dx.*red)*2;
             %UB = dx + (dx.*red)*2;
@@ -3044,6 +3026,8 @@ if nargout == 2 || nargout == 7
                 
     end
     
+    if aopt.mimo
+    
     % Embed J in full parameter space
     IJ = zeros(length(ip),size(J,2));
     try    IJ(find(ip),:) = J;
@@ -3477,6 +3461,7 @@ X.variance_estimation = 0;
 X.gradtol = 1e-4;
 X.docompare = 0;
 X.isGaussNewtonReg = 1;
+X.forcenewton = 0;
 end
 
 function parseinputstruct(opts)

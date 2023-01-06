@@ -1090,8 +1090,18 @@ while iterate
         if rungekutta > 0
             pupdate(loc,n,nfun,de,e1,'RK lnsr',toc);
             
-            LB  = dx - exp(sqrt(red))*2;
-            UB  = dx + exp(sqrt(red))*2;
+            %LB  = dx - exp(sqrt(red))*2;
+            %UB  = dx + exp(sqrt(red))*2;
+            
+            % Make the U/L bounds proportional to the probability over the
+            % prior variance
+            LB  = denan( dx - ( pt(:)./red ) );
+            UB  = denan( dx + ( pt(:)./red ) );
+            
+            B = find(UB==LB);
+            
+            LB(B) = dx(B) - 1;
+            UB(B) = dx(B) + 1;
             
             %LB = LB.*(~~red);
             %UB = UB.*(~~red);
@@ -1293,7 +1303,8 @@ while iterate
                 gx = @(x) obj(k*x,params);
                 %X  = fminsearch(gx,hp,options);
 
-                LB = zeros(size(hp));
+                
+                LB = zeros(size(hp))-1;
                 UB = ones(size(hp))+2;
                 dim = length(hp);
 
@@ -1364,6 +1375,49 @@ while iterate
                 
         % log deltaxs
         Hist.dx(:,n) = dx;
+        
+        if predictionerrorupdate
+           % If we ignore nonlinearities between parameter effects, we can
+           % propogate the prediction error associated with each parameters update
+           % to improve the error / prediction
+           fprintf('\nUpdating Prediction Errors...\n');
+
+           ee = obj(x1,params);
+
+           for ik = 1:length(x1)
+              ddx     = x1;
+              ddx(ik) = dx(ik);
+              ex(ik)  = obj(ddx,params);
+           end
+           
+           delta_y = (ex - ee)./ee;
+           delta_p = (dx - x1)./x1;
+           
+           dydp = delta_y(:) ./ delta_p(:);
+           
+           % predicted objective under linear assumption
+           predic = sum( delta_y(:).*(dx-dydp) );
+           
+           fprintf('Prediction = %d --> ',e0);           
+           
+           % Y(i) = b0 + b1*X(i) + e(i)
+           pe_dx = dx - dydp*1e-4;
+           
+           pe_e = obj(pe_dx,params);
+                      
+           % actual objective
+           fprintf('Error-Update = %d',pe_e);
+           
+           if pe_e < obj(dx,params)
+               de = pe_e;
+               dx = pe_dx;
+               fprintf(' [accept]\n\n');
+           else
+               fprintf(' [ignore]\n\n');
+           end
+           
+        end
+
         
         
         % Evaluation of the prediction(s)
@@ -2216,6 +2270,7 @@ ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
 Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+%Cp = (Cp + Cp')./2;
 warning on
 
 if aopt.rankappropriate
@@ -2243,53 +2298,56 @@ if aopt.hyperparameters
         % pulled directly from SPM's spm_nlsi_GN.m ...
         % ascent on h / precision {M-step}
         %==========================================================================
-        clear P;
-        nh  = length(Q);
-        warning off;
-        S   = spm_inv(iS);warning on;
-        ihC = speye(nh,nh)*exp(4);
-        hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
-        for i = 1:nh
-            P{i}   = Q{i}*exp(h(i));
-            PS{i}  = P{i}*S;
-            P{i}   = kron(speye(nq),P{i});
-            JPJ{i} = real(aopt.J*P{i}*aopt.J');
-        end
-
-        % derivatives: dLdh 
-        %------------------------------------------------------------------
-        for i = 1:nh
-            dFdh(i,1)      =   trace(PS{i})*nq/2 ...
-                - real(e'*P{i}*e)/2 ...
-                - spm_trace(Cp,JPJ{i})/2;
-            for j = i:nh
-                dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
-                dFdhh(j,i) =   dFdhh(i,j);
+        %for m = 1:8
+            clear P;
+            nh  = length(Q);
+            warning off;
+            S   = spm_inv(iS);warning on;
+            
+            ihC = speye(nh,nh)*exp(4);
+            hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
+            for i = 1:nh
+                P{i}   = Q{i}*exp(h(i));
+                PS{i}  = P{i}*S;
+                P{i}   = kron(speye(nq),P{i});
+                JPJ{i} = real(aopt.J*P{i}*aopt.J');
             end
-        end
 
-        % add hyperpriors
-        %------------------------------------------------------------------
-        d     = h     - hE;
-        dFdh  = dFdh  - ihC*d;
-        dFdhh = dFdhh - ihC;
-        Ch    = spm_inv(-dFdhh);
+            % derivatives: dLdh 
+            %------------------------------------------------------------------
+            for i = 1:nh
+                dFdh(i,1)      =   trace(PS{i})*nq/2 ...
+                    - real(e'*P{i}*e)/2 ...
+                    - spm_trace(Cp,JPJ{i})/2;
+                for j = i:nh
+                    dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
+                    dFdhh(j,i) =   dFdhh(i,j);
+                end
+            end
 
-        % update ReML estimate
-        %------------------------------------------------------------------
-        warning off;
-        dh    = spm_dx(dFdhh,dFdh,{4});
-        dh    = min(max(dh,-1),1);
-        warning on;
-        h     = h  + dh;
+            % add hyperpriors
+            %------------------------------------------------------------------
+            d     = h     - hE;
+            dFdh  = dFdh  - ihC*d;
+            dFdhh = dFdhh - ihC;
+            Ch    = spm_inv(-dFdhh);
 
-        if aopt.updateh
-            aopt.h = h;
-            aopt.JPJ = JPJ;
-            aopt.Ch  = Ch;
-            aopt.d   = d;
-            aopt.ihC = ihC;
-        end
+            % update ReML estimate
+            %------------------------------------------------------------------
+            warning off;
+            dh    = spm_dx(dFdhh,dFdh,{4});
+            dh    = min(max(dh,-1),1);
+            warning on;
+            h     = h  + dh;
+
+            if aopt.updateh
+                aopt.h = h;
+                aopt.JPJ = JPJ;
+                aopt.Ch  = Ch;
+                aopt.d   = d;
+                aopt.ihC = ihC;
+            end
+      %  end
   %  end
 end % end of if hyperparams (from spm) ... 
 
@@ -3107,6 +3165,21 @@ D = 1;
 
 switch search_method
         
+    case 9
+        if aopt.factorise_gradients
+            a = ones(size(J,2),1);
+            [L,D] = ldl_smola(J',a);
+            dFdpp = -(L*(D./sum(diag(D)))*L');
+        else
+            dFdpp  = -(J'*J);
+        end
+
+        [eig_vecs,D]=eig(dFdpp);
+        %eig_vals=diag(D);
+        
+        x3 = eig_vecs;
+        
+    
     case 8 % mirror descent with Bregman distance proximity term
         
         if aopt.factorise_gradients
@@ -3345,7 +3418,7 @@ function dx = compute_dx(x1,a,J,red,search_method,params)
 
 aopt = params.aopt;
 
-if search_method == 1 || search_method == 7 
+if search_method == 1 || search_method == 7 || search_method == 9
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
     
@@ -3473,6 +3546,7 @@ X.gradtol = 1e-4;
 X.docompare = 0;
 X.isGaussNewtonReg = 1;
 X.forcenewton = 0;
+X.predictionerrorupdate=0;
 end
 
 function parseinputstruct(opts)

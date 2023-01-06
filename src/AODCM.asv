@@ -658,7 +658,7 @@ classdef AODCM < handle
             LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
             UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
             
-            [x_opt,f_opt,x_kept,f_kept] = DSA(objective,LB,UB);
+            [x_opt,f_opt,x_kept,f_kept] = DSA(MyFunc,lb,ub,DSA_options)
             
             %[x_opt,f_opt,x_kept,f_kept] = DSA(MyFunc,lb,ub,DSA_options)
 

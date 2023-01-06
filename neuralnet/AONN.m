@@ -143,16 +143,19 @@ classdef AONN < handle
             obj.op.fun       = obj.g;
             obj.op.x0        = obj.p(:);
             obj.op.V         = obj.c(:);
-            obj.op.y         = {double(obj.y)};
+            obj.op.y         = double(obj.y);
             obj.op.maxit     = niter;
             obj.op.criterion = -500;
             obj.op.step_method  = 1;
-            obj.op.BTLineSearch = 0;
             obj.op.hyperparams  = 0; % turn off 4speed for large problems
             obj.op.inner_loop   = 8;            
             %obj.op.corrweight=1;
             obj.op.doparallel=0;
-            %obj.op.ismimo=1;
+            
+            obj.op.ismimo=1;
+            obj.op.hypertune=1;
+            obj.op.isGaussNewtonReg=1;
+            
             obj.op.factorise_gradients=1;
         end
         

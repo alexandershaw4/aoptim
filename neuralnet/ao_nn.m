@@ -65,7 +65,6 @@ op.y         = {yy};
 op.maxit     = niter;
 op.criterion = -500;
 op.step_method  = 1;
-op.BTLineSearch = 0;
 op.hyperparams  = 1;
 op.inner_loop   = 8;
 

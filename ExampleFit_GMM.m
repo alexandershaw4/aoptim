@@ -60,7 +60,7 @@ op.factorise_gradients = 1; % factorise/normalise grads
 op.normalise_gradients=0;
 op.objective='gauss';%'mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
-op.order=2; % second order gradients
+op.order=1; % second order gradients
 %
 
 op.do_gpr=0; % dont do gaussian process regression to learn Jac
@@ -87,6 +87,8 @@ op.variance_estimation = 0;
 op.isGaussNewton=0;
 op.isGaussNewtonReg=1;
 %op.forcenewton=1;
+
+%op.predictionerrorupdate=1;
 
 % use QR factorisation to predict dx from Jaco and residual
 %op.isQR=1;

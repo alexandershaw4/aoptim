@@ -199,7 +199,7 @@ classdef AODCM < handle
             %     log( M.V*M.X.*exp(M.DD.P) ) == M.V'*M.Ep
             %
             % so that AO.m actually optimises X
-            
+            s=[];t=[];
             DD   = obj.DD;
             P    = DD.P;
             cm   = DD.cm;
@@ -358,7 +358,13 @@ classdef AODCM < handle
             
             [BETA,R,J,COVB,MSE] = atcm.optim.nlinfit(obj.opts.x0,...
                             full(spm_vec(spm_cat(obj.opts.y))),funfun,full(obj.opts.x0),options);
-            obj.X  = obj.V*(BETA.*obj.opts.x0);
+           
+            [ff,pp]=obj.opts.fun(BETA.*obj.opts.x0);
+            
+            obj.X = spm_vec(pp);
+            
+                 
+            %obj.X  = obj.V*(BETA.*obj.opts.x0);
             %obj.Ep = spm_unvec(spm_vec(obj.X),obj.DD.P);
             obj.Ep = spm_vec(obj.X);
             obj.CP = COVB;
@@ -380,7 +386,7 @@ classdef AODCM < handle
             Y = spm_vec(obj.opts.y);
             y = spm_vec(f(x));
             e  = (Y - y);
-            Q  = {obj.opts.Q};
+            Q  = obj.opts.Q;
             nq = length(Q);
             ny = length(e);
             
@@ -392,12 +398,31 @@ classdef AODCM < handle
 %                 iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 %             end
             
-            er = spm_vec(Y)-spm_vec(y);
-            %er = real(er'.*iS.*er)/2;
-            %er(isnan(er))=inf;
-            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+%             er = spm_vec(Y)-spm_vec(y);
+%             %er = real(er'.*iS.*er)/2;
+%             %er(isnan(er))=inf;
+%             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+%             
+%             F    = e;%-sum(L);         
+
+
+            %S = atcm.fun.QtoGauss(real(Y),12*2) - atcm.fun.QtoGauss(real(y),12*2);
+            %S = S'.*Q*S;
+            %e = norm( max(S) );
+            %F=e;
+
+            dY = atcm.fun.QtoGauss(real(Y),12*2);
+            dy = atcm.fun.QtoGauss(real(y),12*2);
+
+            D = dY - dy;
+
+            e = trace(D*D');
+            F=e;
+            % spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;                 
             
-            F    = e;%-sum(L);         
+            
+
+
             
 %             covQ = obj.opts.Q;
 %             covQ(covQ<0)=0;
@@ -470,6 +495,56 @@ classdef AODCM < handle
             res = mh(y,x0,fun,LB,UB, pparams);
             
         end
+
+
+        function agdopt(obj,N)
+
+            if nargin < 2; N = 32; end
+
+            fprintf('Performing gradient descent optimisation\n');
+
+            x0  = obj.opts.x0(:);
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            [obj.X, obj.F] = atcm.optim.agd(objective,x0,N);
+
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+        
+        function alexBayesOpt(obj,N)
+            
+            if nargin < 2; N = 32; end
+
+            x0  = obj.opts.x0(:);
+            V   = 1./full(obj.opts.V(:));
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            [obj.X,obj.F]=agpropt(objective,x0,V,N);
+
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+
+        function moga(obj)
+
+            fprintf('Performing MOGA optimisation\n');
+
+            options = optimoptions('gamultiobj','UseParallel', ...
+            false,'PopulationSize', size(obj.opts.x0',1),'PlotFcn',@gaplotscorediversity);
+            options.InitialPopulationMatrix = obj.opts.x0';
+
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+            
+            [obj.X,obj.F,exitflag,output,population,scores] = gamultiobj(objective, length(obj.opts.x0'), [],[],[],[], [],[],[], options);
+    
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+
         function vmbc(obj)
             
             % Variational Bayesian Monte Carlo
@@ -487,6 +562,22 @@ classdef AODCM < handle
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
         end
         
+        function broydenopt(obj)
+
+            fprintf('Performing Broyden Optimisation\n');
+
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            [obj.X] = broyden(objective,obj.opts.x0);
+
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+
+            obj.F = objective(obj.X);
+
+        end
+
         function rungekutteopt(obj,n)
             
             if nargin < 1 || isempty(n)
@@ -517,7 +608,7 @@ classdef AODCM < handle
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
         end
         
-        function bads(obj)
+        function mbads(obj)
             
             % Bayesian adaptive direct search
             
@@ -536,6 +627,58 @@ classdef AODCM < handle
  
             [~, P] = obj.opts.fun(spm_vec(obj.X));
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+        end
+        
+        function newton(obj,N)
+            
+            if nargin < 2
+                N = 32;
+            end
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            Options.nMax = N;
+            Options.bVerbose= 1; 
+            x0  = obj.opts.x0;
+             
+            g = @(x) repmat(objective(x),[1 length(x0)]);
+            
+            m_aX = Newton(g,x0,Options)
+            % Newton-Raphson-iteration with backtracking and numerical Jacobian built 
+            %   pursuant to Numerical Recipies. 
+            % Author: Thomas Fehn, Herzogenaurach
+            % Usage: Newton(@funfcn,X0[,Options[,Params]); 
+            %       funfcn is a function script with the following interface:
+            %           function F = function(X)
+            %           % ...
+            %       or a string containing the code as shown below,
+            %       were F is the vector of the functions, and X the vector of the
+            %       unknowns which must have the same length.
+            %       A guess for X must be specified in X0.
+            %       Options.bVerbose  prints iteration history
+            %       Options.nMax      maxsteps limits the number of iterations
+            %       Options.eMax      maximum allowed error
+            %       Params            vektor or structure of parameters handed over
+            %                           to the function-file. In large models 
+            %                           a global structure should be prefered.
+            %
+            
+            
+        end
+        
+        function soce(obj)
+            
+            opt = ceoptdef();
+            
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+            
+            LB  = (obj.opts.x0-sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+sqrt(obj.opts.V));
+
+            [X_opt, y_opt, time, flag] = soce(objective, LB', UB', opt);
+            
         end
         
         function kalman(obj)
@@ -618,7 +761,7 @@ classdef AODCM < handle
         objective = @(x) errfun(obj,fun,x);
         
         opts1 = optimoptions('surrogateopt','PlotFcn','surrogateoptplot');
-        opts1.ObjectiveLimit = 0.05;
+        opts1.ObjectiveLimit = 1e-3;
         opts1.MaxFunctionEvaluations = 50*length(UB);
         opts1.InitialPoints=Px;
         [obj.X,obj.F] = surrogateopt(objective,LB,UB,opts1);
@@ -633,8 +776,8 @@ classdef AODCM < handle
             
             fprintf('Performing Particle-Swarm Optimisation\n');
             
-            LB  = (obj.opts.x0-4*sqrt(obj.opts.V));
-            UB  = (obj.opts.x0+4*sqrt(obj.opts.V));
+            LB  = (obj.opts.x0-8*sqrt(obj.opts.V));
+            UB  = (obj.opts.x0+8*sqrt(obj.opts.V));
             Px  = obj.opts.x0;
 
             fun = @(varargin)obj.wrapdm(varargin{:});
@@ -691,7 +834,7 @@ classdef AODCM < handle
             
         end
         
-        function bayesopt(obj)
+        function bayesopt(obj,reps)
             
             % Bayesian optimsation algorithm
             %------------------------------------------------------------------
@@ -712,8 +855,10 @@ classdef AODCM < handle
             fun = @(varargin)obj.wrapdm(varargin{:});
             objective = @(x) errfun(obj,fun,x);
 
-            
-            reps    = 64;
+            if nargin < 2 || isempty(reps)
+                reps    = 64;
+            end
+            reps
             explore = 0.2;
             RESULTS = bayesopt(objective,xvar,'IsObjectiveDeterministic',true,...
                 'ExplorationRatio',explore,'MaxObjectiveEvaluations',reps,...

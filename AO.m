@@ -402,15 +402,28 @@ while iterate
         aopt.pp = x0(:);
     end
     
-    % update precision hyperparameters matrix
-    % integrate error-weighted Q over iterations: Q(t+1) = dt * Q(t) + dfdQ  
+    % update Gaussian precision hyperparameters matrix
+    % integrate error-weighted Q over iterations: Q(t+1) = dt * Q(t) + dQ/de
+    %----------------------------------------------------------------------
     if ~isempty(Q) && updateQ
         fprintf('| Updating Q...\n');
-        [~,~,erx]  = obj( V*x0(ip),params );
+        [~,~,erx,g0]  = obj( V*x0(ip),params );
         
-        RSE = rescale(real(erx(1:length(Q))));
-        aopt.Q = (Q + AGenQ(RSE) );
-        QQ(n,:) = rescale(real(erx(1:length(Q))));
+        % extract residuals & convert to Gaussian mixture [gp]
+        RSE = erx(1:length(Q));%rescale(real(erx(1:length(Q))));
+        gerr = AGenQ(RSE);
+        % fit gauss residuals to data using lsq
+        %b=atcm.fun.lsqnonneg(AGenQ(RSE),RSE-g0(1:length(Q)));
+        b=AGenQ(RSE)\RSE-g0(1:length(Q));
+        aopt.Q = Q + diag(b'*gerr);
+        %aopt.Q = (Q + AGenQ(RSE) );
+        Hist.QQ(n,:) = rescale(real(erx(1:length(Q))));
+        s=subplot(5,3,13);plot(real(diag(aopt.Q)),'color',[1 .7 .7],'linewidth',3);
+        title('Gaussian Hyperparameter','color','w','fontsize',18);
+        ax       = gca;
+        ax.XGrid = 'off';ax.YGrid = 'on';
+        s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
+        drawnow;
     end
     
     % compute gradients & search directions
@@ -464,15 +477,53 @@ while iterate
     else
         pupdate(loc,n,0,e0,e0,'hyprprm',toc);
     end
-            
-    % Normal search method
+    
+    % Feature Scoring for MIMOs    
+    %----------------------------------------------------------------------    
+    if orthogradient && ismimo
+        fprintf('Orthogonalising Jacobian\n');
+        params.aopt.J = symmetric_orthogonalise(params.aopt.J);
+    end
+
+    % i.e. where J(np,nf) & nf > 1
+    if ismimo
+        pupdate(loc,n,0,e0,e0,'scoring',toc);
+
+        JJ = params.aopt.J;
+        Q0 = aopt.Q;
+        
+        padQ = size(JJ,2) - length(Q0);
+        Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+
+        for i = 1:np
+            % information score
+            score(i) = JJ(i,:)*Q0*JJ(i,:)';
+        end
+
+        red = red + rescale(real(score(:)),.125,1)/8;
+
+        red = real(red);
+
+        red(isnan(red)) = 1e-3;
+
+    end
+    
+
+    % Select step size method
+    %----------------------------------------------------------------------    
     if ~ismimo
         [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0);
     else
         [a,J,nJ,L,D] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
         J = -df0(:);
     end
-     
+
+    if simplelinesearch
+        pupdate(loc,n,0,e0,e0,'linesrc',toc);
+        fls = @(r) obj(x0 - (red.*r).*df0,params);
+        a = hypertuner(fls,ones(size(red))/2);
+    end
+
     if search_method ~= 6
         pupdate(loc,n,0,e0,e0,'stp-fin',toc);
     else
@@ -505,15 +556,12 @@ while iterate
     end
     
     % Update expectation on variance (2nd moments) using Jacobian
+    %----------------------------------------------------------------------    
     Hist.red(n,:) = red;
     if variance_estimation
         if n > 1
             % this is also a prediction of the step size for the next iter
-            ored = red;
-            %Jn   = abs(J);
-            %Jn   = Jn./norm(Jn);
-            %red  = red_x0 + Hist.e(n-1) / Hist.e(end) * Jn(:);
-            
+            ored = red;            
             
             for l = 1:np
                 PR(l) = normcdf(mean(Hist.Jfull{end}(l,:)),mean(Hist.Jfull{end-1}(l,:)),std(Hist.Jfull{end-1}(l,:)));
@@ -543,7 +591,8 @@ while iterate
             
         end
     end
-    
+        
+
     % iterative descent on this (-gradient) trajectory
     %======================================================================
     while improve
@@ -553,8 +602,9 @@ while iterate
         
         % Compute The Parameter Step (from gradients and step sizes):
         % % x[p,t+1] = x[p,t] + a[p]*-dfdx[p] 
-        %------------------------------------------------------------------if
-        dx   = compute_dx(x1,a,J,red,search_method,params);  % dx = x1 + ( a * J );
+        %------------------------------------------------------------------
+        % dx ~ x1 + ( a * J );
+        dx   = compute_dx(x1,a,J,red,search_method,params);  
                     
         if isGaussNewton && ismimo
             % [note this is now just a newton method, not gn!]
@@ -599,7 +649,13 @@ while iterate
             
             % by using the variance (red) as a lambda on the inverse
             % Hessian, this becomes a relaxed or 'damped' Newton scheme
-            H = [aopt.J];
+            for i = 1:size(J,1);
+                for j = 1:size(J,1); 
+                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+                end
+            end
+
+            %H = [aopt.J];
             H = (red.*H./norm(H));%./norm(H);
             
             % the non-parallel finite different functions return gradients
@@ -670,8 +726,9 @@ while iterate
         
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)        
-        dx = real(dx);
-        x1 = real(x1);
+        dx  = real(dx);
+        x1  = real(x1);
+        red = real(red);
         
         % [Prior] distributions
         pt  = zeros(1,length(x1));
@@ -1006,6 +1063,12 @@ while iterate
                 end
                 
                 DFE  = real(DFE(:));
+
+                % Could do some scoring here
+                %pupdate(loc,n,nfun,e1,e1,'scoring',toc);
+                %REL = real(e1 - DFE);
+                %red = rescale(REL./norm(REL),-1,1)/8;
+                %dx = x1 + (red.*dx);
                 
                 if givetol;
                             etol = 1./1+exp(1./(n))/(maxit*2);
@@ -1183,67 +1246,81 @@ while iterate
             % fit a Gaussian Process Regression model to the available
             % points (this will have more points on each iteration)
             pupdate(loc,n,nfun,e1,e1,'GPR fit',toc);
-            de  = obj(dx,params);
-            
-            % predictors (errors) and parameters
-            if n > 1
-                %ex = [Hist.e(:); de];
-                %py = [cat(2,Hist.p{:}) dx]';
-                ex = all_ex';
-                py = all_dx';
-            else
-                ex = [e0 de]';
-                py = [x1 dx]';
-            end
-            
-            % model and prediction for each parameter
-            for ipn = 1:length(x1)
+
+            for dogpr = 1:do_gpr
                 
-                gprm = fitrgp(ex,py(:,ipn));
-                [yp(ipn),se(ipn,:),yint(ipn,:)] = predict(gprm,criterion);
-            end
-            
-            % compute objective at mean and both upper and lower
-            % confidence intervals, use best
-            sample_posterior = 0;
-            if ~sample_posterior
-                opts   = [yp(:) yint];
-                emx(1) = obj(opts(:,1),params);
-                emx(2) = obj(opts(:,2),params);
-                emx(3) = obj(opts(:,3),params);
-                [~,selI] = min(emx);
-                yp = opts(:,selI);
-            else
-                % sample from the posterior distirbution of the GP
-                opts   = [yp(:) yint];
-                if n == 2
-                    disp(' ');
+
+                de  = obj(dx,params);
+                
+                % predictors (errors) and parameters
+                if n > 1
+                    %ex = [Hist.e(:); de];
+                    %py = [cat(2,Hist.p{:}) dx]';
+                    ex = all_ex';
+                    py = all_dx';
+                else
+                    ex = [e0 de]';
+                    py = [x1 dx]';
                 end
-                for isamp = 1:length(dx)*4
-                    %selc = randi([1 3],length(dx),1);
-                    for selp = 1:length(dx)
-                        %sam_dx(selp,isamp) = opts(selp,selc(selp));
-                        r = yint(selp,1) + (yint(selp,2)-yint(selp,1)) .* rand(1,1);
-                        sam_dx(selp,isamp) = r;
-                        
+                
+                if isinf(criterion)
+                    critgp = de/2;
+                else
+                    critgp = criterion;
+                end
+    
+                % model and prediction for each parameter
+                for ipn = 1:length(x1)
+                    
+                    gprm = fitrgp(ex,py(:,ipn),'Basis','constant','FitMethod','exact',...
+                    'PredictMethod','exact','KernelFunction','ardsquaredexponential',...
+                    'Standardize',1,'Optimizer','fminsearch');
+                    [yp(ipn),se(ipn,:),yint(ipn,:)] = predict(gprm,critgp);
+                end
+                
+                % compute objective at mean and both upper and lower
+                % confidence intervals, use best
+                sample_posterior = 0;
+                if ~sample_posterior
+                    opts   = [yp(:) yint];
+                    emx(1) = obj(opts(:,1),params);
+                    emx(2) = obj(opts(:,2),params);
+                    emx(3) = obj(opts(:,3),params);
+                    [~,selI] = min(emx);
+                    yp = opts(:,selI);
+                else
+                    % sample from the posterior distirbution of the GP
+                    opts   = [yp(:) yint];
+                    if n == 2
+                        disp(' ');
                     end
-                    emx(isamp) = obj(sam_dx(:,isamp),params);
+                    for isamp = 1:length(dx)*4
+                        %selc = randi([1 3],length(dx),1);
+                        for selp = 1:length(dx)
+                            %sam_dx(selp,isamp) = opts(selp,selc(selp));
+                            r = yint(selp,1) + (yint(selp,2)-yint(selp,1)) .* rand(1,1);
+                            sam_dx(selp,isamp) = r;
+                            
+                        end
+                        emx(isamp) = obj(sam_dx(:,isamp),params);
+                    end
+                    [~,selI] = min(emx);
+                    yp = sam_dx(:,selI);
                 end
-                [~,selI] = min(emx);
-                yp = sam_dx(:,selI);
+                
+                % new predicted dx & variance
+                %if emx(selI) < de
+                    pupdate(loc,n,nfun,e1,emx(selI),'GPRpred',toc);
+                    un  = yp(:) - dx(:);
+                    dx  = yp(:);
+                    de  = emx(selI);
+                    e1 = de;
+                %end
+                
+                % save & return the GP prediction
+                Hist.GP{n} = [yp(:) yint(:,1) yint(:,2)];
+                Hist.GPi{n} = selI;
             end
-            
-            % new predicted dx & variance
-            if emx(selI) < de
-                pupdate(loc,n,nfun,e1,emx(selI),'GPRpred',toc);
-                un  = yp(:) - dx(:);
-                dx  = yp(:);
-                de  = emx(selI);
-            end
-            
-            % save & return the GP prediction
-            Hist.GP{n} = [yp(:) yint(:,1) yint(:,2)];
-            Hist.GPi{n} = selI;
         end
                 
         % Tolerance on update error as function of iteration number
@@ -2157,11 +2234,13 @@ else
 end
 end
 
-function [e,J,er,mp,Cp,L,params] = obj(x0,params)
+function [e,J,er,mp,Cp,L,params] = obj(x0,params,varargin)
 % Computes the objective function - i.e. the Free Energy or squared error to 
 % minimise. Also returns the parameter Jacobian, error (vector), model prediction
 % (vector) and covariance
 %
+
+
 
 aopt = params.aopt;
 method = aopt.ObjectiveMethod;
@@ -2209,6 +2288,11 @@ if isfield(params,'FS')
     end
 end
 
+% if all(y) = 0 then the feature selection may fail, so double check:
+if length(Y) > length(y)
+    y(end+1:length(Y)) = 0;
+end
+
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------
 if ~isfield(aopt,'J')
@@ -2242,6 +2326,15 @@ elseif isfield(aopt,'precisionQ')
     nq  = ny ./ length(Q{1});
 end
 
+% if nargin > 2
+%     hh = varargin{1};
+% else
+%     try   hh = aopt.hh;
+%     catch hh = 1;
+%     end
+% end
+
+
 if ~isfield(aopt,'h') || ~aopt.hyperparameters
     h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
 else
@@ -2251,6 +2344,7 @@ end
 if any(isinf(h))
     h = denan(h)+1/8;
 end
+
 
 iS = sparse(0);
 
@@ -2273,18 +2367,19 @@ Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp = (Cp + Cp')./2;
 warning on
 
-if aopt.rankappropriate
-    N = rank((Cp)); % cov rank
-    [v,D] = eig(real(mean(e)) + (Cp)); % decompose covariance matrix
-    DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
-    Cp = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))';
-end
+% if aopt.rankappropriate
+%     N = rank((Cp)); % cov rank
+%     [v,D] = eig(real(mean(e)) + (Cp)); % decompose covariance matrix
+%     DD  = diag(D); [~,ord]=sort(DD,'descend'); % sort eigenvalues
+%     Cp = v(:,ord(1:N))*D(ord(1:N),ord(1:N))*v(:,ord(1:N))';
+% end
 
 p  = ( x0(:) - aopt.pp(:) );
 
 if any(isnan(Cp(:))) 
     Cp = Cp;
 end
+
 
 if aopt.hyperparameters
 %     if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && params.aopt.computeh
@@ -2428,32 +2523,6 @@ switch lower(method)
             er = spm_vec(Y)-spm_vec(y);
             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
 
-        case 'rmse_peaks'
-            
-            er  = spm_vec(Y)-spm_vec(y);
-            erp = isort(Y) - isort(y);
-            
-            e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2) + ...
-                 ( (norm(full(erp),2).^2)/numel(spm_vec(Y)) ).^(1/2) ;   
-            
-            
-        case 'rmse_ksden'
-            % rmse: root mean squaree error 
-            er = spm_vec(atcm.fun.vmd(Y,'NumIMFs',2))-spm_vec(atcm.fun.vmd(y,'NumIMFs',2));
-            e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-                            
-         case 'coh';
-        
-            %[C,fz] = mscohere(Y,denan(y),[],[],[],1);
-            %C = abs(C);
-            %e = 1 - median(C);
-            e = 1 - corr(spm_vec(Y),spm_vec(y)).^2;
-            e = e * abs( finddelay(spm_vec(Y),spm_vec(y)) );
-            
-        case 'xcorr'
-             er = xcorr(Y,Y) - xcorr(Y,y);
-             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-             
             
         case 'mvgkl'
             % multivariate gaussian kullback lieb div
@@ -2474,148 +2543,83 @@ switch lower(method)
             % truth [Y] first = i.e. inclusive, mean-seeking
             % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
             e = mvgkl(Y,covQ,spm_vec(y),covQ);
-            
-            %e(e<0)=-e;
-            
-            %e = abs(e);
-            
+                        
         case 'q'
                                  
             er = (AGenQ(Y)-AGenQ(y));
             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
-        case 'log_mvgkl'
-                % multivariate gaussian kullback lieb div
+                        
 
-                [YY,gmY] = atcm.fun.Sig2GM(Y,5);
-                [yy,gmy] = atcm.fun.Sig2GM(y,5);
-                
-                e = gmY.pdf(1:length(Y)) - gmy.pdf(1:length(Y));
-                
-                e = sum( e.^2 );
-                
-                %e = norm(pinv(e'*iS*e)*(Y-y));
-                
-%                 covQ = aopt.Q;
-%                 covQ(covQ<0)=0;
-%                 covQ = (covQ + covQ')/2;
-% 
-%                 % pad for when using FS(y) ~= length(y)
-%                 padv = length(Y) - length(covQ);
-%                 covQ(end+1:end+padv,end+1:end+padv)=.1;
-% 
-%                 % make sure its positive semidefinite
-%                 lbdmin = min(eig(covQ));
-%                 boost = 2;
-%                 covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-% 
-%                 % truth [Y] first = i.e. inclusive, mean-seeking
-%                 % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-%                 e = mvgkl(Y,covQ,spm_vec(y),covQ);
-% 
-%                 e(e<0)=-e;
-%                 e = log(e);
-
-        case 'mvgkl_me'
-            % multivariate gaussian kullback lieb div
-
-            covQ = aopt.Q;
-            covQ(covQ<0)=0;
-            covQ = (covQ + covQ')/2;
-
-            % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
-
-            % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-
-            % truth [Y] first = i.e. inclusive, mean-seeking
-            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-            e = mvgkl(Y,covQ,spm_vec(y),covQ);
-
-            e(e<0)=-e;
-
-            er   = (spm_vec(Y) - spm_vec(y)).^2;
-
-            e = log(e) + real(er'*iS*er)/2;
-            
-        case 'hm'
-                
-            [gY,gmY] = atcm.fun.Sig2GM(Y);
-            [gy,gmy] = atcm.fun.Sig2GM(y);
-            
-            % convolve y and gm(y)
-            gY = Y.*gY;
-            gy = y.*gy;
-            
-            er1 = sum( (gY - gy).^2 );
-            er2 = min(cdist([gmY.x(:);gmY.y(:);gmY.w(:)],[gmy.x(:);gmy.y(:);gmy.w(:)]));
-            er2 = sum(er2.^2);
-            
-            e = er1 + 4*er2;
-            
-            
         case {'gauss' 'gp'}
             
-            %e = mvgkl(Y,makeposdef(AGenQn(Y,12)),y,makeposdef(AGenQn(y,12)));
             
-            %S = eye(length(Y));
-            %e = norm( sqrt(det(S)) * exp( - 0.5 * (Y-AGenQn(Y,12))'* S * (y-AGenQn(y,12)) ) );
-            
-            S = atcm.fun.QtoGauss(Y,12*2) - atcm.fun.QtoGauss(y,12*2);
-            
-%             VY = GaussEIG(Y);
-%             vy = GaussEIG(y);
-%             
-%             try 
-%                 S = VY(:,1) - vy(:,1);
-%             catch
-%                 S = Y*inf;
+           % S = atcm.fun.QtoGauss(real(Y),12*2) - atcm.fun.QtoGauss(real(y),12*2);
+
+%             if isfield(aopt,'precisionQ')
+%                 pQ = aopt.precisionQ; % use pQ not Q otherwise it becomes stochastic!
+%                 %aopt.Q
+%                 padv = length(Y) - length(pQ);
+%                 pQ(end+1:end+padv,end+1:end+padv)=mean(pQ(:))/10;
+%                 S = S'.*pQ*S;
+%                %S  = atcm.fun.QtoGauss(Y,12*2).*pQ - atcm.fun.QtoGauss(y,12*2).*pQ;
 %             end
-%             
-%             e = sum( S.^2 );
+
+
+            % spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;                 
             
-            e = norm( max(S) );
+            %e = norm( max(S) );
+    
+            dY = atcm.fun.QtoGauss(real(Y),12*2);
+            dy = atcm.fun.QtoGauss(real(y),12*2);
+
+            D = dY - dy;
+            %e = diag(D*D');
+            e = trace(D*D');
+
+            %L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; 
+
+%             dY = atcm.fun.QtoGauss(log(Y),12*2);
+%             dy = atcm.fun.QtoGauss(log(y),12*2);
+% 
+%             D = dY - dy;
+%             D(isnan(D))=0;
+% 
+%             e1 = trace(D*D');
+% 
+%             [~,dY] = sort(Y,'descend');
+%             [~,dy] = sort(y,'descend'); 
+% 
+%             e2 = cdist(dY',dy');
+% 
+%             e = e0 + e1 + e2;
+
+            %e = pdist2(Y',y');
+            %e = norm(S);
             
-            e = e + sum( (Y(:)-y(:)).^2 );
+         %   L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
             
             if aopt.hyperparameters
                 % (3) Complexity minus accuracy of precision
                 %----------------------------------------------------------------------
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
+                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
+                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
             end
             
-%             % covarince componebnts
-%             covQ = aopt.Q;
-%             covQ(covQ<0)=0;
-%             covQ = (covQ + covQ')/2;
-% 
-%             % pad for when using FS(y) ~= length(y)
-%             padv = length(Y) - length(covQ);
-%             covQ(end+1:end+padv,end+1:end+padv)=.1;
-%             
-%             % Gaussian error term
-%             e  = -GaussianBasisFunction(Y,y,covQ);
-            
-            %nP = length(aopt.Q);
-            
-            %YY = atcm.fun.lsq_widfit(Y(1:nP));
-            %yy = atcm.fun.lsq_widfit(y(1:nP));
-            
-            %e  = -GaussianBasisFunction(YY,yy,covQ);
-            
-            % y = sqrt(det(S)) * exp( - 0.5 * (x-c)'* S * (x-c) );
-            
-        case 'haus';
-            
-            % compute Hausdorf distance on a Euclidean space projection
-            d0 = cdist(Y,Y);
-            d1 = cdist(y,y);
-            e  = HausdorffDist(d0,d1);
-            
+            %F    = sum(L);
+            %e    = real(-F);
+                        
+        case 'gaussfe'
+            dY = atcm.fun.QtoGauss(real(Y),12*2);
+            dy = atcm.fun.QtoGauss(real(y),12*2);
+
+            D = dY - dy;
+            e = diag(D*D');
+
+            L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; 
+            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+            L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
+            F    = sum(L);
+            e    = real(-F);
             
         case 'jsd'
             % Jensen-SHannon divergence using multivariate gaussian kullback lieb div
@@ -2667,26 +2671,6 @@ switch lower(method)
             
             e = e + ( er'*ed*er )/2; 
             
-        case 'dtw'
-            
-            YY = spm_vec(atcm.fun.assa(ifft(denan(Y)),3));
-            yy = spm_vec(atcm.fun.assa(ifft(denan(y)),3));
-            
-            e = dtw(denan(YY),denan(yy));
-            
-        case {'mi' 'mutual' ',mutualinfo' 'mutual_information'}
-        
-            mY = median(Y);
-            Y0 = Y;
-            Y0(Y0>mY)  = 1;
-            Y0(Y0<=mY) = 0;
-            
-            my = median(y);
-            y0 = y;
-            y0(y0>my)=1;
-            y0(y0<=my)=0;
-            
-            e = mutInfo(Y0, y0);
             
         case 'mvgklx'
             % multivariate gaussian kullback lieb div - minimise the
@@ -2723,49 +2707,12 @@ switch lower(method)
                 
                 
             
-            
-        case 'mvgkl_2'
-            % multivariate gaussian kullback lieb div
-            % with explicit conversion to Gaussian dists
-            
-            covQ = aopt.Q;
-            covQ(covQ<0)=0;
-            covQ = (covQ + covQ')/2;
-            
-            % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-            
-            iw = 1:length(Y);
-            mY = fit(iw.',Y,'Gauss4');
-            my = fit(iw.',y,'Gauss4');
-            
-            
-            e = mvgkl(mY(iw),covQ,my(iw),covQ);
-            
-            
+                    
         case 'mahal'    
             
             e = mahal(Y,y);
             e = (e'*iS*e)/2;
-            
-        case 'wp'
-            [s,w]=WarpingPath(Y,y);
-            e = y' + (Y'*w);
-            e = e*iS*e';
-            
-        case 'euc'
-            
-            ed = cdist(Y(:),y(:));
-            ed = ed - (triu(ed,-2) + tril(ed, 2));
-            er = spm_vec(Y)-spm_vec(y);
-            %e  = (mean(ed)*(length(ed)-5)).^2;
-            e  = er'*(ed.^2)*er;   
+                        
         case 'lognorm'
             
             e=length(Y)/2*log(norm(Y-y));
@@ -2785,32 +2732,6 @@ switch lower(method)
             er = full(er);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
                        
-        case 'qdist'
-            
-            YY = AGenQn(Y,8);
-            yy = AGenQn(y,8);
-            
-            SY = svd(YY);
-            Sy = svd(yy);
-            
-            A = sqrt(sum( SY.^2 ));
-            B = sqrt(sum( Sy.^2 ));
-            
-            e = A - B;
-            
-            %Y = makeposdef((YY+YY'));
-            %yy = makeposdef((yy+yy'));
-            
-            %e = mvgkl(Y,YY,y,yy);
-            
-            %E = cdist(YY,yy);
-            
-            % pad for when using FS(y) ~= length(y)
-            %dQ = aopt.Q;
-            %padv = length(Y) - length(dQ);
-            %dQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            %e = norm( E.*dQ );
             
         case {'correlation','corr','cor','r2'}
             % 1 - r^2 (bc. minimisation routine == maximisation)
@@ -2840,44 +2761,6 @@ switch lower(method)
             er = (er.*dv);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
             
-        case 'gmmcdf'
-            %Y = rescale(Y);
-            %y = rescale(y);
-            %er = ( sqrt(spm_vec(Y))-sqrt(spm_vec(y)) ).^2;
-            %e = (1./sqrt(2))*sum(er);
-            w  = (1:length(Y)).';
-            
-            m0=fitgmdist([w Y],5);
-            m1=fitgmdist([w y],5);
-                                    
-            % compare apples with apples
-            [~,I0]= sort(m0.mu(:,1),'descend');
-            [~,I1]= sort(m1.mu(:,1),'descend');
-            
-            mu0 = spm_vec(m0.mu(I0,:));
-            mu1 = spm_vec(m1.mu(I1,:));
-            
-            c0 = m0.Sigma;
-            c0 = [squeeze(c0(1,1,I0)); squeeze(c0(2,2,I0))];
-            c0 = makeposdef(c0*c0')+2e-6*randn(10);
-            
-            c1 = m1.Sigma;
-            c1 = [squeeze(c1(1,1,I1)); squeeze(c1(2,2,I1))];
-            c1 = makeposdef(c1*c1')+2e-6*randn(10);
-            
-            
-            %c0 = mu0*mu0'./25.^2;
-            %c1 = mu1*mu1'./25.^2;
-            
-            %ce = ( pdf(m0,[w Y]) - pdf(m1,[w y]) ).^2;
-            
-            %er = (ce'.*iS.*ce)/2;
-            %er = full(er);
-            %e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
-            e = mvgkl(mu0,makeposdef(c0+1e-3),mu1,makeposdef(c1+1e-3));
-            
-            %e = uHellingerJointSupport2_ND( Y(:), y(:) );
                          
         case {'g_kld' 'gkld' 'gkl' 'generalised_kld'}
              e = sum( denan(Y.*log(Y./y)) ) - sum(Y) - sum(y);
@@ -2972,17 +2855,34 @@ end
 % end
 
 % Error along output vector (when fun is a vector output function)
-er = ( spm_vec(y) - spm_vec(Y) ).^2;
+er = e*( spm_vec(y) - spm_vec(Y) );
 mp = spm_vec(y);
 
 
-function t = hypertune(fc,t)
+function t = hypertune(fc,t,N)
+    if nargin<3; N=1000;end
+
     % hyperparam tuning by descent on hyperparameter
     jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
     dt = t + jc*1e-3;
     nt = 0;
     
-    while fc(dt) < fc(t) && nt < 1000
+    while fc(dt) < fc(t) && nt < N
+        nt = nt + 1;
+        t  = dt;
+        jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+        dt = t + jc*1e-3;
+    end
+end
+
+function t = hypertuner(fc,t,N)
+    if nargin<3; N=1000;end
+    % hyperparam tuning by descent on hyperparameter
+    jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+    dt = t + jc*1e-3;
+    nt = 0;
+    
+    while fc(dt) < fc(t) && nt < N
         nt = nt + 1;
         t  = dt;
         jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
@@ -3147,6 +3047,21 @@ function J = compute_step_J(df0,red,e0,step_method,params,x0,x3,df1)
     [x3,J] = compute_step(df0,red,e0,step_method,params,x0,x3,df1);
 end
 
+function t = hypertuner(fc,t,N)
+    if nargin<3; N=1000;end
+    % hyperparam tuning by descent on hyperparameter
+    jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+    dt = t + jc*1e-3;
+    nt = 0;
+    
+    while fc(dt) < fc(t) && nt < N
+        nt = nt + 1;
+        t  = dt;
+        jc = sign((fc(t) - fc(t + 1e-3)) ./ 1e-3);
+        dt = t + jc*1e-3;
+    end
+end
+
 function [x3,J,sJ,L,D] = compute_step(df0,red,e0,step_method,params,x0,x3,df1)
 % Given the gradients (df0) & parameter variances (red)
 % compute the step, 'a' , in:
@@ -3166,18 +3081,34 @@ D = 1;
 switch search_method
         
     case 9
-        if aopt.factorise_gradients
-            a = ones(size(J,2),1);
-            [L,D] = ldl_smola(J',a);
-            dFdpp = -(L*(D./sum(diag(D)))*L');
-        else
-            dFdpp  = -(J'*J);
+
+        a = ones(size(J,2),1);
+        J = real(J);
+        
+        for i = 1:size(J,2)
+            J(:,i) = rescale(J(:,i));
         end
 
-        [eig_vecs,D]=eig(dFdpp);
-        %eig_vals=diag(D);
-        
-        x3 = eig_vecs;
+        C = J'*J;
+
+        a  = 1./(1+sum(C/prod(size(C))));
+        x3 = a';
+
+        dFdpp = J'*J;
+
+
+%         if aopt.factorise_gradients
+%             a = ones(size(J,2),1);
+%             [L,D] = ldl_smola(J',a);
+%             dFdpp = -(L*(D./sum(diag(D)))*L');
+%         else
+%             dFdpp  = -(J'*J);
+%         end
+% 
+%         [eig_vecs,D]=eig(dFdpp);
+%         %eig_vals=diag(D);
+%         
+%         x3 = eig_vecs;
         
     
     case 8 % mirror descent with Bregman distance proximity term
@@ -3418,7 +3349,7 @@ function dx = compute_dx(x1,a,J,red,search_method,params)
 
 aopt = params.aopt;
 
-if search_method == 1 || search_method == 7 || search_method == 9
+if search_method == 1 || search_method == 7 
     %dx    = x1 + (a*J');                 % When a is a matrix
     dx  = x1 + (sum(a)'.*J');
     
@@ -3448,7 +3379,7 @@ elseif search_method == 5
         
         [dx] = spm_dx(dfdx,f,{-2});
         dx = x1 + dx;
-elseif search_method == 6
+elseif search_method == 6 || search_method == 9
     % hyperparameter tuned step size
     dx = x1 + a.*J;
 elseif search_method == 8
@@ -3485,16 +3416,16 @@ end
 
 function X = DefOpts()
 % Returns an empty options structure with defaults
-X.step_method = 7;
+X.step_method = 9;
 X.im          = 1;
 X.mleselect   = 0;
 X.objective   = 'gauss';
 X.writelog    = 0;
-X.order       = 2;
+X.order       = 1;
 X.min_df      = 0;
 X.criterion   = 1e-3;
 X.Q           = [];
-X.inner_loop  = 10;
+X.inner_loop  = 1;
 X.maxit       = 4;
 X.y           = 0;
 X.V           = [];
@@ -3509,7 +3440,7 @@ X.smoothfun    = 0;
 X.ismimo       = 1;
 X.gradmemory   = 0;
 X.doparallel   = 0;
-X.fsd          = 0;
+X.fsd          = 1;
 X.allow_worsen = 0;
 X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
@@ -3522,7 +3453,7 @@ X.neuralnet    = 0;
 X.WeightByProbability = 0;
 X.faster = 0;
 X.ext_linesearch = 0;
-X.factorise_gradients = 1;
+X.factorise_gradients = 0;
 X.sample_mvn = 0;
 X.do_gpr = 0;
 X.normalise_gradients=0;
@@ -3530,7 +3461,7 @@ X.isGaussNewton = 0;
 X.do_poly=0;
 X.steps_choice = [];
 X.isCCA = 0;
-X.hypertune = 1;
+X.hypertune = 0;
 X.memory_optimise = 1;
 X.rungekutta = 6;
 X.updateQ = 1;
@@ -3547,6 +3478,9 @@ X.docompare = 0;
 X.isGaussNewtonReg = 1;
 X.forcenewton = 0;
 X.predictionerrorupdate=0;
+X.simplelinesearch=0;
+X.orthogradient=1;
+X.rklinesearch=0;
 end
 
 function parseinputstruct(opts)

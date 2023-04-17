@@ -2,6 +2,10 @@ function [X,F,CV,H,par] = reductionoptimise(fun,x0,V,y)
 
 ip = find(V);
 
+if nargin < 4 || isempty(y)
+    y = 0;
+end
+
 for i = 1:24
 
     fprintf('DMD_OPT: Iteration %d/%d\n',i,24);

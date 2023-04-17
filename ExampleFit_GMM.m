@@ -5,6 +5,7 @@ clear global ; clear; close all;
 %
 % AS2021
 
+st = tic;
 
 %-------------------------------------------------------------
 w      = 2:90;
@@ -37,7 +38,7 @@ V(3:4)=1/16;
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 7;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 9;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
@@ -104,15 +105,14 @@ op.isGaussNewtonReg=1;
 %--------------------------------------------------------------------
 [X,F,CV,~,Hi] = AO(op);    % RUN IT
 
-% Step 2. Optimise the x- and y- values and the width
-%--------------------------------------------------------------------
-op.x0 = X;
-op.V(9:12)=1/8;       % enable width to vary & continue optimisation
-[X,F,CV] = AO(op);    % RUN IT
+% % Step 2. Optimise the x- and y- values and the width
+% %--------------------------------------------------------------------
+% op.x0 = X;
+% op.V(9:12)=1/8;       % enable width to vary & continue optimisation
+% [X,F,CV] = AO(op);    % RUN IT
 
 % Compare data with prediction
 S
 spm_unvec(X,S)
 
-
-[X,F] = AO_basin_hop(op,1)
+toc(st)

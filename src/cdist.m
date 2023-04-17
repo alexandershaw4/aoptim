@@ -18,6 +18,9 @@ function D = cdist(mv,v) %#codegen
 
 %
 
+if nargin < 2
+    v = fliplr(mv);
+end
 
 % this is a fully vectorised version of the above code, which should be quicker.
 %------------------------------------------------------------------------------

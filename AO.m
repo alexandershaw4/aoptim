@@ -668,6 +668,11 @@ while iterate
                 JJ = Jo;
             end
             
+            % essentially here we are tiuning this part of the Newton
+            % scheme:
+            %                ______
+            % xhat = x - inv(H*L*H')*J
+
             % tunable regularisation function
             Gf  = @(L) pinv(H*(L*eye(length(H)))*H');
             Gff = @(x) obj(x1 - Gf(x)*JJ,params);
@@ -2576,6 +2581,9 @@ switch lower(method)
             %e = diag(D*D');
             e = trace(D*D');
 
+            % S =gaufun.SearchGaussPCA(D*D',8);
+            % e = trace(S);
+
             %L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; 
 
 %             dY = atcm.fun.QtoGauss(log(Y),12*2);
@@ -2991,8 +2999,11 @@ if nargout == 2 || nargout == 7
         
         % Gaussian smoothing along oputput vector
         for i = 1:size(J,1)
-           [QM,GL] = AGenQn(J(i,:),8);
-           J(i,:) = J(i,:)*QM;
+            J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
+%           [QM,GL] = AGenQn(J(i,:),8);
+%           %J(i,:) = J(i,:)*QM;
+%           [u,s,v] = svd(QM);
+%           J(i,:) = QM*v(:,1);
         end
         
     end

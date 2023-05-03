@@ -413,12 +413,12 @@ while iterate
         RSE = erx(1:length(Q));%rescale(real(erx(1:length(Q))));
         gerr = AGenQ(RSE);
         % fit gauss residuals to data using lsq
-        %b=atcm.fun.lsqnonneg(AGenQ(RSE),RSE-g0(1:length(Q)));
         b=AGenQ(RSE)\RSE-g0(1:length(Q));
         aopt.Q = Q + diag(b'*gerr);
         %aopt.Q = (Q + AGenQ(RSE) );
         Hist.QQ(n,:) = rescale(real(erx(1:length(Q))));
-        s=subplot(5,3,13);plot(real(diag(aopt.Q)),'color',[1 .7 .7],'linewidth',3);
+        %s=subplot(5,3,13);plot(real(diag(aopt.Q)),'color',[1 .7 .7],'linewidth',3);
+        s=subplot(5,3,12);imagesc(real(Q));
         title('Gaussian Hyperparameter','color','w','fontsize',18);
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
@@ -592,6 +592,8 @@ while iterate
         end
     end
         
+    
+
 
     % iterative descent on this (-gradient) trajectory
     %======================================================================
@@ -605,6 +607,7 @@ while iterate
         %------------------------------------------------------------------
         % dx ~ x1 + ( a * J );
         dx   = compute_dx(x1,a,J,red,search_method,params);  
+
                     
         if isGaussNewton && ismimo
             % [note this is now just a newton method, not gn!]
@@ -2287,7 +2290,7 @@ if isfield(params,'FS')
         n1 = length(y) - length(Q);
         if n1 > 0
             Q(end+1:end+n1,end+1:end+n1) = eye(n1); % pad out Q
-        else
+        elseif n1 < 0
             Q = eye(length(yfs));
         end
     end
@@ -2327,6 +2330,7 @@ elseif isfield(aopt,'precisionQ')
     for ijq = 1:length(aopt.precisionQ)
        Q{ijq} = sparse(ijq,ijq,aopt.precisionQ(ijq,ijq),lpq,lpq);
     end
+
     ny  = length(spm_vec(y));
     nq  = ny ./ length(Q{1});
 end
@@ -2356,6 +2360,8 @@ iS = sparse(0);
 for i  = 1:length(Q)
     iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 end
+
+%iS = iS + Q.*(exp(-32) + exp(h));
 
 %h
 
@@ -2412,6 +2418,12 @@ if aopt.hyperparameters
                 P{i}   = kron(speye(nq),P{i});
                 JPJ{i} = real(aopt.J*P{i}*aopt.J');
             end
+%                 i=1;
+%                 P{i}   = Q.*exp(h);
+%                 PS{i}  = P{i}*S;
+%                 %P{i}   = kron(speye(nq),P{i});
+%                 JPJ{i} = real(aopt.J*P{i}*aopt.J');
+         
 
             % derivatives: dLdh 
             %------------------------------------------------------------------
@@ -2424,6 +2436,17 @@ if aopt.hyperparameters
                     dFdhh(j,i) =   dFdhh(i,j);
                 end
             end
+
+%             for i = 1:nh
+%                 dFdh(i,1)      =   trace(diag(PS{1}(:,i)))*nq/2 ...
+%                     - real(e'*diag(P{1}(:,i))*e)/2 ...
+%                     - spm_trace(Cp,diag(JPJ{1}(:,1)))/2;
+%                 for j = i:nh
+%                     dFdhh(i,j) = - spm_trace(diag(PS{1}(:,i)),diag(PS{1}(:,j)))*nq/2;
+%                     dFdhh(j,i) =   dFdhh(i,j);
+%                 end
+%             end
+
 
             % add hyperpriors
             %------------------------------------------------------------------
@@ -2560,26 +2583,37 @@ switch lower(method)
             
            % S = atcm.fun.QtoGauss(real(Y),12*2) - atcm.fun.QtoGauss(real(y),12*2);
 
-%             if isfield(aopt,'precisionQ')
-%                 pQ = aopt.precisionQ; % use pQ not Q otherwise it becomes stochastic!
-%                 %aopt.Q
-%                 padv = length(Y) - length(pQ);
-%                 pQ(end+1:end+padv,end+1:end+padv)=mean(pQ(:))/10;
-%                 S = S'.*pQ*S;
-%                %S  = atcm.fun.QtoGauss(Y,12*2).*pQ - atcm.fun.QtoGauss(y,12*2).*pQ;
-%             end
+           % if isfield(aopt,'precisionQ')
+           %     pQ = aopt.precisionQ; % use pQ not Q otherwise it becomes stochastic!
+                %aopt.Q
+           %     padv = length(Y) - length(pQ);
+           %     pQ(end+1:end+padv,end+1:end+padv)=mean(pQ(:))/10;
+                %S = S'.*pQ*S;
+               %S  = atcm.fun.QtoGauss(Y,12*2).*pQ - atcm.fun.QtoGauss(y,12*2).*pQ;
+           % end
 
 
             % spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;                 
             
             %e = norm( max(S) );
     
-            dY = atcm.fun.QtoGauss(real(Y),12*2);
-            dy = atcm.fun.QtoGauss(real(y),12*2);
+            % smooth error
+            dgY = AGenQn(real(Y),12*2);
+            dgy = AGenQn(real(y),12*2);
+            
+            %dgY = dgY + abs(gradient(dgY));
+            %dgy = dgy + abs(gradient(dgy));
 
-            D = dY - dy;
-            %e = diag(D*D');
-            e = trace(D*D');
+            %D = dY - dy;
+            %e = trace(D*D');
+
+            % first  pass gauss error
+            %dgY = atcm.fun.QtoGauss(real(Y),12*2);
+            %dgy = atcm.fun.QtoGauss(real(y),12*2);
+            Dg  = dgY - dgy;
+            e   = trace(Dg*Dg');
+
+            %e  = ( (norm(full(Dg),2).^2)/numel(spm_vec(Dg))/2 ).^(1/2);
 
             % S =gaufun.SearchGaussPCA(D*D',8);
             % e = trace(S);
@@ -2605,6 +2639,55 @@ switch lower(method)
             %e = norm(S);
             
          %   L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+            
+            if aopt.hyperparameters
+                % (3) Complexity minus accuracy of precision
+                %----------------------------------------------------------------------
+                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
+                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
+            end
+            
+            %F    = sum(L);
+            %e    = real(-F);
+
+        case 'gaussq'
+                        
+            % first  pass gauss error
+            %dgY = atcm.fun.QtoGauss(real(Y),12*2);
+            %dgy = atcm.fun.QtoGauss(real(y),12*2);
+            
+            dgY = atcm.fun.gausvdpca(real(Y));
+            dgy = atcm.fun.gausvdpca(real(y));
+
+            Dg  = dgY - dgy;
+            
+            
+
+            e   = trace(Dg*Dg');
+
+            
+            
+            
+%             if isfield(aopt,'precisionQ')
+%                 pQ = aopt.precisionQ; % use pQ not Q otherwise it becomes stochastic!
+%                 padv = length(Y) - length(pQ);
+%                 pQ(end+1:end+padv,end+1:end+padv)=mean(pQ(:))/10;      
+%                 pQ = gaufun.GaussPCA(pQ,20);
+%             end
+%          
+%             % first  pass gauss error
+%             dgY = atcm.fun.QtoGauss(real(Y),12*2);
+%             dgy = atcm.fun.QtoGauss(real(y),12*2);
+%             Dg  = dgY - dgy;
+%             K   = rank(Dg) + 1;
+%             
+%             % second pass with rank
+%             dgY = atcm.fun.QtoGauss(real(Y),K);
+%             dgy = atcm.fun.QtoGauss(real(y),K);
+%             Dg  = dgY - dgy;
+% 
+%             e  = trace(Dg*pQ*Dg');
+
             
             if aopt.hyperparameters
                 % (3) Complexity minus accuracy of precision
@@ -2992,7 +3075,15 @@ if nargout == 2 || nargout == 7
         JI = zeros(length(ip),1);
         JI(find(ip)) = J0;
         J0  = JI;        
-                
+           
+    elseif aopt.mimo == 4
+        % broyden method! Don't compute Jacobian but just do a rank-one
+        % approximation / update
+        J  = ( f(x0)*x0/(x0'*x0) ) .* aopt.J;
+        J0 = f(x0)*x0;
+        ip = ~~(V);
+        J  = J(find(ip),:);
+        Jo{:,1} = J0;
     end
     
     if aopt.mimo
@@ -3093,7 +3184,7 @@ switch search_method
         
     case 9
 
-        a = ones(size(J,2),1);
+        a = ones(1,size(J,2));
         J = real(J);
         
         for i = 1:size(J,2)

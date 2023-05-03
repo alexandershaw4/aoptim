@@ -450,7 +450,7 @@ classdef AODCM < handle
         
         % EXTERNAL PARAMETER ESTMIMATORS - SA, GA, SURROG, BAYES...
         %================================================================
-        function mh(obj)
+        function mho(obj)
             % res = mh(y,x0,@genfunc,[LB,UB,params])
             %
             % Compulsory Parameters
@@ -518,7 +518,7 @@ classdef AODCM < handle
             if nargin < 2; N = 32; end
 
             x0  = obj.opts.x0(:);
-            V   = 1./full(obj.opts.V(:));
+            V   = full(obj.opts.V(:));
             fun = @(varargin)obj.wrapdm(varargin{:});
             objective = @(x) errfun(obj,fun,x);
 
@@ -860,10 +860,11 @@ classdef AODCM < handle
             end
             reps
             explore = 0.2;
+            warning off;
             RESULTS = bayesopt(objective,xvar,'IsObjectiveDeterministic',true,...
                 'ExplorationRatio',explore,'MaxObjectiveEvaluations',reps,...
                 'AcquisitionFunctionName','expected-improvement-plus','InitialX',t);
-            
+            warning on;
             % Best Actually observed model
             % = RESULTS.MinObjective;
             obj.F   = RESULTS.MinObjective;

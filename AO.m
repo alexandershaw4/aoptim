@@ -96,6 +96,13 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % where the regularisation parameter lambda is optimised. r0 is the redisual. 
 % (Note that inv(lambda*eye(D)+j*j') is the Fisher-information matrix).
 %
+% By convention you can onvert from an MLE scheme to MAP by switching
+% either op.EnforcePriorProb=1 or op.WeightByProbability=1, or both. This
+% invoke a scheme which minimises error while maximising the pdf of the
+% (postriors) parameters based on priors. This is the main reason this
+% optmisation can be considered Bayesian.
+%
+%
 % NOTE - the default option [2022] is now to use a regularised Newton routine:
 %---------------------------------------------------------------------------
 % 
@@ -2555,22 +2562,28 @@ switch lower(method)
         case 'mvgkl'
             % multivariate gaussian kullback lieb div
             
-            covQ = aopt.Q;
-            covQ(covQ<0)=-covQ(covQ<0);
-            covQ = (covQ + covQ')/2;
+            %covQ = aopt.Q;
+            %covQ(covQ<0)=-covQ(covQ<0);
+            %covQ = (covQ + covQ')/2;
             
             % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
+            %padv = length(Y) - length(covQ);
+            %covQ(end+1:end+padv,end+1:end+padv)=.1;
             
             % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+            %lbdmin = min(eig(covQ));
+            %boost = 2;
+            %covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
             
+            cY = atcm.fun.gausvdpca(real(Y));
+            cy = atcm.fun.gausvdpca(real(y));
+
+            cY = cov(cY);
+            cy = cov(cy);
+
             % truth [Y] first = i.e. inclusive, mean-seeking
             % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-            e = mvgkl(Y,covQ,spm_vec(y),covQ);
+            e = mvgkl(Y,cY,spm_vec(y),cy);
                         
         case 'q'
                                  
@@ -2598,8 +2611,8 @@ switch lower(method)
             %e = norm( max(S) );
     
             % smooth error
-            dgY = AGenQn(real(Y),12*2);
-            dgy = AGenQn(real(y),12*2);
+            %dgY = AGenQn(real(Y),12*2);
+            %dgy = AGenQn(real(y),12*2);
             
             %dgY = dgY + abs(gradient(dgY));
             %dgy = dgy + abs(gradient(dgy));
@@ -2608,10 +2621,28 @@ switch lower(method)
             %e = trace(D*D');
 
             % first  pass gauss error
-            %dgY = atcm.fun.QtoGauss(real(Y),12*2);
-            %dgy = atcm.fun.QtoGauss(real(y),12*2);
+            dgY = atcm.fun.QtoGauss(real(Y),12*2);
+            dgy = atcm.fun.QtoGauss(real(y),12*2);
             Dg  = dgY - dgy;
             e   = trace(Dg*Dg');
+
+            % graph theoretical approach
+%             c1 = centrality(digraph(fast_HVG(Y,1:length(Y))),'hubs');
+%             c2 = centrality(digraph(fast_HVG(y,1:length(y))),'hubs');
+% 
+%             cY = atcm.fun.QtoGauss(real(c1),12*2);
+%             cy = atcm.fun.QtoGauss(real(c2),12*2);
+%             Cg  = cY - cy;
+%             e   = e +  trace(Cg*Cg');
+
+%             HY = fast_HVG(Y,1:length(Y));
+%             Hy = fast_HVG(y,1:length(y));
+% 
+%             sHY = atcm.fun.HighResMeanFilt(HY,1,4);
+%             sHy = atcm.fun.HighResMeanFilt(Hy,1,4);
+% 
+%             Cg  = sHY - sHy;
+%             e   = e +  trace(Cg*Cg');
 
             %e  = ( (norm(full(Dg),2).^2)/numel(spm_vec(Dg))/2 ).^(1/2);
 
@@ -2649,6 +2680,14 @@ switch lower(method)
             
             %F    = sum(L);
             %e    = real(-F);
+        case 'gausscluster'
+
+            dY = atcm.fun.clustervec(Y);
+            dy = atcm.fun.clustervec(y);
+
+            Dg = cdist(dY,dy);
+            e  = sum(min(Dg)) + sum(min(Dg'));
+
 
         case 'gaussq'
                         
@@ -2656,16 +2695,24 @@ switch lower(method)
             %dgY = atcm.fun.QtoGauss(real(Y),12*2);
             %dgy = atcm.fun.QtoGauss(real(y),12*2);
             
-            dgY = atcm.fun.gausvdpca(real(Y));
-            dgy = atcm.fun.gausvdpca(real(y));
+            [dgY,~,qY] = atcm.fun.gausvdpca(real(Y));
+            [dgy,~,qy] = atcm.fun.gausvdpca(real(y));
 
             Dg  = dgY - dgy;
             
-            
-
             e   = trace(Dg*Dg');
 
-            
+            %parameters
+%             try
+%                 dxpt = aopt.pt(:,end);
+%                 xpt  = aopt.pt(:,end-1);
+% 
+%                 ep = atcm.fun.gausvdpca(xpt) - atcm.fun.gausvdpca(dxpt);
+% 
+%                 e = log(e) + log( trace(ep*ep') );
+% 
+%             end
+
             
             
 %             if isfield(aopt,'precisionQ')
@@ -3091,6 +3138,7 @@ if nargout == 2 || nargout == 7
         % Gaussian smoothing along oputput vector
         for i = 1:size(J,1)
             J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
+            %J(i,:) = atcm.fun.gausvdpca(J(i,:)',8,20);
 %           [QM,GL] = AGenQn(J(i,:),8);
 %           %J(i,:) = J(i,:)*QM;
 %           [u,s,v] = svd(QM);

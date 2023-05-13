@@ -105,7 +105,7 @@ classdef AODCM < handle
             ip = find(V);
             
             if obj.ftype == 1
-                % to pass to f(ßx)
+                % to pass to f(ÃŸx)
                 DD.P  = P;
                 DD.V  = V;
                 DD.cm = cm;

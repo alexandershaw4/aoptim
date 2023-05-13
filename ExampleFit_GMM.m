@@ -54,6 +54,7 @@ op.fsd          = 0; % fixed-step for derivative computation
 op.FS = @(x) x(:).^2.*(1:length(x))';
 op.FS = @(x) sqrt(x); % feature selection function
 
+
 %op.FS = @(x) [sqrt(x(:)); std(diff(x))/abs(mean(diff(x)))];
 
 op.criterion  = -inf; 1e-3;

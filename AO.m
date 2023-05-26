@@ -1,6 +1,6 @@
 function [X,F,Cp,PP,Hist,params] = AO(funopts)
-% A (Bayesian) gradient/curvature descent optimisation routine, designed primarily 
-% for nonlinear model fitting / system identification / parameter estimation. 
+% A (Bayesian) gradient (curvature) descent optimisation routine, designed primarily 
+% for parameter estimation in nonlinear models.
 %
 % The algorithm combines a Newton-like gradient routine (& optionally
 % MAP and ML) with line search and an optimisation on the composition of update 
@@ -8,19 +8,10 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % It further implements an exponential cost function hyperparameter which
 % is tuned independently, and an iteratively updating precision operator.
 % 
-% The objective function minimises a smooth Gaussian process eror term, or 
-% alternatively the free energy (~ ELBO - evidence lower bound), SSE or RMSE. 
-% Or a precision-weighted RMSE, 'qrmse'.
-%
-% General idea:
+% General idea: I have some data Y0 and a model (f) with some parameters x.
 % Y0 = f(x) + e  
 %
-% Y0 = empirical data (to fit)
-% f  = model (function)
-% x  = model parameters/inputs to be optimised 
-%      (treated as Gaussians with variance V)
-%
-% For a multivariate function f(x) where x = [p1 .. pn]' the ascent scheme
+% For a multivariate function f(x) where x = [p1 .. pn]' a gradient descent scheme
 % is:
 %
 %   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
@@ -29,14 +20,10 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % Optionally, low dimensional hyperparameter tuning can be used to find 
 % the best step size a[p], by setting step_method = 6;
 %
-%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised
-%   independently
+%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised independently
 %
-% where V maps between a (reduced) parameter subspace and the full vector.
-% dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
-% the objective function and not 'f' - your function). See jaco.m for options, 
-% although by default these are computed using a finite difference 
-% approximation of the curvature, which retains the sign of the gradient:
+% See jaco.m for options, although by default these are computed using a 
+% finite difference approximation of the curvature, which retains the sign of the gradient:
 %
 % f0 = F(x[p]+h) 
 % fx = F(x[p]  )
@@ -46,24 +33,26 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %          ----------------------------
 %            (f0 - 2 * fx + f1) / h^2  
 %
-% nb. - depending on the specified step method, a[] is computed from j & V
-% using variations on:      (where V is the variance of each param)
-% 
-%  J      = -j ;
-%  dFdpp  = approx -(J'*J); -- however, we normalise out the full magnitude 
-%                              of the gradient using a LDL decomposition,
-%                              such that;
-%  dFdpp  = -L*(D./sum(D))*L' 
-%  a      = (V)./(1-dFdpp);   
-% 
-% If step_method = 3, dFdpp is a small number and this reduces to a simple
-% scale on the stepsize - i.e. a = V./scale. However, if step_method = 1, J
-% is transposed, such that dFdpp is np*np. This leads to much bigger
-% parameter steps & can be useful when your start positions are a long way
-% from the solution. In either case, note that the variance term V[p] on the
-% parameter distribution is a scaled version of the step size. 
-% 
-% step methods:
+% The algorithm computes the objective function itself based on user
+% option; to retreive an empty options structure, do:
+%
+% opts = AO('options')
+%
+% Compulsory arguments are: (full list of optionals below)
+%
+% opts.y     = data to fit
+% opts.fun   = model or function f(x)  
+% opts.x0    = parameter vector (initial guesses) for x in f(x)
+% opts.V     = Var vector, with initial variance for each elemtn of x
+% opts.objective = the objective function selected from:
+% {'sse' 'mse' 'rmse' 'mvgkl' 'gauss' 'gaussmap' 'gaussq' 'jsd' 'euclidean' 'gkld'}
+%
+% then to run the optmisation, pass the opts structure back into AO with
+% these outputs:
+%
+%  [X,F,Cp,PP,Hist,params] = AO(opts)
+%
+% Optional "step" methods (def 9: normal fixed step GD):
 % -- step_method = 1 invokes steepest descent
 % -- step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
 % -- step_method = 6 invokes hyperparameter tuning of the step size.
@@ -76,49 +65,37 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % same direction, so we can take bigger steps for those parameters as the
 % optimisation progresses.
 %
-% For each iteration of the ascent:
-% 
-%   dx[p]  = x[p] + a[p]*-dFdx
-%
-% With the MLE setting, the probability of each predicted dx[p] coming 
-% from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
-% MLE:
-%           
-%   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
-%   dx     = x - (a*b)
-%
-% Similarly, setting DoMAP = 1 or DoMAP_Bayes = 1 will result in maximum
-% aposteriori estimates for parameters using a hyperparameter-tuned GaussNewton/
-% Levenberg-Marquardt scheme: 
-%
-%   dx = x  - ( [lambda*eye(D)] + j*j' )\(j*r0);
-%
-% where the regularisation parameter lambda is optimised. r0 is the redisual. 
-% (Note that inv(lambda*eye(D)+j*j') is the Fisher-information matrix).
-%
-% By convention you can onvert from an MLE scheme to MAP by switching
-% either op.EnforcePriorProb=1 or op.WeightByProbability=1, or both. This
-% invoke a scheme which minimises error while maximising the pdf of the
-% (postriors) parameters based on priors. This is the main reason this
-% optmisation can be considered Bayesian.
-%
-%
 % NOTE - the default option [2022] is now to use a regularised Newton routine:
 %---------------------------------------------------------------------------
 % 
-%     dx = x + inv(H*L*H)*-J
+%  dx = x + inv(H*L*H)*-J
 %
 % whewre H is the Hessian and J the jacobian (dFdx). L is a regularisation
 % term that is optimised independently. 
 %
+% The (best and default) objective function is you are unsure, is 'gauss'
+% which is simply a smooth (approx Gaussian) error function, or 'gaussq'
+% which is similar to gauss but implements a sort of pca. 
+%
+% If you want true MAP estimates (or just to be Bayesian), use 'gaussmap'
+% which implements a MAP routine: 
+%
+%  log(f(X|p)) + log(g(p))
 %
 %
-% Other stuff:
+% Other important stuff to know:
+% -------------------------------
+% if your function f(x) generates a vector output (not a single value),
+% then you can compute the partial gradients along each oputput, which is
+% necessary for proper implementation of some functions e.g. GaussNewton;
+% flag:
 %
-% With the Gaussian Process Regression option (do_gpr), a GP is fitted over
-% (gradient) predictions and best errors to re-estimate the parameter step
-% on each iteration. This is applied as a "refinement" step on the gradient
-% predicted dx.
+% opts.ismimo = 1;
+%
+% The gradient computation can be done in parallel if you have a cluster or
+% multicore computer, set:
+%
+% opts.doparallel = 1;
 %
 % Set opts.hypertune = 1 to append an exponential cost function to the chosen 
 % objective function. This is defined as:
@@ -131,19 +108,16 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % ALSO SET:
 %
 % opts.memory_optimise = 1; to optimise the weighting of dx on the gradient flow and recent memories 
-% opts.opts.rungekutta = 1; to invoke a runge-kutta optimisation locally
-% around the gradient predicted dx
+% opts.opts.rungekutta = 1; to invoke a runge-kutta optimisation locally around the gradient predicted dx
 % opts.updateQ = 1; to update the error weighting on the precision matrix 
-%
 %  
-% The {free energy} objective function minimised is
+% The {fe / free energy} objective function minimised is
 %==========================================================================
 %  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
 %  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
 %  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
 %  F    = -sum(L);
 %
-% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' 'mvgkl'... 
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -197,6 +171,10 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % opts.nocheck = 0;         % skip some checks to make faster
 % opts.isQR = 0;            % use QR decomp to solve for dx 
 % opts.NatGrad = 0;         % work in natural gradients
+% opts.variance_estimation = 0; % try to estimate variances
+% opts.gradtol = 1e-4;      % minimum tol on dFdx
+% opts.isGaussNewtonReg=1;  % try to use DampedGaussNewton steps
+% opts.orthogradient=1;     % orthogonalise jacobian/partial gradients
 %
 % [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
@@ -418,6 +396,7 @@ while iterate
         
         % extract residuals & convert to Gaussian mixture [gp]
         RSE = erx(1:length(Q));%rescale(real(erx(1:length(Q))));
+                
         gerr = AGenQ(RSE);
         % fit gauss residuals to data using lsq
         b=AGenQ(RSE)\RSE-g0(1:length(Q));
@@ -501,17 +480,30 @@ while iterate
         
         padQ = size(JJ,2) - length(Q0);
         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+        Q0 = atcm.fun.gausvdpca(Q0,np);
 
         for i = 1:np
-            % information score
-            score(i) = JJ(i,:)*Q0*JJ(i,:)';
+            for j = 1:np
+                % information score / approximate (precision weighted) Hessian
+                score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+            end
         end
+        
+        % integrate: da(t) = (expm(da/dx*t) - I)*inv(da/dx)*f
+        red = spm_dx(score,diag(pC),1);
 
-        red = red + rescale(real(score(:)),.125,1)/8;
-
-        red = real(red);
-
-        red(isnan(red)) = 1e-3;
+        % optimise by re-regularising step size if needed
+        if any(isnan(red)) || any(isinf(red)) || norm(red) > 1e2
+            Reg = 1/8;
+            while true
+                red = spm_dx(score,diag(pC),Reg);
+                if any(isnan(red)) || any(isinf(red)) || norm(red) > 1e2
+                    Reg = Reg*Reg;
+                else
+                    break;
+                end
+            end
+        end
 
     end
     
@@ -1092,9 +1084,9 @@ while iterate
                 
                 % Identify improver-parameters
                 if nfun == 1
-                    gp  = double(DFE < (e0+abs(etol))); % e0
+                    gp  = double(DFE <= (e0+abs(etol))); % e0
                 else
-                    gp  = double(DFE < (e1+abs(etol))); % e0
+                    gp  = double(DFE <= (e1+abs(etol))); % e0
                 end
                 
                 gpi = find(gp);
@@ -1554,7 +1546,7 @@ while iterate
         e0 =  e1;
         
         % increase learning rate
-        red = red * 1.1;
+        %red = red * 1.1;
                 
         % Extrapolate...
         %==================================================================        
@@ -2591,85 +2583,39 @@ switch lower(method)
             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
                         
 
+        case 'gaussmap'
+
+            % Gaussian erorr term using Frobenius distance
+            dgY = atcm.fun.QtoGauss(real(Y),12*2);
+            dgy = atcm.fun.QtoGauss(real(y),12*2);
+            
+            Dg  = dgY - dgy;
+            e   = trace(Dg*Dg');
+
+            if aopt.hyperparameters
+                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; 
+            end
+
+            % Parameter p(th) given (prior) distributions
+            for i = 1:length(p)
+                vv     = real(sqrt( Cp(i,i) ))*2;
+                if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+                pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+                pdx(i) = normcdf(x0(i),pd(i).mu,pd(i).sigma);
+            end
+
+            % full map: log(f(X|p)) + log(g(p))
+            e         = log(e) + 1./(1-log(prod(pdx*2)));
+
+
         case {'gauss' 'gp'}
             
-            
-           % S = atcm.fun.QtoGauss(real(Y),12*2) - atcm.fun.QtoGauss(real(y),12*2);
-
-           % if isfield(aopt,'precisionQ')
-           %     pQ = aopt.precisionQ; % use pQ not Q otherwise it becomes stochastic!
-                %aopt.Q
-           %     padv = length(Y) - length(pQ);
-           %     pQ(end+1:end+padv,end+1:end+padv)=mean(pQ(:))/10;
-                %S = S'.*pQ*S;
-               %S  = atcm.fun.QtoGauss(Y,12*2).*pQ - atcm.fun.QtoGauss(y,12*2).*pQ;
-           % end
-
-
-            % spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;                 
-            
-            %e = norm( max(S) );
-    
-            % smooth error
-            %dgY = AGenQn(real(Y),12*2);
-            %dgy = AGenQn(real(y),12*2);
-            
-            %dgY = dgY + abs(gradient(dgY));
-            %dgy = dgy + abs(gradient(dgy));
-
-            %D = dY - dy;
-            %e = trace(D*D');
-
             % first  pass gauss error
             dgY = atcm.fun.QtoGauss(real(Y),12*2);
             dgy = atcm.fun.QtoGauss(real(y),12*2);
             Dg  = dgY - dgy;
-            e   = trace(Dg*Dg');
-
-            % graph theoretical approach
-%             c1 = centrality(digraph(fast_HVG(Y,1:length(Y))),'hubs');
-%             c2 = centrality(digraph(fast_HVG(y,1:length(y))),'hubs');
-% 
-%             cY = atcm.fun.QtoGauss(real(c1),12*2);
-%             cy = atcm.fun.QtoGauss(real(c2),12*2);
-%             Cg  = cY - cy;
-%             e   = e +  trace(Cg*Cg');
-
-%             HY = fast_HVG(Y,1:length(Y));
-%             Hy = fast_HVG(y,1:length(y));
-% 
-%             sHY = atcm.fun.HighResMeanFilt(HY,1,4);
-%             sHy = atcm.fun.HighResMeanFilt(Hy,1,4);
-% 
-%             Cg  = sHY - sHy;
-%             e   = e +  trace(Cg*Cg');
-
-            %e  = ( (norm(full(Dg),2).^2)/numel(spm_vec(Dg))/2 ).^(1/2);
-
-            % S =gaufun.SearchGaussPCA(D*D',8);
-            % e = trace(S);
-
-            %L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; 
-
-%             dY = atcm.fun.QtoGauss(log(Y),12*2);
-%             dy = atcm.fun.QtoGauss(log(y),12*2);
-% 
-%             D = dY - dy;
-%             D(isnan(D))=0;
-% 
-%             e1 = trace(D*D');
-% 
-%             [~,dY] = sort(Y,'descend');
-%             [~,dy] = sort(y,'descend'); 
-% 
-%             e2 = cdist(dY',dy');
-% 
-%             e = e0 + e1 + e2;
-
-            %e = pdist2(Y',y');
-            %e = norm(S);
-            
-         %   L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+            e   = trace(Dg'*Dg);
+           
             
             if aopt.hyperparameters
                 % (3) Complexity minus accuracy of precision
@@ -2688,6 +2634,14 @@ switch lower(method)
             Dg = cdist(dY,dy);
             e  = sum(min(Dg)) + sum(min(Dg'));
 
+        case 'distancewei'
+
+            dY = distance_wei(fast_HVG(Y,1:length(Y)));
+            dy = distance_wei(fast_HVG(y,1:length(Y)));
+
+            Dg = dY - dy;
+
+            e = trace(Dg*Dg');
 
         case 'gaussq'
                         
@@ -3242,6 +3196,8 @@ switch search_method
         C = J'*J;
 
         a  = 1./(1+sum(C/prod(size(C))));
+        %N = prod(size(C));
+        %a = red'./N;
         x3 = a';
 
         dFdpp = J'*J;

@@ -2586,8 +2586,8 @@ switch lower(method)
         case 'gaussmap'
 
             % Gaussian erorr term using Frobenius distance
-            dgY = atcm.fun.QtoGauss(real(Y),12*2);
-            dgy = atcm.fun.QtoGauss(real(y),12*2);
+            dgY = atcm.fun.VtoGauss(real(Y),12*2);
+            dgy = atcm.fun.VtoGauss(real(y),12*2);
             
             Dg  = dgY - dgy;
             e   = trace(Dg*Dg');
@@ -2613,6 +2613,22 @@ switch lower(method)
             % first  pass gauss error
             dgY = atcm.fun.QtoGauss(real(Y),12*2);
             dgy = atcm.fun.QtoGauss(real(y),12*2);
+            Dg  = dgY - dgy;
+            e   = trace(Dg'*Dg);
+           
+            
+            if aopt.hyperparameters
+                % (3) Complexity minus accuracy of precision
+                %----------------------------------------------------------------------
+                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
+                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
+            end
+
+    case 'gaussv'
+
+            % first  pass gauss error
+            dgY = atcm.fun.VtoGauss(real(Y),12*2);
+            dgy = atcm.fun.VtoGauss(real(y),12*2);
             Dg  = dgY - dgy;
             e   = trace(Dg'*Dg);
            

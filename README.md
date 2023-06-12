@@ -37,25 +37,19 @@ op.objective='gauss'; % select smooth Gaussian error function
 from AO.m Help:
 
 ```
-% A gradient/curvature descent optimisation routine, designed primarily 
-% for nonlinear model fitting / system identification / parameter estimation. 
-% 
-% The objective function minimises the free energy (~ ELBO - evidence lower
-% bound), SSE or RMSE.
+% A (Bayesian) gradient (curvature) descent optimisation routine, designed primarily 
+% for parameter estimation in nonlinear models.
 %
+% The algorithm combines a Newton-like gradient routine (& optionally
+% MAP and ML) with line search and an optimisation on the composition of update 
+% parameters from a combination of the gradient flow and memories of previous updates.
+% It further implements an exponential cost function hyperparameter which
+% is tuned independently, and an iteratively updating precision operator.
+% 
+% General idea: I have some data Y0 and a model (f) with some parameters x.
 % Y0 = f(x) + e  
 %
-% Y0 = empirical data (to fit)
-% f  = model (function)
-% x  = model parameters/inputs to be optimised 
-%      (treated as Gaussians with variance V)
-%
-% Given the model function (f), parameters (x) and data (y), AO computes the
-% objective function, F:
-%
-%   F(x) = log evidence(e,y) - divergence(x) 
-%
-% For a multivariate function f(x) where x = [p1 .. pn]' the ascent scheme
+% For a multivariate function f(x) where x = [p1 .. pn]' a gradient descent scheme
 % is:
 %
 %   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
@@ -64,13 +58,10 @@ from AO.m Help:
 % Optionally, low dimensional hyperparameter tuning can be used to find 
 % the best step size a[p], by setting step_method = 6;
 %
-%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised using fminsearch
+%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised independently
 %
-% where V maps between a (reduced) parameter subspace and the full vector.
-% dFdx[p] are the partial derivatives of F, w.r.t parameters, p. (Note F = 
-% the objective function and not 'f' - your function). See jaco.m for options, 
-% although by default these are computed using a finite difference 
-% approximation of the curvature, which retains the sign of the gradient:
+% See jaco.m for options, although by default these are computed using a 
+% finite difference approximation of the curvature, which retains the sign of the gradient:
 %
 % f0 = F(x[p]+h) 
 % fx = F(x[p]  )
@@ -80,25 +71,30 @@ from AO.m Help:
 %          ----------------------------
 %            (f0 - 2 * fx + f1) / h^2  
 %
-% nb. - depending on the specified step method, a[] is computed from j & V
-% using variations on:      (where V is the variance of each param)
-% 
-%  J      = -j ;
-%  dFdpp  = approx -(J'*J); -- however, we normalise out the full magnitude 
-%                              of the gradient using a LDL decomposition,
-%                              such that;
-%  dFdpp  = -L*(D./sum(D))*L' 
-%  a      = (V)./(1-dFdpp);   
-% 
-% If step_method = 3, dFdpp is a small number and this reduces to a simple
-% scale on the stepsize - i.e. a = V./scale. However, if step_method = 1, J
-% is transposed, such that dFdpp is np*np. This leads to much bigger
-% parameter steps & can be useful when your start positions are a long way
-% from the solution. In either case, note that the variance term V[p] on the
-% parameter distribution is a scaled version of the step size. 
-% 
-% Alternatively:
+% The algorithm computes the objective function itself based on user
+% option; to retreive an empty options structure, do:
+%
+% opts = AO('options')
+%
+% Compulsory arguments are: (full list of optionals below)
+%
+% opts.y     = data to fit
+% opts.fun   = model or function f(x)  
+% opts.x0    = parameter vector (initial guesses) for x in f(x)
+% opts.V     = Var vector, with initial variance for each elemtn of x
+% opts.objective = the objective function selected from:
+% {'sse' 'mse' 'rmse' 'mvgkl' 'gauss' 'gaussmap' 'gaussq' 'jsd' 'euclidean' 'gkld'}
+%
+% then to run the optmisation, pass the opts structure back into AO with
+% these outputs:
+%
+%  [X,F,Cp,PP,Hist,params] = AO(opts)
+%
+% Optional "step" methods (def 9: normal fixed step GD):
+% -- step_method = 1 invokes steepest descent
+% -- step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
 % -- step_method = 6 invokes hyperparameter tuning of the step size.
+% -- step_method = 7 invokes an eigen decomp of the Jacobian matrix
 % -- step_method = 8 converts the routine to a mirror descent with
 %    Bregman proximity term.
 %
@@ -107,30 +103,59 @@ from AO.m Help:
 % same direction, so we can take bigger steps for those parameters as the
 % optimisation progresses.
 %
-% For each iteration of the ascent:
+% NOTE - the default option [2022] is now to use a regularised Newton routine:
+%---------------------------------------------------------------------------
 % 
-%   dx[p]  = x[p] + a[p]*-dFdx
+%  dx = x + inv(H*L*H)*-J
 %
-% With the MLE setting, the probability of each predicted dx[p] coming 
-% from x[p] is computed (Pp) and incorporated into a NL-WLS implementation of 
-% MLE:
-%           
-%   b(s+1) = b(s) - (J'*Pp*J)^-1*J'*Pp*r(s)
-%   dx     = x - (a*b)
+% whewre H is the Hessian and J the jacobian (dFdx). L is a regularisation
+% term that is optimised independently. 
 %
-% With the Gaussian Process Regression option (do_gpr), a GP is fitted over
-% (gradient) predictions and best errors to re-estimate the parameter step
-% on each iteration. This is applied as a "refinement" step on the gradient
-% predicted dx.
+% The (best and default) objective function is you are unsure, is 'gauss'
+% which is simply a smooth (approx Gaussian) error function, or 'gaussq'
+% which is similar to gauss but implements a sort of pca. 
+%
+% If you want true MAP estimates (or just to be Bayesian), use 'gaussmap'
+% which implements a MAP routine: 
+%
+%  log(f(X|p)) + log(g(p))
+%
+%
+% Other important stuff to know:
+% -------------------------------
+% if your function f(x) generates a vector output (not a single value),
+% then you can compute the partial gradients along each oputput, which is
+% necessary for proper implementation of some functions e.g. GaussNewton;
+% flag:
+%
+% opts.ismimo = 1;
+%
+% The gradient computation can be done in parallel if you have a cluster or
+% multicore computer, set:
+%
+% opts.doparallel = 1;
+%
+% Set opts.hypertune = 1 to append an exponential cost function to the chosen 
+% objective function. This is defined as:
+% 
+% c = t * exp(1/t * data - pred)
+% 
+% where t is a (temperature) hyperparameter controlled through a separate gradient
+% descent routine.
+%
+% ALSO SET:
+%
+% opts.memory_optimise = 1; to optimise the weighting of dx on the gradient flow and recent memories 
+% opts.opts.rungekutta = 1; to invoke a runge-kutta optimisation locally around the gradient predicted dx
+% opts.updateQ = 1; to update the error weighting on the precision matrix 
 %  
-% The {free energy} objective function minimised is
+% The {fe / free energy} objective function minimised is
 %==========================================================================
 %  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
 %  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
 %  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
 %  F    = -sum(L);
 %
-% *Alternatively, set opts.objective to 'rmse' 'sse' 'euclidean' ... 
 %
 % INPUTS:
 %-------------------------------------------------------------------------
@@ -164,6 +189,30 @@ from AO.m Help:
 % opts.FS = []              % feat selection function: FS(y)
 % opts.userplotfun = [];    % inject a user plot function into the main display
 % opts.corrweight = 1;      % weight error term by correlation
+% opts.WeightByProbability = 0; % weight parameter step update by prob
+% opts.faster = 0;          % make faster by limiting loops
+% opts.factorise_gradients = 1; % factorise gradients
+% opts.sample_mvn = 0;      % when  stuck sample from a multivariate gauss
+% opts.do_gpr = 0;          % try to refine estimates using a Gauss process
+% opts.normalise_gradients=0;% normalise gradients to a pdf
+% opts.isGaussNewton = 0;   % explicitly make the update a Gauss-Newton
+% opts.do_poly=0;           % same as do_gpr but using polynomials
+% opts.steps_choice = [];   % use multiple step methods and pick best on-line
+% opts.hypertune  = 1;      % tune a hyperparameter using exponential cost
+% opts.memory_optimise = 1; % switch on memory (recommend)
+% opts.rungekutta = 1;      % RK line search (recommend)
+% opts.updateQ = 1;         % update precision on each iteration(recommend)
+% opts.DoMAP = 0;           % maximum a posteriori
+% opts.DoMAP_Bayes = 0;     % Bayesian MAP (recommend, make sure mimo=1)
+% opts.crit = [0 0 0 0 0 0 0 0];
+% opts.save_constant = 0;   % save .mat on each iteration
+% opts.nocheck = 0;         % skip some checks to make faster
+% opts.isQR = 0;            % use QR decomp to solve for dx 
+% opts.NatGrad = 0;         % work in natural gradients
+% opts.variance_estimation = 0; % try to estimate variances
+% opts.gradtol = 1e-4;      % minimum tol on dFdx
+% opts.isGaussNewtonReg=1;  % try to use DampedGaussNewton steps
+% opts.orthogradient=1;     % orthogonalise jacobian/partial gradients
 %
 % [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %

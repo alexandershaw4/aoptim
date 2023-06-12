@@ -9,6 +9,11 @@ It is inspired by theoretical models of neuronal computation - i.e. the way the 
 ![overview](AO_optim_overview.png)
 
 ```
+Install:
+addpath(genpath('~/Downloads/aoptim/'))
+```
+
+```
 % Getting started with default options:
 
 op = AO('options')
@@ -24,8 +29,12 @@ op.objective='gauss'; % select smooth Gaussian error function
 [X,F,CV,~,Hi] = AO(op); 
 
 
+% change objective to 'gaussmap' for MAP estimation
 ```
 
+
+
+from AO.m Help:
 
 ```
 % A gradient/curvature descent optimisation routine, designed primarily 

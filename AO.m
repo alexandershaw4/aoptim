@@ -724,6 +724,11 @@ while iterate
             [q,r] = qr(params.aopt.J);
             dx = q\((r./norm(r))*er);
         end
+        
+        if lsqjacobian
+            jx = aopt.J'\y;
+            dx = x1 - jx;
+        end
 
         
         % The following options are like 'E-steps' or line search options 
@@ -3603,6 +3608,7 @@ X.predictionerrorupdate=0;
 X.simplelinesearch=0;
 X.orthogradient=1;
 X.rklinesearch=0;
+X.lsqjacobian=0;
 end
 
 function parseinputstruct(opts)

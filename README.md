@@ -9,6 +9,25 @@ It is inspired by theoretical models of neuronal computation - i.e. the way the 
 ![overview](AO_optim_overview.png)
 
 ```
+% Getting started with default options:
+
+op = AO('options')
+
+op.fun = func;          % function/model f(x0)
+op.x0  = x0(:);      % start values: x0
+op.y   = Y(:);       % data we're fitting (for computation of objective fun, e.g. e = Y - f(x)
+op.V   = V(:);       % variance / step for each parameter, e.g. ones(length(x0),1)/8
+
+op.objective='gauss'; % select smooth Gaussian error function
+
+% run it:
+[X,F,CV,~,Hi] = AO(op); 
+
+
+```
+
+
+```
 % A gradient/curvature descent optimisation routine, designed primarily 
 % for nonlinear model fitting / system identification / parameter estimation. 
 % 

@@ -26,13 +26,14 @@ op.fun = fun;
 op.x0  = b;
 op.V   = V;
 op.y   = x;
-op.step_method = 1;
+op.step_method = 9;
 op.maxit = 1000;
 
 %op.hypertune=1;
 op.memory_optimise=1;
 op.hyperparams=0;
 op.rungekutta=8;
+op.ismimo=1;
 
 [b,F,Cp] = AO(op);
 

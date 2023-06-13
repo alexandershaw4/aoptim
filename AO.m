@@ -188,6 +188,11 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % *If the optimiser isn't working well, try making V smaller!
 %
+% Dependencies
+%-------------------------------------------------------------------------
+% atcm -> https://github.com/alexandershaw4/atcm
+% spm  -> https://github.com/spm/
+%
 % References
 %-------------------------------------------------------------------------
 %
@@ -477,6 +482,10 @@ while iterate
 
         JJ = params.aopt.J;
         Q0 = aopt.Q;
+        
+        if isempty(Q0)
+            Q0 = eye(length(y(:)));
+        end
         
         padQ = size(JJ,2) - length(Q0);
         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
@@ -2304,6 +2313,10 @@ end
 if length(Y) > length(y)
     y(end+1:length(Y)) = 0;
 end
+
+% ensure vectors!
+Y = Y(:);
+y = y(:);
 
 % Check / complete the derivative matrix (for the covariance)
 %--------------------------------------------------------------------------

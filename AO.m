@@ -2,6 +2,23 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % A (Bayesian) gradient (curvature) descent optimisation routine, designed primarily 
 % for parameter estimation in nonlinear models.
 %
+% Getting started with default options:
+% 
+% op = AO('options')
+% 
+% op.fun = func;       % function/model f(x0)
+% op.x0  = x0(:);      % start values: x0
+% op.y   = Y(:);       % data we're fitting (for computation of objective fun, e.g. e = Y - f(x)
+% op.V   = V(:);       % variance / step for each parameter, e.g. ones(length(x0),1)/8
+% 
+% op.objective='gauss'; % select smooth Gaussian error function
+% 
+% Run the routine:
+% [X,F,CV,~,Hi] = AO(op); 
+% 
+%
+% change objective to 'gaussmap' for MAP estimation%
+%
 % The algorithm combines a Newton-like gradient routine (& optionally
 % MAP and ML) with line search and an optimisation on the composition of update 
 % parameters from a combination of the gradient flow and memories of previous updates.
@@ -3622,6 +3639,15 @@ X.simplelinesearch=0;
 X.orthogradient=1;
 X.rklinesearch=0;
 X.lsqjacobian=0;
+
+% Also check if atcm is in paths ad report
+try    atcm.fun.QtoGauss(1);
+catch; warning(['You also need the atcm toolbox to run AO --> ' ...
+    'https://github.com/alexandershaw4/atcm']);
+end
+    
+
+
 end
 
 function parseinputstruct(opts)

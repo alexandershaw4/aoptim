@@ -1,4 +1,5 @@
-clear global ; clear; close all;
+function [X,F] = ExampleFit_GMM(S)
+%clear global ; clear; close all;
 
 % Example function: fit a 4-dim Gaussian Mixture Model by minimising the
 % free energy
@@ -9,9 +10,12 @@ st = tic;
 
 %-------------------------------------------------------------
 w      = 2:90;
-S.Freq = [8  14 50 60]; % true values x
-S.Amp  = [10 8  5  5 ]; % true values y
-S.Wid  = [1  3  2  2];  % true values width
+
+if nargin < 1
+    S.Freq = [8  14 50 60]; % true values x
+    S.Amp  = [10 8  5  5 ]; % true values y
+    S.Wid  = [1  3  2  2];  % true values width
+end
 
 Y = makef(w,S); % truth...
 

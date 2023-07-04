@@ -99,8 +99,8 @@ op.save_constant = 0;
 
 op.variance_estimation = 0;
 
-op.isGaussNewton=0;
-op.isGaussNewtonReg=1;
+op.isGaussNewton=1;
+op.isGaussNewtonReg=0;
 %op.forcenewton=1;
 
 

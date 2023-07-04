@@ -532,7 +532,6 @@ while iterate
         end
 
     end
-    
 
     % Select step size method
     %----------------------------------------------------------------------    
@@ -644,9 +643,14 @@ while iterate
             
             % by using the variance (red) as a lambda on the inverse
             % Hessian, this becomes a relaxed or 'damped' Newton scheme
-            H = [aopt.J];
-            H = (red.*H);%./norm(H);
-            %Hstep = pinv(H*H')*cat(1,aopt.Jo{:,1});
+            for i = 1:size(J,1);
+                for j = 1:size(J,1); 
+                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+                end
+            end
+
+            %H = [aopt.J];
+            H = (red.*H./norm(H));%./norm(H);
             
             % the non-parallel finite different functions return gradients
             % in reduced space - embed in full vector space
@@ -654,10 +658,7 @@ while iterate
             JJ = x0*0;
             JJ(find(diag(pC))) = Jo;
             
-            % use cholesky factorisation of H (ensuring posdef)
-            R = chol( abs(makeposdef(H*(1*eye(length(H)))*H'))+ 1e-3*eye(length(x0)) );
-            
-            Hstep  = ( -R \ (R'*JJ));
+            Hstep = spm_dx(H,JJ,{-4});
             
             Gdx = x1 - Hstep;
             

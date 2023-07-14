@@ -17,29 +17,17 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % [X,F,CV,~,Hi] = AO(op); 
 % 
 %
-% change objective to 'gaussmap' for MAP estimation%
+% change objective to 'gaussmap' for MAP estimation
 %
-% The algorithm combines a Newton-like gradient routine (& optionally
-% MAP and ML) with line search and an optimisation on the composition of update 
-% parameters from a combination of the gradient flow and memories of previous updates.
-% It further implements an exponential cost function hyperparameter which
-% is tuned independently, and an iteratively updating precision operator.
-% 
-% General idea: I have some data Y0 and a model (f) with some parameters x.
-% Y0 = f(x) + e  
+% By default the step in the descent is a vanilla GD, however you can
+% flag the following in the input structure:
 %
-% For a multivariate function f(x) where x = [p1 .. pn]' a gradient descent scheme
-% is:
+% op.isNewton       = 1; ... switch to Newton's method
+% op.isQuasiNewton  = 1; ... switch to quasi-Newton
+% op.isGaussNewton  = 1; ... switch to Gauss Newton
+% op.isTrust        = 1; ... switch to a GN with trust region
 %
-%   x[p,t+1] = x[p,t] + a[p] *-dFdx[p]
-%
-% Note the use of different step sizes, a[p], for each parameter.
-% Optionally, low dimensional hyperparameter tuning can be used to find 
-% the best step size a[p], by setting step_method = 6;
-%
-%   x[p,t+1] = x[p,t] + (b*V) *-dFdx[p]  ... where b is optimised independently
-%
-% See jaco.m for options, although by default these are computed using a 
+% See jaco.m for options, although by default the gradients are computed using a 
 % finite difference approximation of the curvature, which retains the sign of the gradient:
 %
 % f0 = F(x[p]+h) 
@@ -70,26 +58,18 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %  [X,F,Cp,PP,Hist,params] = AO(opts)
 %
 % Optional "step" methods (def 9: normal fixed step GD):
-% -- step_method = 1 invokes steepest descent
-% -- step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
-% -- step_method = 6 invokes hyperparameter tuning of the step size.
-% -- step_method = 7 invokes an eigen decomp of the Jacobian matrix
-% -- step_method = 8 converts the routine to a mirror descent with
+% -- op.step_method = 1 invokes steepest descent
+% -- op.step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
+% -- op.step_method = 6 invokes hyperparameter tuning of the step size.
+% -- op.step_method = 7 invokes an eigen decomp of the Jacobian matrix
+% -- op.step_method = 8 converts the routine to a mirror descent with
 %    Bregman proximity term.
 %
 % By default momentum is included (opts.im=1). The idea is that we can 
 % have more confidence in parameters that are repeatedly updated in the 
 % same direction, so we can take bigger steps for those parameters as the
 % optimisation progresses.
-%
-% NOTE - the default option [2022] is now to use a regularised Newton routine:
 %---------------------------------------------------------------------------
-% 
-%  dx = x + inv(H*L*H)*-J
-%
-% whewre H is the Hessian and J the jacobian (dFdx). L is a regularisation
-% term that is optimised independently. 
-%
 % The (best and default) objective function is you are unsure, is 'gauss'
 % which is simply a smooth (approx Gaussian) error function, or 'gaussq'
 % which is similar to gauss but implements a sort of pca. 
@@ -99,9 +79,8 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 %  log(f(X|p)) + log(g(p))
 %
-%
 % Other important stuff to know:
-% -------------------------------
+% -------------------------------------------------------------------------
 % if your function f(x) generates a vector output (not a single value),
 % then you can compute the partial gradients along each oputput, which is
 % necessary for proper implementation of some functions e.g. GaussNewton;
@@ -127,20 +106,60 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % opts.memory_optimise = 1; to optimise the weighting of dx on the gradient flow and recent memories 
 % opts.opts.rungekutta = 1; to invoke a runge-kutta optimisation locally around the gradient predicted dx
 % opts.updateQ = 1; to update the error weighting on the precision matrix 
-%  
-% The {fe / free energy} objective function minimised is
-%==========================================================================
-%  L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; % complexity minus accuracy of states
-%  L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;                            % complexity minus accuracy of parameters
-%  L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;                            % complexity minus accuracy of precision (hyperparameter)
-%  F    = -sum(L);
 %
-%
-% INPUTS:
+% Full list of input options / flags
 %-------------------------------------------------------------------------
-% To call this function using an options structure:
-%-------------------------------------------------------------------------
-
+% X.step_method = 9;
+% X.im          = 1;
+% X.objective   = 'gauss';
+% X.writelog    = 0;
+% X.order       = 1;
+% X.min_df      = 0;
+% X.criterion   = 1e-3;
+% X.Q           = [];
+% X.inner_loop  = 1;
+% X.maxit       = 4;
+% X.y           = 0;
+% X.V           = [];
+% X.x0          = [];
+% X.fun         = [];
+% X.hyperparams  = 1;
+% X.hypertune    = 0;
+% X.force_ls     = 0;
+% X.doplot       = 1;
+% X.ismimo       = 1;
+% X.gradmemory   = 0;
+% X.doparallel   = 0;
+% X.fsd          = 1;
+% X.allow_worsen = 0;
+% X.doimagesc    = 0;
+% X.EnforcePriorProb = 0;
+% X.FS = [];
+% X.userplotfun  = [];
+% X.corrweight   = 0;
+% X.WeightByProbability = 0;
+% X.faster  = 0;
+% X.nocheck = 0;
+% X.factorise_gradients = 0;
+% X.normalise_gradients=0;
+% X.sample_mvn   = 0;
+% X.steps_choice = [];
+% X.rungekutta = 6;
+% X.memory_optimise = 1;
+% X.updateQ = 1;
+% X.crit = [0 0 0 0 0 0 0 0];
+% X.save_constant = 0; 
+% X.gradtol = 1e-4;
+% X.orthogradient = 1;
+% X.rklinesearch=0;
+% X.verbose = 0;
+% X.isNewton = 0;
+% X.isNewtonReg = 0 ;
+% X.isQuasiNewton = 0;
+% X.isGaussNewton=0;
+% X.lsqjacobian=0;
+% X.forcenewton   = 0;
+% X.isTrust = 0;
 %
 % [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 %
@@ -360,29 +379,29 @@ while iterate
         if verbose; fprintf('| Updating Q...\n'); end
 
         [~,~,erx]  = obj(x0,params);
-        erx = erx(1:length(Q));
-        Qer = VtoGauss(erx);
-        
-        Q0 = Q;
-        
-        if isempty(Q0);Q0 = eye(length(y(:)));end
+        erx = erx(1:length(Q)).^2;
+
+        % Identify number of error components
+        [~,~,Qer]=atcm.fun.approxlinfitgaussian(erx);
+        Qer = Qer';
 
         for i = 1:length(Qer)
             for j = 1:length(Qer)
-                Qmat(i,j) = trace(Qer(i,:).*Q0.*Qer(j,:)');
+                Qmat(i,j) = trace(Qer(i,:)*Qer(j,:)');
             end
         end
         
+        % normalise and store
         Qmat = Qmat ./ norm(Qmat);
         aopt.Q = Qmat;
         Hist.QQ(n,:,:) = Qmat;
 
         % Update the graphic
-        s        = subplot(5,3,12);imagesc(real(Q));        
+        s        = subplot(5,3,14);imagesc(real(Q));        
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
         s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
-        title('Gaussian Hyperparameter','color','w','fontsize',18);drawnow;
+        title('Error Components','color','w','fontsize',18);drawnow;
     end
     
     % compute gradients & search directions

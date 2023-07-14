@@ -161,6 +161,9 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % References
 %-------------------------------------------------------------------------
+% "SOLVING NONLINEAR LEAST-SQUARES PROBLEMS WITH THE GAUSS-NEWTON AND
+% LEVENBERG-MARQUARDT METHODS"  CROEZE,  PITTMAN, AND  REYNOLDS
+% https://www.math.lsu.edu/system/files/MunozGroup1%20-%20Paper.pdf
 %
 % "Computing the objective function in DCM" Stephan, Friston & Penny
 % https://www.fil.ion.ucl.ac.uk/spm/doc/papers/stephan_DCM_ObjFcn_tr05.pdf
@@ -647,16 +650,6 @@ while iterate
             H = red.*H;
             H = H./norm(H);
             
-            % the non-parallel finite different functions return gradients
-            % in reduced space - embed in full vector space
-            Jo = cat(1,aopt.Jo{:,1});
-            if length(Jo) ~= length(x1)
-                JJ = x0*0;
-                JJ(find(diag(pC))) = Jo;
-            else
-                JJ = Jo;
-            end
-
             % get residual vector
             [~,~,res,~]  = obj(x1,params);
 
@@ -674,6 +667,37 @@ while iterate
             jx = aopt.J'\y;
             dx = x1 - jx;
         end
+
+        % a sort-of-trust-region method
+        %------------------------------------------------------------------
+        if isTrust && ismimo
+            if n == 1; mu = 1e-2; end
+
+            for i = 1:size(J,1);
+                for j = 1:size(J,1); 
+                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+                end
+            end
+
+            % Norm Hessian
+            H = red.*H;
+            H = H./norm(H);
+            
+            % get residual vector
+            [~,~,res,~]  = obj(x1,params);
+
+            % update
+            Jx  = aopt.J ./ norm(aopt.J);
+            res = res./norm(res);
+
+            % essentially the GN routine with a constraint [d]
+            d   = update_d(H,JJ,mu);
+            dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
+            mu  = mu * 2;
+
+        end
+
+
 
         % The following steps compute the relative probability of the new
         % parameter estimates given the priors
@@ -1344,6 +1368,21 @@ fprintf(loc,'| ITERATION     | FUN EVAL | CURRENT F         | BEST F SO FAR     
 fprintf(loc,'|---------------|----------|-------------------|--------------------|---------|-------------\n');
 
 end
+
+function d = update_d(H,f,mu)
+% added from github repo:
+% /ezjong/matlab-levenberg-marquardt/blob/master/fminlev.m
+% for trust region algorithms
+    ndim = size(f,1);
+
+    % closed-form solution to quadratic form
+    A = 0.5*(H + H') + mu^2*eye(ndim);
+    b = - f;
+
+    % solve in scaled space (plus regularization)
+    d = A \ b;
+end
+
 
 function s = prinfo(loc,it,nfun,nc,ncs)
 
@@ -3225,6 +3264,7 @@ X.isQuasiNewton = 0;
 X.isGaussNewton=0;
 X.lsqjacobian=0;
 X.forcenewton   = 0;
+X.isTrust = 0;
 
 % Also check if atcm is in paths ad report
 try    atcm.fun.QtoGauss(1);

@@ -152,11 +152,12 @@ classdef AONN < handle
             %obj.op.corrweight=1;
             obj.op.doparallel=0;
             
-            obj.op.ismimo=1;
-            obj.op.hypertune=1;
-            obj.op.isGaussNewtonReg=1;
+            obj.op.ismimo=0;
+            obj.op.hypertune=0;
+            obj.op.isGaussNewtonReg=0;
+            obj.op.updateQ = 0;
             
-            obj.op.factorise_gradients=1;
+            obj.op.factorise_gradients=0;
         end
         
         function obj = dpdy(obj)

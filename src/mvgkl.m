@@ -34,15 +34,24 @@ if(~all(size(S1) == size(S2)))
 end
 % d-variate Gaussian
 d = length(m1);
-[R1,P1] = cholcov(S1,0); % Cholesky decomposition of covariance matrices
-[R2,P2] = cholcov(S2,0);
-if(any([P1,P2]) || any(isnan([P1,P2])))
-    error('covariance matrices are not positive definite');
-end
+%[R1,P1] = cholcov(S1); % Cholesky decomposition of covariance matrices
+%[R2,P2] = cholcov(S2);
+
+R1 = diag(qr(S1))';
+R2 = diag(qr(S2))';
+
+%if(any([P1,P2]) || any(isnan([P1,P2])))
+%    error('covariance matrices are not positive definite');
+%end
 %% Compute KL divergence
 sqTerm = sum( ((m2-m1)' / R2).^2 ); % Squared term
-logDetS1 = 2*sum(log(diag(R1)));    % log |S1|
-logDetS2 = 2*sum(log(diag(R2)));    % log |S2|
+%logDetS1 = 2*sum(log(diag(R1)));    % log |S1|
+%logDetS2 = 2*sum(log(diag(R2)));    % log |S2|
+
+logDetS1 = spm_logdet(diag(R1));
+logDetS2 = spm_logdet(diag(R2));
+
+
 % KL divergence
 kl = trace(R2\(R2'\S1)) + sqTerm - d + logDetS2 - logDetS1;
 kl = kl / 2;

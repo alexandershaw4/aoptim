@@ -70,6 +70,7 @@ classdef gaufun < handle
             for i = 1:size(X,2)
 
                 QM = gaufun.AGenQn(X(:,i),8);
+                %QM = atcm.fun.VtoGauss(X(:,i));
                 %QM = gaufun.QtoGauss(X(:,i),2);
                 %QM=(QM+QM')/2;
                 

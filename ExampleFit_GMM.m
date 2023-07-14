@@ -52,7 +52,7 @@ op.maxit        = 16; % maximum number of iterations
 op.inner_loop   = 10;
 op.DoMLE        = 0; % do use MLE for param estimation
 op.ismimo       = 1; % compute jacobian on full model output not objective
-op.hyperparams  = 0; % estimate noise hyperparameters
+op.hyperparams  = 1; % estimate noise hyperparameters
 op.im           = 1; % use momentum acceleration
 op.fsd          = 0; % fixed-step for derivative computation
 op.FS = @(x) x(:).^2.*(1:length(x))';
@@ -88,18 +88,13 @@ op.Q = eye(length(w));
 op.memory_optimise=1; % remember & include (optimise) prev update steps when considering new steps
 op.crit = [0 0 0 0];
 
-% use a Bayesian MAP projection to estimate parameters
-op.DoMAP_Bayes = 0;
-
-% use a Gauss Newton scheme
-op.isGaussNewton=0;
 
 % make regular saves of the optimimsation
 op.save_constant = 0;
 
-op.variance_estimation = 0;
-
+op.isNewton=0;
 op.isGaussNewton=1;
+op.isQuasiNewton=0;
 op.isGaussNewtonReg=0;
 %op.forcenewton=1;
 

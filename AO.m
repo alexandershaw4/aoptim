@@ -379,19 +379,19 @@ while iterate
         if verbose; fprintf('| Updating Q...\n'); end
 
         [~,~,erx]  = obj(x0,params);
-        erx = erx(1:length(Q)).^2;
-
-        % Identify number of error components
-        [~,~,Qer]=atcm.fun.approxlinfitgaussian(erx);
-        Qer = Qer';
+        erx = erx(1:length(Q));
+        Qer = VtoGauss(erx);
+        
+        Q0 = Q;
+        
+        if isempty(Q0);Q0 = eye(length(y(:)));end
 
         for i = 1:length(Qer)
             for j = 1:length(Qer)
-                Qmat(i,j) = trace(Qer(i,:)*Qer(j,:)');
+                Qmat(i,j) = trace(Qer(i,:)'.*Q0(i,j).*Qer(j,:));
             end
         end
         
-        % normalise and store
         Qmat = Qmat ./ norm(Qmat);
         aopt.Q = Qmat;
         Hist.QQ(n,:,:) = Qmat;
@@ -401,7 +401,7 @@ while iterate
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
         s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
-        title('Error Components','color','w','fontsize',18);drawnow;
+        title('Gaussian Hyperparameter','color','w','fontsize',18);drawnow;
     end
     
     % compute gradients & search directions
@@ -1164,122 +1164,68 @@ while iterate
         
         % *If didn't improve: invoke much more selective parameter update
         %==================================================================
-        pupdate(loc,n,nfun,e1,e0,'linsrch',toc);    
+        pupdate(loc,n,nfun,e1,e0,'RK lnsr',toc);    
         e_orig = e0;
-                
-        % select only parameters whose steps improved the objective
-        %------------------------------------------------------------------
-        thisgood = gp*0; % track whether any of selection get used
-        if any(gp)
-            
-            % sort good params by (improvement amount) * (probability)
-            %--------------------------------------------------------------
-            % update p's causing biggest improvment in fe while maintaining highest P(p)
-            [~,PO] = sort(rescale(real(-DFE(gpi))),'descend');
-            
-            % loop the good params in selected (PO) order
-            %--------------------------------------------------------------
-            improve1 = 1;
-            nimp     = 0 ;
-            
-            while improve1
-                thisgood = gp*0; % tracks which params are updated below
-                nimp     = nimp + 1;
-                % evaluate the 'good' parameters
-                for i  = 1:length(gpi)
-                    xnew             = x0;
-                    xnew(gpi(PO(i))) = dx(gpi(PO(i)));
-                    enew             = obj(xnew,params);
-                    % accept new error and parameters and continue
-                    if enew < (e0+abs(etol)) && nimp < round(inner_loop)
-                        x0  = V'*(xnew);
-                        df  = enew - e_orig;
-                        e0  = enew;
-                        thisgood(gpi(PO(i))) = 1;
-                        aopt.modpred(:,n) = spm_vec(params.aopt.fun(spm_unvec(x0,aopt.x0x0)));  
-                    end
-                end
-                
-                % Ok, now assess whether any parameters were accepted from
-                % this selective search....
-                %----------------------------------------------------------
-                if any(thisgood)
+
+        if rungekutta > 0
                     
-                    % Print & plot update
-                    nupdate = [length(find(x0 - aopt.pp)) length(x0)];
-                    pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
-                    if doplot; params = makeplot(x0,x1,params);aopt.oerror = params.aopt.oerror; end
-                    
-                    % Reset rejection counter & JPDtol
-                    n_reject_consec = 0;
-                    JPDtol = Initial_JPDtol;
-                                        
+            % reset dx:
+            dx = x1;
+            
+            % Make the U/L bounds proportional to the probability over the
+            % prior variance (derived from feature scoring on jacobian)
+            LB  = denan( dx - ( abs(red) ) );
+            UB  = denan( dx + ( abs(red) ) );
+            B   = find(UB==LB);
+
+            LB(B) = dx(B) - 1;
+            UB(B) = dx(B) + 1;
+
+            % Use the Runge-Kutta search algorithm
+            SearchAgents_no = rungekutta;
+            Max_iteration   = rungekutta;
+
+            dim = length(dx);
+            fun = @(x) obj(x,params);
+
+            try
+                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
+                rdx = rdx(:);
+                dde = obj(rdx,params);
+
+                if dde < e1
+                    df = dde - e1;
+                    dx = rdx(:);
+                    de = dde;
+
+                    % actually just udpate
+                    x1 = dx;x0 = x1;
+                    e1 = de;e0 = e1;
                 else
-                    % If we made it to here, then neither the full gradient
-                    % predicted update, nore the selective search, managed
-                    % to improve the objective. So:
-                    pupdate(loc,n,nfun,e0,e0,'reject ',toc);
-                    
-                    % Reduce param steps (vars) and go back to main loop
-                    %red = red*.8;
-                    
-                    warning off;try df; catch df = 0; end;warning on;
-                                        
-                    % Halt this while loop % Keep counting rejections
-                    improve1 = 0;
-                    n_reject_consec = n_reject_consec + 1;
-                    
-                    % decrease learning rate by 50%
-                    red = red * .5;
-                    
+                    df = 0;
                 end
-                
-                % update global store of V
-                aopt.pC = red;
+                if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end
+            catch
+                df = 0;
             end
-            
-        else
-            if sample_mvn
-                % sample from a multivariate normal over parameter set
-                pupdate(loc,n,nfun,e0,e0,'sample ',toc);
-                xnew = x0;
-                for ilp = 1:length(x1)
+      
 
-                    %R    = x0 - mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1)';
-                    %xnew = xnew + R(:);
-                    xnew = x0 - (red.^2).*(8*mvnrnd(x0,(aopt.Cp'+aopt.Cp)/2,1))';
-                    enew = obj(xnew,params);
+        else % just complain and carry on
 
-                    if enew < (e0+abs(etol))
-                        x0  = V'*(xnew);
-                        df  = enew - e_orig;
-                        e0  = enew;
+            % If we get here, then there were not gradient steps across any
+            % parameters which improved the objective! So...
+            pupdate(loc,n,nfun,e0,e0,'reject ',toc);
 
-                        % Print & plot update
-                        nupdate = [length(find(x0 - aopt.pp)) length(x0)];
-                        pupdate(loc,n,nfun,e0,e0,'accept ',toc,nupdate);
-                    else
-                        df = 0;
-                    end
-                end
+            % decrease learning rate by 50%
+            red = red * .5;
+            df  = 0;
 
-            else
-            
-            
-                % If we get here, then there were not gradient steps across any
-                % parameters which improved the objective! So...
-                pupdate(loc,n,nfun,e0,e0,'reject ',toc);
+            % Update global store of V & keep counting rejections
+            aopt.pC = red;
+            n_reject_consec = n_reject_consec + 1;
 
-                % decrease learning rate by 50%
-                red = red * .5;
-                
-                % Update global store of V & keep counting rejections
-                aopt.pC = red;
-                n_reject_consec = n_reject_consec + 1;
-
-                warning off; try df; catch df = 0; end; warning on;
+            warning off; try df; catch df = 0; end; warning on;
                
-            end
         end
         
     end

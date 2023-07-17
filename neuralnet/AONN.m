@@ -146,7 +146,7 @@ classdef AONN < handle
             obj.op.y         = double(obj.y);
             obj.op.maxit     = niter;
             obj.op.criterion = -500;
-            obj.op.step_method  = 1;
+            obj.op.step_method  = 9;
             obj.op.hyperparams  = 0; % turn off 4speed for large problems
             obj.op.inner_loop   = 8;            
             %obj.op.corrweight=1;

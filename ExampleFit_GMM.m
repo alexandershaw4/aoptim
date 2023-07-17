@@ -92,8 +92,8 @@ op.crit = [0 0 0 0];
 % make regular saves of the optimimsation
 op.save_constant = 0;
 
-op.isNewton=0;
-op.isGaussNewton=1;
+op.isNewton=1;
+op.isGaussNewton=0;
 op.isQuasiNewton=0;
 op.isGaussNewtonReg=0;
 %op.forcenewton=1;

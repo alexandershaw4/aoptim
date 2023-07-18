@@ -76,6 +76,7 @@ op.hypertune=1; % do hypertuning
 op.rungekutta=8; % do an RK-line search
 op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
+
 %op.WeightByProbability=1;
 
 % or generate a confounds Q matrix
@@ -96,8 +97,10 @@ op.isNewton=1;
 op.isGaussNewton=0;
 op.isQuasiNewton=0;
 op.isGaussNewtonReg=0;
+op.itTrust=0;
 %op.forcenewton=1;
 
+op.makevideo=0;
 
 %op.predictionerrorupdate=1;
 

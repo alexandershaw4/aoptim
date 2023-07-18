@@ -236,6 +236,7 @@ else
     loc = 1;
 end
 
+
 % If a feature selection function was passed, append it to the user fun
 if ~isempty(FS) && isa(FS,'function_handle')
     params.FS = FS;
@@ -266,6 +267,7 @@ aopt.corrweight      = corrweight;
 aopt.factorise_gradients = factorise_gradients;
 aopt.hypertune       = hypertune;
 aopt.verbose = verbose;
+aopt.makevideo = makevideo;
 
 IncMomentum = im;        % Observe and use momentum data            
 givetol     = allow_worsen; % Allow bad updates within a tolerance
@@ -278,6 +280,12 @@ params.userplotfun = userplotfun;
 if save_constant
     name = ['optim_' date];
 end
+
+% if video, open project
+if aopt.makevideo
+     aopt = setvideo(aopt);
+end
+
 
 % parameter and step / distribution vectors
 x0  = full(x0(:));
@@ -372,8 +380,8 @@ while iterate
         aopt.pp = x0(:);
     end
     
-    % update Gaussian precision hyperparameters matrix
-    % integrate error-weighted Q over iterations: Q(t+1) = dt * Q(t) + dQ/de
+    % update error component matrix
+    % iQ(t+1) = dt * Q(t) + dQ/de
     %----------------------------------------------------------------------
     if ~isempty(Q) && updateQ
         if verbose; fprintf('| Updating Q...\n'); end
@@ -1323,6 +1331,8 @@ end
 PP = BayesInf(x0,Ep,diag(red));
 
 if writelog;fclose(loc);end
+
+if aopt.makevideo; close(aopt.vidObj); end
         
 end
 
@@ -1468,6 +1478,14 @@ s(1).Color  = [.3 .3 .3];
 
 end
 
+function aopt = setvideo(aopt)
+
+    aopt.vidObj   = VideoWriter('opt_video','MPEG-4');
+    set(aopt.vidObj,'Quality',100);
+    open(aopt.vidObj);
+
+end
+
 function plot_hyper(x,y)
 
 % if hypertune; plot_hyper(params.hyper_tau); end
@@ -1559,6 +1577,7 @@ function params = makeplot(x,ox,params)
 %
 
 aopt = params.aopt;
+
 
 % User may pass a plot function which accepts parameter vector x and
 % params structure, and calls the user function (the one being optimised):
@@ -1710,8 +1729,19 @@ else
     drawnow;        
 end
 
+if aopt.makevideo
+    
+     currFrame = getframe(gcf);
+     writeVideo(aopt.vidObj,currFrame);
+
+end
+
 aopt.oerror = new_error;
 params.aopt = aopt;
+
+
+
+
 
 end
 
@@ -3230,6 +3260,8 @@ X.isGaussNewton=0;
 X.lsqjacobian=0;
 X.forcenewton   = 0;
 X.isTrust = 0;
+
+X.makevideo = 0;
 
 % Also check if atcm is in paths ad report
 try    atcm.fun.QtoGauss(1);

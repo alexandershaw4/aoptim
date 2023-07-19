@@ -245,7 +245,6 @@ end
 % check functions, inputs, options... note: many of these are set/returned
 % by the subfunctions parseinputstruct and DefOpts()
 %--------------------------------------------------------------------------
-%aopt         = [];      % reset
 aopt.x0x0    = x0;
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
 aopt.fun     = fun;      % (objective?) function handle
@@ -269,14 +268,15 @@ aopt.hypertune       = hypertune;
 aopt.verbose = verbose;
 aopt.makevideo = makevideo;
 
-IncMomentum = im;        % Observe and use momentum data            
-givetol     = allow_worsen; % Allow bad updates within a tolerance
-EnforcePriorProb = EnforcePriorProb; % Force updates to comply with prior distribution
+IncMomentum         = im;               % Observe and use momentum data            
+givetol             = allow_worsen;     % Allow bad updates within a tolerance
+EnforcePriorProb    = EnforcePriorProb; % Force updates to comply with prior distribution
 WeightByProbability = WeightByProbability; % weight parameter updates by probability
 
-params.aopt = aopt;      % Need to move form global aopt to a structure
+params.aopt        = aopt;      
 params.userplotfun = userplotfun;
 
+% save each iteration
 if save_constant
     name = ['optim_' date];
 end
@@ -286,25 +286,23 @@ if aopt.makevideo
      aopt = setvideo(aopt);
 end
 
-
-% parameter and step / distribution vectors
+% parameter and step vectors
 x0  = full(x0(:));
-XX0 = x0;
 V   = full(V(:));
-v   = V;
 pC  = diag(V);
 
 % variance (in reduced space)
 %--------------------------------------------------------------------------
-V     = eye(length(x0));    %turn off svd 
+V     = eye(length(x0));   
 pC    = V'*(pC)*V;
 ipC   = spm_inv(spm_cat(spm_diag({pC})));
 red   = (diag(pC));
 
+% other start points
 aopt.updateh = true; % update hyperpriors
-aopt.pC  = red;      % store for derivative & objective function access
-aopt.ipC = ipC;      % store ^
-red_x0 = red;
+aopt.pC      = red;      % store for derivative & objective function access
+aopt.ipC     = ipC;      % store ^
+red_x0       = red;
 
 % initial probs
 aopt.pt = zeros(length(x0),1) + (1/length(x0));
@@ -409,7 +407,7 @@ while iterate
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
         s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
-        title('Gaussian Hyperparameter','color','w','fontsize',18);drawnow;
+        title('Error Components','color','w','fontsize',18);drawnow;
     end
     
     % compute gradients & search directions
@@ -418,7 +416,7 @@ while iterate
     
     if verbose; pupdate(loc,n,0,e0,e0,'gradnts',toc); end
     
-    % Second order partial derivates of F w.r.t x0 using Jaco.m
+    % first order partial derivates of F w.r.t x0 using Jaco.m
     [e0,df0,~,~,~,~,params]  = obj(x0,params);
     [e0,~,er] = obj(x0,params);
     df0 = real(df0);
@@ -577,7 +575,7 @@ while iterate
         % For most methods, compute dx using subfun...
         dx   = compute_dx(x1,a,J,red,search_method,params);  
 
-         % section switchesfor Newton, GaussNewton and Quasi-Newton Schemes
+         % section switches for Newton, GaussNewton and Quasi-Newton Schemes
          %-----------------------------------------------------------------
 
          % Newton's Method

@@ -51,8 +51,9 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % the Newton update scheme (under default settings, though see GaussNewton
 % and Trust methods also);
 %
-%    H  = score * Hessian;
-%    dx = x - inv(H*H')*Jacobian        
+%    red = spm_dx(score,red,{-4}); % update step size / variance
+%    H   = red .* Hessian;
+%    dx  = x - inv(H*H')*Jacobian        
 %
 %-----------------------------------------------------------------
 % By default the step in the descent is a vanilla GD, however you can
@@ -522,8 +523,8 @@ while iterate
         for i = 1:np
             for j = 1:np
                 % information score / approximate (weighted) Hessian
-                %score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-                score(i,j) = trace(JJ(i,:)'*Q0(i,j)*JJ(j,:));
+                score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+                %score(i,j) = trace(JJ(i,:)'*Q0(i,j)*JJ(j,:));
             end
         end
         
@@ -626,12 +627,12 @@ while iterate
             end
             
             % Norm Hessian
-            %H = (red.*H./norm(H));
+            H = (red.*H./norm(H));
 
             % since the feature score is itself a derivative, score*H is
             % approximately the third derivative ("jerk")
-            H = score*H;
-            H = H ./ norm(H);
+            %H = score.*H;
+            %H = H ./ norm(H);
 
             % Quasi-Newton uses left singular values of H
             if isQuasiNewton

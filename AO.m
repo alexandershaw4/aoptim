@@ -16,9 +16,45 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % Run the routine:
 % [X,F,CV,~,Hi] = AO(op); 
 % 
+% change objective to 'gaussmap' for MAP estimation or 'fe' to use the free
+% energy objective function. 
+% 
+% The gauss and gaussmap objectives treat the underlying function as a 
+% Gaussian process, such that for a given function f and parameters x;
+% 
+%    y(i) = f(x)
+%    y(i) s.t. N(mu[i],sigma[i])
 %
-% change objective to 'gaussmap' for MAP estimation
+% as such output y is formed (approximated) by a sum of multiple, univariate 
+% Gaussians (a 1D GMM). The Gauss objective is formally:
+% 
+%    D = Gfun(Y) - Gfun(f(x))
+%    e = trace(D*D');
 %
+% where Gfun is the function estimating a Gaussian process (matrix) from the 
+% input vector. The advantage here, is that because both the data we are fitting (Y) 
+% and model output f(x) are approximated as a set of Gaussians, the error is 
+% smooth and matrix D represents the residuals also as a set of Gaussians.
+%
+% On each iteration, an error matrix is updated using the Gaus function
+% noted above;
+%
+%    resid  = Gfun( Y - f(x) )
+%    Q(i,j) = trace( resid(i,:)' * Q(i,j) * resid(j,:) )
+%
+% this error matrix is then used for feature scoring of the parameter
+% gradients (partial derivatives; J(n_param x n_out) );
+%
+%    score(i,j) = trace(J(i,:)'*Q0(i,j)*J(j,:));
+%
+% this (information matrix) scoring is then used to weight the Hessian in
+% the Newton update scheme (under default settings, though see GaussNewton
+% and Trust methods also);
+%
+%    H  = score * Hessian;
+%    dx = x - inv(H*H')*Jacobian        
+%
+%-----------------------------------------------------------------
 % By default the step in the descent is a vanilla GD, however you can
 % flag the following in the input structure:
 %
@@ -1183,7 +1219,7 @@ while iterate
         if rungekutta > 0
                     
             % reset dx:
-            dx = x1;
+            %dx = x1;
             
             % Make the U/L bounds proportional to the probability over the
             % prior variance (derived from feature scoring on jacobian)
@@ -1218,6 +1254,7 @@ while iterate
                     e1 = de;e0 = e1;
                 else
                     df = 0;
+                    pupdate(loc,n,nfun,e1,e0,'reject ',toc);
                 end
                 if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end
             catch
@@ -2135,7 +2172,6 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-
             e   = norm(Dg*Dg');
 
            
@@ -3147,7 +3183,7 @@ X.orthogradient = 1;
 X.rklinesearch=0;
 X.verbose = 0;
 
-X.isNewton = 0;
+X.isNewton = 1;
 X.isNewtonReg = 0 ;
 X.isQuasiNewton = 0;
 X.isGaussNewton=0;

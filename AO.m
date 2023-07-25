@@ -22,7 +22,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % The gauss and gaussmap objectives treat the underlying function as a 
 % Gaussian process, such that for a given function f and parameters x;
 % 
-%    y(i) = f(x)
+%    y    = f(x)
 %    y(i) s.t. N(mu[i],sigma[i])
 %
 % as such output y is formed (approximated) by a sum of multiple, univariate 

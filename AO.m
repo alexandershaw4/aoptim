@@ -306,7 +306,6 @@ red_x0       = red;
 
 % initial probs
 aopt.pt = zeros(length(x0),1) + (1/length(x0));
-
 params.aopt = aopt;
 
 % initial objective value (approx at this point as missing covariance data)
@@ -378,8 +377,8 @@ while iterate
         aopt.pp = x0(:);
     end
     
-    % update error component matrix
-    % iQ(t+1) = dt * Q(t) + dQ/de
+    % update error covariance matrix - to go into feature scoring
+    % Q(i,j) = trace( g(resid(i)) * Q(i,j) * g(resid(j))' )
     %----------------------------------------------------------------------
     if ~isempty(Q) && updateQ
         if verbose; fprintf('| Updating Q...\n'); end
@@ -387,30 +386,29 @@ while iterate
         [~,~,erx]  = obj(x0,params);
         erx = erx(1:length(Q));
         Qer = VtoGauss(erx);
-        
-        Q0 = Q;
-        
+        Q0  = aopt.Q;
+
         if isempty(Q0);Q0 = eye(length(y(:)));end
 
         for i = 1:length(Qer)
             for j = 1:length(Qer)
-                Qmat(i,j) = trace(Qer(i,:)'.*Q0(i,j).*Qer(j,:));
+                Qmat(i,j) = trace(Qer(i,:)'*Q0(i,j)*Qer(j,:));
             end
         end
         
-        Qmat = Qmat ./ norm(Qmat);
-        aopt.Q = Qmat;
+        Qmat   = Qmat ./ norm(Qmat);
+        aopt.Q = Qmat;   
         Hist.QQ(n,:,:) = Qmat;
 
         % Update the graphic
-        s        = subplot(5,3,14);imagesc(real(Q));        
+        s        = subplot(5,3,14);imagesc(real(aopt.Q));        
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
         s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
         title('Error Components','color','w','fontsize',18);drawnow;
     end
-    
-    % compute gradients & search directions
+
+    % compute gradients J, & search directions
     %----------------------------------------------------------------------
     aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
     
@@ -464,7 +462,7 @@ while iterate
         end
     end
     
-    % Feature Scoring for MIMOs    
+    % Feature Scoring for MIMOs - using aopt.Q updated above   
     %----------------------------------------------------------------------    
     if orthogradient && ismimo
         if verbose; fprintf('Orthogonalising Jacobian\n'); end
@@ -484,12 +482,12 @@ while iterate
         
         padQ = size(JJ,2) - length(Q0);
         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
-        Q0 = gausvdpca(Q0,np);
 
         for i = 1:np
             for j = 1:np
-                % information score / approximate (precision weighted) Hessian
-                score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+                % information score / approximate (weighted) Hessian
+                %score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+                score(i,j) = trace(JJ(i,:)'*Q0(i,j)*JJ(j,:));
             end
         end
         
@@ -592,7 +590,12 @@ while iterate
             end
             
             % Norm Hessian
-            H = (red.*H./norm(H));
+            %H = (red.*H./norm(H));
+
+            % since the feature score is itself a derivative, score*H is
+            % approximately the third derivative ("jerk")
+            H = score*H;
+            H = H ./ norm(H);
 
             % Quasi-Newton uses left singular values of H
             if isQuasiNewton
@@ -1073,6 +1076,10 @@ while iterate
                 
         % log deltaxs
         Hist.dx(:,n) = dx;
+
+        % check last best x1/e1 and update dx/de
+        de = obj(dx,params);
+        
         
         % print prediction
         pupdate(loc,n,nfun,de,e1,'predict',toc);
@@ -1203,6 +1210,8 @@ while iterate
                     df = dde - e1;
                     dx = rdx(:);
                     de = dde;
+
+                    pupdate(loc,n,nfun,e1,e0,'accept ',toc);
 
                     % actually just udpate
                     x1 = dx;x0 = x1;
@@ -1874,15 +1883,6 @@ elseif isfield(aopt,'precisionQ')
     nq  = ny ./ length(Q{1});
 end
 
-% if nargin > 2
-%     hh = varargin{1};
-% else
-%     try   hh = aopt.hh;
-%     catch hh = 1;
-%     end
-% end
-
-
 if ~isfield(aopt,'h') || ~aopt.hyperparameters
     h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
 else
@@ -1893,23 +1893,13 @@ if any(isinf(h))
     h = denan(h)+1/8;
 end
 
-
 iS = sparse(0);
 
 for i  = 1:length(Q)
     iS = iS + Q{i}*(exp(-32) + exp(h(i)));
 end
 
-%iS = iS + Q.*(exp(-32) + exp(h));
-
-%h
-
 e   = (spm_vec(Y) - spm_vec(y)).^2;
-
-%S = atcm.fun.QtoGauss(Y,12) - atcm.fun.QtoGauss(y,12);
-%e = max(S')';
-
-%e   = (spm_vec(Y) - spm_vec(y));
 ipC = aopt.ipC;
 
 warning off;                                % suppress singularity warnings
@@ -1917,94 +1907,65 @@ Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
 %Cp = (Cp + Cp')./2;
 warning on
 
-
 p  = ( x0(:) - aopt.pp(:) );
 
 if any(isnan(Cp(:))) 
     Cp = Cp;
 end
 
-
 if aopt.hyperparameters
-%     if isfield(params.aopt,'h') && ~isempty(params.aopt.h) && params.aopt.computeh
-%         %fprintf('using precomputed hyperparam while differentiating\n');
-%         h = params.aopt.h;
-%         ihC = params.aopt.ihC;
-%         d = params.aopt.d;
-%         Ch = params.aopt.Ch;
-%     else
-        %fprintf('\n\n\ncomputing h\n\n\n');
-        % pulled directly from SPM's spm_nlsi_GN.m ...
-        % ascent on h / precision {M-step}
-        %==========================================================================
-        %for m = 1:8
-            clear P;
-            nh  = length(Q);
-            warning off;
-            S   = spm_inv(iS);warning on;
-            
-            ihC = speye(nh,nh)*exp(4);
-            hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
-            for i = 1:nh
-                P{i}   = Q{i}*exp(h(i));
-                PS{i}  = P{i}*S;
-                P{i}   = kron(speye(nq),P{i});
-                JPJ{i} = real(aopt.J*P{i}*aopt.J');
+    % pulled directly from SPM's spm_nlsi_GN.m ...
+    % ascent on h / precision {M-step}
+    %==========================================================================
+    %for m = 1:8
+        clear P;
+        nh  = length(Q);
+        warning off;
+        S   = spm_inv(iS);warning on;
+        
+        ihC = speye(nh,nh)*exp(4);
+        hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
+        for i = 1:nh
+            P{i}   = Q{i}*exp(h(i));
+            PS{i}  = P{i}*S;
+            P{i}   = kron(speye(nq),P{i});
+            JPJ{i} = real(aopt.J*P{i}*aopt.J');
+        end
+
+        % derivatives: dLdh 
+        %------------------------------------------------------------------
+        for i = 1:nh
+            dFdh(i,1)      =   trace(PS{i})*nq/2 ...
+                - real(e'*P{i}*e)/2 ...
+                - spm_trace(Cp,JPJ{i})/2;
+            for j = i:nh
+                dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
+                dFdhh(j,i) =   dFdhh(i,j);
             end
-%                 i=1;
-%                 P{i}   = Q.*exp(h);
-%                 PS{i}  = P{i}*S;
-%                 %P{i}   = kron(speye(nq),P{i});
-%                 JPJ{i} = real(aopt.J*P{i}*aopt.J');
-         
+        end
 
-            % derivatives: dLdh 
-            %------------------------------------------------------------------
-            for i = 1:nh
-                dFdh(i,1)      =   trace(PS{i})*nq/2 ...
-                    - real(e'*P{i}*e)/2 ...
-                    - spm_trace(Cp,JPJ{i})/2;
-                for j = i:nh
-                    dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
-                    dFdhh(j,i) =   dFdhh(i,j);
-                end
-            end
+        % add hyperpriors
+        %------------------------------------------------------------------
+        d     = h     - hE;
+        dFdh  = dFdh  - ihC*d;
+        dFdhh = dFdhh - ihC;
+        Ch    = spm_inv(-dFdhh);
 
-%             for i = 1:nh
-%                 dFdh(i,1)      =   trace(diag(PS{1}(:,i)))*nq/2 ...
-%                     - real(e'*diag(P{1}(:,i))*e)/2 ...
-%                     - spm_trace(Cp,diag(JPJ{1}(:,1)))/2;
-%                 for j = i:nh
-%                     dFdhh(i,j) = - spm_trace(diag(PS{1}(:,i)),diag(PS{1}(:,j)))*nq/2;
-%                     dFdhh(j,i) =   dFdhh(i,j);
-%                 end
-%             end
+        % update ReML estimate
+        %------------------------------------------------------------------
+        warning off;
+        dh    = spm_dx(dFdhh,dFdh,{4});
+        dh    = min(max(dh,-1),1);
+        warning on;
+        h     = h  + dh;
 
-
-            % add hyperpriors
-            %------------------------------------------------------------------
-            d     = h     - hE;
-            dFdh  = dFdh  - ihC*d;
-            dFdhh = dFdhh - ihC;
-            Ch    = spm_inv(-dFdhh);
-
-            % update ReML estimate
-            %------------------------------------------------------------------
-            warning off;
-            dh    = spm_dx(dFdhh,dFdh,{4});
-            dh    = min(max(dh,-1),1);
-            warning on;
-            h     = h  + dh;
-
-            if aopt.updateh
-                aopt.h = h;
-                aopt.JPJ = JPJ;
-                aopt.Ch  = Ch;
-                aopt.d   = d;
-                aopt.ihC = ihC;
-            end
-      %  end
-  %  end
+        if aopt.updateh
+            aopt.h = h;
+            aopt.JPJ = JPJ;
+            aopt.Ch  = Ch;
+            aopt.d   = d;
+            aopt.ihC = ihC;
+        end
 end % end of if hyperparams (from spm) ... 
 
 % record hyperparameter h over iterations
@@ -2165,12 +2126,18 @@ switch lower(method)
 
 
         case {'gauss' 'gp'}
-            
+
             % first  pass gauss error
-            dgY = QtoGauss(real(Y),12*2);
-            dgy = QtoGauss(real(y),12*2);
+            %dgY = QtoGauss(real(Y),12*2);
+            %dgy = QtoGauss(real(y),12*2);
+
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
+
             Dg  = dgY - dgy;
-            e   = trace(Dg'*Dg);
+
+            e   = norm(Dg*Dg');
+
            
             
             if aopt.hyperparameters
@@ -2185,6 +2152,7 @@ switch lower(method)
             % first  pass gauss error
             dgY = VtoGauss(real(Y));
             dgy = VtoGauss(real(y));
+            
             Dg  = dgY - dgy;
             e   = trace(Dg'*Dg);
            
@@ -2245,8 +2213,7 @@ switch lower(method)
             dgy = QtoGauss(real(y),12*2);
             Dg  = dgY - dgy;
             e   = norm(Dg'*Dg);
-           
-            
+                   
             if aopt.hyperparameters
                 % (3) Complexity minus accuracy of precision
                 %----------------------------------------------------------------------
@@ -2255,24 +2222,6 @@ switch lower(method)
             end
 
 
-        % case 'gaussv'
-        % 
-        %     % first  pass gauss error
-        %     dgY = atcm.fun.VtoGauss(real(Y));
-        %     dgy = atcm.fun.VtoGauss(real(y));
-        %     Dg  = dgY - dgy;
-        %     e   = trace(Dg'*Dg);
-        % 
-        % 
-        %     if aopt.hyperparameters
-        %         % (3) Complexity minus accuracy of precision
-        %         %----------------------------------------------------------------------
-        %         e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
-        %         %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
-        %     end
-            
-            %F    = sum(L);
-            %e    = real(-F);
         case 'gausscluster'
 
             dY = atcm.fun.clustervec(Y);
@@ -2291,11 +2240,7 @@ switch lower(method)
             e = trace(Dg*Dg');
 
         case 'gaussq'
-                        
-            % first  pass gauss error
-            %dgY = atcm.fun.QtoGauss(real(Y),12*2);
-            %dgy = atcm.fun.QtoGauss(real(y),12*2);
-            
+                                    
             [dgY,~,qY] = gausvdpca(real(Y));
             [dgy,~,qy] = gausvdpca(real(y));
 
@@ -2303,40 +2248,6 @@ switch lower(method)
             
             e   = trace(Dg*Dg');
 
-            %parameters
-%             try
-%                 dxpt = aopt.pt(:,end);
-%                 xpt  = aopt.pt(:,end-1);
-% 
-%                 ep = atcm.fun.gausvdpca(xpt) - atcm.fun.gausvdpca(dxpt);
-% 
-%                 e = log(e) + log( trace(ep*ep') );
-% 
-%             end
-
-            
-            
-%             if isfield(aopt,'precisionQ')
-%                 pQ = aopt.precisionQ; % use pQ not Q otherwise it becomes stochastic!
-%                 padv = length(Y) - length(pQ);
-%                 pQ(end+1:end+padv,end+1:end+padv)=mean(pQ(:))/10;      
-%                 pQ = gaufun.GaussPCA(pQ,20);
-%             end
-%          
-%             % first  pass gauss error
-%             dgY = atcm.fun.QtoGauss(real(Y),12*2);
-%             dgy = atcm.fun.QtoGauss(real(y),12*2);
-%             Dg  = dgY - dgy;
-%             K   = rank(Dg) + 1;
-%             
-%             % second pass with rank
-%             dgY = atcm.fun.QtoGauss(real(Y),K);
-%             dgy = atcm.fun.QtoGauss(real(y),K);
-%             Dg  = dgY - dgy;
-% 
-%             e  = trace(Dg*pQ*Dg');
-
-            
             if aopt.hyperparameters
                 % (3) Complexity minus accuracy of precision
                 %----------------------------------------------------------------------
@@ -2344,21 +2255,6 @@ switch lower(method)
                 %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
             end
             
-            %F    = sum(L);
-            %e    = real(-F);
-                        
-        % case 'gaussfe'
-        %     dY = atcm.fun.QtoGauss(real(Y),12*2);
-        %     dy = atcm.fun.QtoGauss(real(y),12*2);
-        % 
-        %     D = dY - dy;
-        %     e = diag(D*D');
-        % 
-        %     L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2; 
-        %     L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-        %     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
-        %     F    = sum(L);
-        %     e    = real(-F);
             
         case 'jsd'
             % Jensen-SHannon divergence using multivariate gaussian kullback lieb div
@@ -2585,7 +2481,7 @@ end
 %    e = e - L(3);
 %end
 
-% if aopt.hypertune && length(params.hyper_tau)>1
+% if aopt.hypertun e && length(params.hyper_tau)>1
 %     if fc(params.hyper_tau(end-1)) < fc(t)
 %         params.hyper_tau(end) = params.hyper_tau(end-1);
 %         e = fc(params.hyper_tau(end));

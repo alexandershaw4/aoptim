@@ -415,7 +415,7 @@ while iterate
     end
     
     % update error covariance matrix - to go into feature scoring
-    % Q(i,j) = trace( g(resid(i)) * Q(i,j) * g(resid(j))' )
+    % Q(i,j) = trace( g(resid(:,i)) * Q(i,j) * g(resid(:,j))' )
     %----------------------------------------------------------------------
     if ~isempty(Q) && updateQ
         if verbose; fprintf('| Updating Q...\n'); end
@@ -527,7 +527,7 @@ while iterate
                 %score(i,j) = trace(JJ(i,:)'*Q0(i,j)*JJ(j,:));
             end
         end
-        
+
         % integrate: da(t) = (expm(da/dx*t) - I)*inv(da/dx)*f
         red = spm_dx(score,diag(pC),1);
 
@@ -542,6 +542,7 @@ while iterate
                     break;
                 end
             end
+
         end
 
     end
@@ -2173,8 +2174,32 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-            e   = norm(Dg*Dg');
+            e   = norm(Dg*Dg') ;
 
+            
+        case {'gauss_norm_trace'}
+
+            % first  pass gauss error
+            %dgY = QtoGauss(real(Y),12*2);
+            %dgy = QtoGauss(real(y),12*2);
+
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
+
+            Dg  = dgY - dgy;
+            e   = norm(Dg*Dg') + trace(Dg*Dg');
+
+        case {'gauss_trace'}
+
+            % first  pass gauss error
+            %dgY = QtoGauss(real(Y),12*2);
+            %dgy = QtoGauss(real(y),12*2);
+
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
+
+            Dg  = dgY - dgy;
+            e   = trace(Dg*Dg');
            
             
             if aopt.hyperparameters

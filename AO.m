@@ -567,6 +567,7 @@ while iterate
 
         % ascent on the variance for this parameter dist
         red = spm_dx(score,diag(pC),1);
+        aopt.uncert = diag(spm_inv(score));
 
         % optimise by re-regularising step size if needed
         if any(isnan(red)) || any(isinf(red)) || norm(red) > 1e2
@@ -664,7 +665,8 @@ while iterate
                 end
             end
             
-            % Norm Hessian
+            % Norm Hessian - incl. hessnorm; fixes issue with large cond(H)
+            H = hessnorm(H);
             H = (red.*H./norm(H));
             %H = score;
 
@@ -2294,6 +2296,7 @@ switch lower(method)
 
             Dg  = dgY - dgy;
             e   = norm(Dg*Dg') ;
+
 
         case 'gausskl'
 

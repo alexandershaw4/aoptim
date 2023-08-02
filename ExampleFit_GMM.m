@@ -77,6 +77,20 @@ op.rungekutta=8; % do an RK-line search
 op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
 
+% % since I know y is a low-rank 1D GMM, I can set Q to have only 8 comps
+% NC = 12;
+% [~,~,QQ] = atcm.fun.approxlinfitgaussian(Y(:),[],[],NC);
+%     for iq = 1:NC; QQ{iq} = QQ{iq}'*QQ{iq}; end
+% op.Q = QQ;
+
+[~,I,Qc] = atcm.fun.approxlinfitgaussian(Y,[],[],2);
+Qc = cat(1,Qc{:});
+%Qc = VtoGauss(real(DCM.xY.y{:}));
+% fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
+for iq = 1:size(Qc,1); QQ{iq} = Qc(iq,:)'*Qc(iq,:); end
+
+op.Q = QQ;
+
 %op.WeightByProbability=1;
 
 % or generate a confounds Q matrix
@@ -93,12 +107,13 @@ op.crit = [0 0 0 0];
 % make regular saves of the optimimsation
 op.save_constant = 0;
 
-op.isNewton=1;
-op.isGaussNewton=0;
+op.isNewton=0;
+op.isGaussNewton=1;
 op.isQuasiNewton=0;
-op.isGaussNewtonReg=0;
+op.isNewtonReg=0;
 op.itTrust=0;
 %op.forcenewton=1;
+
 
 op.makevideo=0;
 

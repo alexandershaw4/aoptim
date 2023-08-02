@@ -40,12 +40,12 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % noted above;
 %
 %    resid  = Gfun( Y - f(x) )
-%    Q(i,j) = trace( resid(i,:)' * Q(i,j) * resid(j,:) )
+%    Q(i,j) = trace( resid(i,:)' * Q{n}(i,j) * resid(j,:) )
 %
 % this error matrix is then used for feature scoring of the parameter
 % gradients (partial derivatives; J(n_param x n_out) );
 %
-%    score(i,j) = trace(J(i,:)'*Q0(i,j)*J(j,:));
+%    score(i,j) = trace(J(i,:)'*Q{n}(i,j)*J(j,:));
 %
 % this (information matrix) scoring is then used to weight the Hessian in
 % the Newton update scheme (under default settings, though see GaussNewton
@@ -350,6 +350,16 @@ params.aopt = aopt;
 n          = 0;
 iterate    = true;
 Vb         = V;
+
+% initialise Q if running but empty
+if isempty(Q) && updateQ
+    Qc  = VtoGauss(real(y(:)));    
+    fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
+    for iq = 1:size(Qc,1); 
+        Q{iq} = fun(Qc(iq,:)); 
+    end
+    aopt.Q = Q;
+end
     
 % initial error plot(s)
 %--------------------------------------------------------------------------
@@ -414,36 +424,55 @@ while iterate
         aopt.pp = x0(:);
     end
     
-    % update error covariance matrix - to go into feature scoring
-    % Q(i,j) = trace( g(resid(:,i)) * Q(i,j) * g(resid(:,j))' )
+    % update error covariance matrix for component n - to go into feature scoring
+    % Q{n}(i,j) = trace( g(resid(:,i)) * Q{n}(i,j) * g(resid(:,j))' )
     %----------------------------------------------------------------------
     if ~isempty(Q) && updateQ
         if verbose; fprintf('| Updating Q...\n'); end
 
         [~,~,erx]  = obj(x0,params);
-        erx = erx(1:length(Q));
+        %erx = erx(1:length(Q));
         Qer = VtoGauss(erx);
-        Q0  = aopt.Q;
+        QQ  = aopt.Q;
 
-        if isempty(Q0);Q0 = eye(length(y(:)));end
-
-        for i = 1:length(Qer)
-            for j = 1:length(Qer)
-                Qmat(i,j) = trace(Qer(i,:)'*Q0(i,j)*Qer(j,:));
-            end
+        if ~iscell(QQ)
+            QQ = {QQ};
+            aopt.Q = [];
         end
+
+        for iq = 1:length(QQ)
+            Q0 = QQ{iq};
+
+            if isfield(aopt,'h')
+                Q0 = Q0 * aopt.h(iq);
+            end
+
+            if isempty(Q0);Q0 = eye(length(y(:)));end
+    
+            for i = 1:length(Qer)
+                for j = 1:length(Qer)
+                    Qmat(i,j) = trace(Qer(i,:)'*Q0(i,j)*Qer(j,:));
+                end
+            end
         
-        Qmat   = Qmat ./ norm(Qmat);
-        aopt.Q = Qmat;   
+            Qmat       = Qmat ./ norm(Qmat);
+            aopt.Q{iq} = Qmat;  
+        end
+         
         Hist.QQ(n,:,:) = Qmat;
 
-        % Update the graphic
-        s        = subplot(5,3,14);imagesc(real(aopt.Q));        
+        % Update graphic (1) - error comps 
+        Qplot    = sum(cat(3,aopt.Q{:}),3);
+        s        = subplot(5,3,14);imagesc(real(Qplot));        
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
         s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
         title('Error Components','color','w','fontsize',18);drawnow;
+
+        % Update graphic (2) - precision comps 
+        update_hyperparam_plot(y,aopt.Q)
     end
+
 
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
@@ -473,7 +502,7 @@ while iterate
     if verbose; pupdate(loc,n,0,e0,e0,'grd-fin',toc); end
     
     % update hyperparameter tuning plot
-    if hypertune; plot_hyper(params.hyper_tau,[Hist.e  e0]); end
+    %if hypertune; plot_hyper(params.hyper_tau,[Hist.e  e0]); end
     
     % update h_opt plot
     if hyperparams; plot_h_opt(params.h_opt); drawnow; end
@@ -512,6 +541,10 @@ while iterate
 
         JJ = params.aopt.J;
         Q0 = aopt.Q;
+
+        if iscell(Q0)
+            Q0 = sum(cat(3,aopt.Q{:}),3);
+        end
         
         if isempty(Q0)
             Q0 = eye(length(y(:)));
@@ -519,6 +552,10 @@ while iterate
         
         padQ = size(JJ,2) - length(Q0);
         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+
+        if orthogradient
+            Q0 = symmetric_orthogonalise(Q0);
+        end
 
         for i = 1:np
             for j = 1:np
@@ -629,6 +666,7 @@ while iterate
             
             % Norm Hessian
             H = (red.*H./norm(H));
+            %H = score;
 
             % since the feature score is itself a derivative, score*H is
             % approximately the third derivative ("jerk")
@@ -690,8 +728,9 @@ while iterate
             Gf   = @(L) pinv(H*(L*eye(length(H)))*H');
             Gff  = @(x) obj(x1 - Gf(x)*JJ,params);
             [XX] = fminsearch(Gff,1);
+            H0 = (H*(XX*eye(length(H)))*H');
             
-            Hstep = pinv(H*(XX*eye(length(H)))*H')*JJ;
+            Hstep = spm_dx(H0,JJ,{-4}); 
             GRdx  = x1 - Hstep;
             dx     = GRdx;
             %if forcenewton
@@ -713,16 +752,20 @@ while iterate
             end
 
             % Norm Hessian
-            H = red.*H;
-            H = H./norm(H);
+            H = (red.*H./norm(H));
             
             % get residual vector
             [~,~,res,~]  = obj(x1,params);
 
-            % update
+            % components
             Jx  = aopt.J ./ norm(aopt.J);
             res = res./norm(res);
-            dx  = x1 - pinv(H*H')*Jx*res;
+            ipC = diag(red);%spm_inv(score);
+
+            % dFdpp & dFdp
+            dFdpp = H - ipC ;
+            dFdp  = Jx * res - ipC * x1;
+            dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
 
         end
                      
@@ -1505,6 +1548,17 @@ s(4).Color  = [.3 .3 .3];
 drawnow;
 end
 
+function Q = updateQf(Q,erx,n)
+
+[~,~,QQ] = atcm.fun.approxlinfitgaussian(erx,[],[],length(Q));
+    
+for iq = 1:length(Q);
+    dfdq  = QQ{iq}'*QQ{iq}; 
+    Q{iq} = Q{iq} + (1/n) * dfdq;
+end
+
+end
+
 function plot_h_opt(x)
 
 s(1) = subplot(5,3,13);
@@ -1529,6 +1583,24 @@ function aopt = setvideo(aopt)
     aopt.vidObj   = VideoWriter('opt_video','MPEG-4');
     set(aopt.vidObj,'Quality',100);
     open(aopt.vidObj);
+
+end
+
+function update_hyperparam_plot(y,Q)
+
+s = subplot(5,3,12); hold on;
+
+for iq = 1:length(Q)
+    Q0 = Q{iq};
+    plot(y'*Q0);
+end
+hold off; grid on;
+title('Hyperprm Comps','color','w','fontsize',18);hold off;
+
+s(1).YColor = [1 1 1];
+s(1).XColor = [1 1 1];
+s(1).Color  = [.3 .3 .3];    
+box on;
 
 end
 
@@ -1904,13 +1976,15 @@ if isnumeric(Q) && ~isempty(Q)
     % If user supplied a precision matrix, store it so that it can be
     % incorporated into the updating q
     aopt.precisionQ = Q;
+elseif iscell(Q)
+    aopt.precisionQ = Q;
 end
 
 if ~isfield(aopt,'precisionQ')
     Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %
     ny  = length(spm_vec(y));
     nq  = ny ./ length(Q);
-elseif isfield(aopt,'precisionQ')
+elseif isfield(aopt,'precisionQ') && isnumeric(aopt.precisionQ)
     Q   = {aopt.precisionQ};
     clear Q;
     lpq = length(aopt.precisionQ);
@@ -1918,6 +1992,10 @@ elseif isfield(aopt,'precisionQ')
        Q{ijq} = sparse(ijq,ijq,aopt.precisionQ(ijq,ijq),lpq,lpq);
     end
 
+    ny  = length(spm_vec(y));
+    nq  = ny ./ length(Q{1});
+elseif isfield(aopt,'precisionQ') && iscell(aopt.precisionQ)
+    Q = aopt.precisionQ;
     ny  = length(spm_vec(y));
     nq  = ny ./ length(Q{1});
 end
@@ -2176,6 +2254,19 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = norm(Dg*Dg') ;
 
+        case 'gausskl'
+
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
+
+            D = KLDiv(dgY,dgy)*KLDiv(dgy,dgY)';
+
+            e = trace(D); 
+
+            gr = Y-y;
+            e  = e + sum(gr.^2); 
+            subplot(5,3,6);imagesc(D);
+
             
         case {'gauss_norm_trace'}
 
@@ -2318,7 +2409,7 @@ switch lower(method)
             end
             
             
-        case 'jsd'
+        case 'jsdmvgkl'
             % Jensen-SHannon divergence using multivariate gaussian kullback lieb div
             
             covQ = aopt.Q;

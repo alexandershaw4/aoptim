@@ -107,11 +107,11 @@ op.crit = [0 0 0 0];
 % make regular saves of the optimimsation
 op.save_constant = 0;
 
-op.isNewton=0;
+op.isNewton=1;
 op.isGaussNewton=0;
 op.isQuasiNewton=0;
 op.isNewtonReg=0;
-op.isTrust=1;
+op.isTrust=0;
 %op.forcenewton=1;
 
 

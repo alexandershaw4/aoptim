@@ -553,10 +553,6 @@ while iterate
         padQ = size(JJ,2) - length(Q0);
         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
 
-        if orthogradient
-            Q0 = symmetric_orthogonalise(Q0);
-        end
-
         for i = 1:np
             for j = 1:np
                 % information score / approximate (weighted) Hessian
@@ -565,7 +561,7 @@ while iterate
             end
         end
 
-        % integrate: da(t) = (expm(da/dx*t) - I)*inv(da/dx)*f
+        % ascent on the variance for this parameter dist
         red = spm_dx(score,diag(pC),1);
 
         % optimise by re-regularising step size if needed
@@ -777,7 +773,7 @@ while iterate
             dx = x1 - jx;
         end
 
-        % a Trust-Region method
+        % a Trust-Region method (a variation on GN scheme)
         %------------------------------------------------------------------
         if isTrust && ismimo
             if n == 1; mu = 1e-2; end
@@ -799,31 +795,30 @@ while iterate
             res = res./norm(res);
             ipC = diag(red);
 
-            if n == 1; del = 1; end
+            if n == 1; del = 1;  end
 
+            % solve trust problem
             d  = subproblem(H,J,del);
             dr = J' * d + (1/2) * d' * H * d;
-    
-            if n == 1; r = dr; end
+        
+            if n == 1; r   = dr; end
 
+            % evaluate
             fx0 = obj(x1,params);
             fx1 = obj(x1 - d,params);
-
             rk  = (fx1 - fx0) / max((dr - r),1);
 
             % adjust radius of trust region
             rtol = 0;
-            if rk < rtol
-                del = 1.2 * del;           
-            else
-                del = del * .8;
+            if rk < rtol;  del = 1.2 * del;           
+            else;          del = del * .8;
             end
 
             % accept update
             if fx1 < fx0
                 pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
                 dx = x1 - d;
-                r = dr;
+                r  = dr;
             end
 
             % essentially the GN routine with a constraint [d]
@@ -1050,8 +1045,11 @@ while iterate
                         
             % Make the U/L bounds proportional to the probability over the
             % prior variance (derived from feature scoring on jacobian)
-            LB  = denan( dx - ( pt(:)./red ) );
-            UB  = denan( dx + ( pt(:)./red ) );
+            %LB  = denan( dx - ( pt(:)./red ) );
+            %UB  = denan( dx + ( pt(:)./red ) );
+            
+            LB  = denan(  (1 - pt(:)) .* (1 - sqrt(red(:))*2) );
+            UB  = denan(  (1 - pt(:)) .* (1 + sqrt(red(:))*2) );
             B   = find(UB==LB);
             
             LB(B) = dx(B) - 1;
@@ -1062,15 +1060,20 @@ while iterate
             Max_iteration   = rungekutta;
             
             dim = length(dx);
-            fun = @(x) obj(x,params);
+            %fun = @(x) obj(x,params);
+    
+            ddx  = dx - x1;
+            fun  = @(lr) obj(x1 + lr(:).*ddx,params);
+            init = ones(size(dx)); 
             
             try
-                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);            
+                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,init,red);            
                 rdx = rdx(:);
-                dde = obj(rdx,params);
+                %dde = obj(rdx,params);
+                dde = fun(rdx(:));
 
                 if dde < de
-                    dx = rdx(:);
+                    dx = x1 + rdx(:).*ddx;
                     de = dde;                    
                 end
                 if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end                   

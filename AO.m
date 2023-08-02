@@ -710,6 +710,7 @@ while iterate
             end
 
             % Norm Hessian
+            H = hessnorm(H);
             H = (red.*H./norm(H));
             
             % the non-parallel finite different functions return gradients
@@ -754,6 +755,7 @@ while iterate
             end
 
             % Norm Hessian
+            H = hessnorm(H);
             H = (red.*H./norm(H));
             
             % get residual vector
@@ -791,6 +793,7 @@ while iterate
             end
 
             % Norm Hessian
+            H = hessnorm(H);
             H = (red.*H./norm(H));
             
             % get residual vector

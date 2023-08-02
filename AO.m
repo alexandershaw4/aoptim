@@ -777,7 +777,7 @@ while iterate
             dx = x1 - jx;
         end
 
-        % a sort-of-trust-region method
+        % a Trust-Region method
         %------------------------------------------------------------------
         if isTrust && ismimo
             if n == 1; mu = 1e-2; end
@@ -799,12 +799,39 @@ while iterate
             res = res./norm(res);
             ipC = diag(red);
 
+            if n == 1; del = 1; end
+
+            d  = subproblem(H,J,del);
+            dr = J' * d + (1/2) * d' * H * d;
+    
+            if n == 1; r = dr; end
+
+            fx0 = obj(x1,params);
+            fx1 = obj(x1 - d,params);
+
+            rk  = (fx1 - fx0) / max((dr - r),1);
+
+            % adjust radius of trust region
+            rtol = 0;
+            if rk < rtol
+                del = 1.2 * del;           
+            else
+                del = del * .8;
+            end
+
+            % accept update
+            if fx1 < fx0
+                pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
+                dx = x1 - d;
+                r = dr;
+            end
+
             % essentially the GN routine with a constraint [d]
-            d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
-            d     = d ./ norm(d);
-            dFdpp = (d*d') - ipC;
-            dFdp  = Jx * res - ipC * x1;
-            dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
+            % d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
+            % d     = d ./ norm(d);
+            % dFdpp = (d*d') - ipC;
+            % dFdp  = Jx * res - ipC * x1;
+            % dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
 
             %dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
             mu  = mu * 2;

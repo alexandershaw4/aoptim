@@ -759,7 +759,7 @@ while iterate
 
             % components
             Jx  = aopt.J ./ norm(aopt.J);
-            res = res./norm(res);
+            res = res ./ norm(res);
             ipC = diag(red);%spm_inv(score);
 
             % dFdpp & dFdp
@@ -789,19 +789,24 @@ while iterate
             end
 
             % Norm Hessian
-            H = red.*H;
-            H = H./norm(H);
+            H = (red.*H./norm(H));
             
             % get residual vector
             [~,~,res,~]  = obj(x1,params);
 
-            % update
+            % components
             Jx  = aopt.J ./ norm(aopt.J);
             res = res./norm(res);
+            ipC = diag(red);
 
             % essentially the GN routine with a constraint [d]
-            d   = update_d(H,JJ,mu);
-            dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
+            d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
+            d     = d ./ norm(d);
+            dFdpp = (d*d') - ipC;
+            dFdp  = Jx * res - ipC * x1;
+            dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
+
+            %dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
             mu  = mu * 2;
 
         end

@@ -29,14 +29,14 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % Gaussians (a 1D GMM). The Gauss objective is formally:
 % 
 %    D = Gfun(Y) - Gfun(f(x))
-%    e = trace(D*D');
+%    e = norm(D*D');
 %
 % where Gfun is the function estimating a Gaussian process (matrix) from the 
 % input vector. The advantage here, is that because both the data we are fitting (Y) 
 % and model output f(x) are approximated as a set of Gaussians, the error is 
 % smooth and matrix D represents the residuals also as a set of Gaussians.
 %
-% On each iteration, an error matrix is updated using the Gaus function
+% On each iteration, an error matrix is updated using the Gauss function
 % noted above;
 %
 %    resid  = Gfun( Y - f(x) )
@@ -51,8 +51,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % the Newton update scheme (under default settings, though see GaussNewton
 % and Trust methods also);
 %
-%    red = spm_dx(score,red,{-4}); % update step size / variance
-%    H   = red .* Hessian;
+%    H   = score;
 %    dx  = x - inv(H*H')*Jacobian        
 %
 %-----------------------------------------------------------------
@@ -60,9 +59,9 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % flag the following in the input structure:
 %
 % op.isNewton       = 1; ... switch to Newton's method
-% op.isQuasiNewton  = 1; ... switch to quasi-Newton
-% op.isGaussNewton  = 1; ... switch to Gauss Newton
-% op.isTrust        = 1; ... switch to a GN with trust region
+% op.isQuasiNewton  = 0; ... switch to quasi-Newton
+% op.isGaussNewton  = 0; ... switch to Gauss Newton
+% op.isTrust        = 0; ... switch to a GN with trust region
 %
 % See jaco.m for options, although by default the gradients are computed using a 
 % finite difference approximation of the curvature, which retains the sign of the gradient:
@@ -462,7 +461,7 @@ while iterate
         Hist.QQ(n,:,:) = Qmat;
 
         % Update graphic (1) - error comps 
-        Qplot    = sum(cat(3,aopt.Q{:}),3);
+        Qplot    = cat(2,aopt.Q{:});
         s        = subplot(5,3,14);imagesc(real(Qplot));        
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
@@ -540,48 +539,56 @@ while iterate
         if verbose; pupdate(loc,n,0,e0,e0,'scoring',toc); end
 
         JJ = params.aopt.J;
-        Q0 = aopt.Q;
+        Q1 = aopt.Q;
 
-        if iscell(Q0)
-            Q0 = sum(cat(3,aopt.Q{:}),3);
-        end
-        
-        if isempty(Q0)
-            Q0 = eye(length(y(:)));
-        end
-        
-        padQ = size(JJ,2) - length(Q0);
-        Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
-
-        if orthogradient
-            Q0 = symmetric_orthogonalise(Q0);
+        % repeat scoring for component, Q{n}
+        if ~iscell(Q1)
+            Q1 = {Q1};
         end
 
-        for i = 1:np
-            for j = 1:np
-                % information score / approximate (weighted) Hessian
-                score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-                %score(i,j) = trace(JJ(i,:)'*Q0(i,j)*JJ(j,:));
+        for iq = 1:length(Q1)            
+            Q0 = Q1{iq};
+
+            if isempty(Q0)
+                Q0 = eye(length(y(:)));
             end
-        end
-
-        % ascent on the variance for this parameter dist
-        red = spm_dx(score,diag(pC),1);
-        aopt.uncert = diag(spm_inv(score));
-
-        % optimise by re-regularising step size if needed
-        if any(isnan(red)) || any(isinf(red)) || norm(red) > 1e2
-            Reg = 1/8;
-            while true
-                red = spm_dx(score,diag(pC),Reg);
-                if any(isnan(red)) || any(isinf(red)) || norm(red) > 1e2
-                    Reg = Reg*Reg;
-                else
-                    break;
+            
+            padQ = size(JJ,2) - length(Q0);
+            Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+    
+            if orthogradient
+                Q0 = symmetric_orthogonalise(Q0);
+            end
+    
+            for i = 1:np
+                for j = 1:np
+                    % information score / approximate (weighted) Hessian
+                    score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
                 end
             end
 
+            % store score for this Q-component
+            S{iq} = score;
+    
         end
+
+        % get component means - diagonals of aopt.Q
+        for iq = 1:length(Q1)
+            C(iq,:) = diag(Q1{iq});
+        end
+        
+        [~,~,erx]  = obj(x0,params);
+
+        % relative contribution of each Q to residual
+        qb  = C'\erx(:);
+        qb  = qb./sum(qb);
+        HQ  = 0;
+
+        % assemble Q-weighted Hessian for second order methods
+        for iq = 1:length(Q1)
+            HQ = HQ + qb(iq)*S{iq};
+        end
+
 
     end
 
@@ -659,16 +666,15 @@ while iterate
             
             % by using the variance (red) as a lambda on the inverse
             % Hessian, this becomes a relaxed or 'damped' Newton scheme
-            for i = 1:size(J,1);
-                for j = 1:size(J,1); 
-                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-                end
-            end
+            %for i = 1:size(J,1);
+            %    for j = 1:size(J,1); 
+            %        H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+            %    end
+            %end
             
             % Norm Hessian - incl. hessnorm; fixes issue with large cond(H)
-            H = hessnorm(H);
-            H = (red.*H./norm(H));
-            %H = score;
+            %H = (red.*H./norm(H));
+            H = HQ;
 
             % since the feature score is itself a derivative, score*H is
             % approximately the third derivative ("jerk")
@@ -701,17 +707,17 @@ while iterate
         if isNewtonReg && ismimo
             if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
             
-            % by using the variance (red) as a lambda on the inverse
-            % Hessian, this becomes a relaxed or 'damped' Newton scheme
-            for i = 1:size(J,1);
-                for j = 1:size(J,1); 
-                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-                end
-            end
-
-            % Norm Hessian
-            H = hessnorm(H);
-            H = (red.*H./norm(H));
+            % % by using the variance (red) as a lambda on the inverse
+            % % Hessian, this becomes a relaxed or 'damped' Newton scheme
+            % for i = 1:size(J,1);
+            %     for j = 1:size(J,1); 
+            %         H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+            %     end
+            % end
+            % 
+            % % Norm Hessian
+            % H = (red.*H./norm(H));
+            H = HQ;
             
             % the non-parallel finite different functions return gradients
             % in reduced space - embed in full vector space
@@ -748,15 +754,15 @@ while iterate
         if isGaussNewton && ismimo
             if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
             
-            for i = 1:size(J,1);
-                for j = 1:size(J,1); 
-                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-                end
-            end
-
-            % Norm Hessian
-            H = hessnorm(H);
-            H = (red.*H./norm(H));
+            % for i = 1:size(J,1);
+            %     for j = 1:size(J,1); 
+            %         H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+            %     end
+            % end
+            % 
+            % % Norm Hessian
+            % H = (red.*H./norm(H));
+            H = HQ;
             
             % get residual vector
             [~,~,res,~]  = obj(x1,params);
@@ -786,15 +792,15 @@ while iterate
         if isTrust && ismimo
             if n == 1; mu = 1e-2; end
 
-            for i = 1:size(J,1);
-                for j = 1:size(J,1); 
-                    H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-                end
-            end
-
-            % Norm Hessian
-            H = hessnorm(H);
-            H = (red.*H./norm(H));
+            % for i = 1:size(J,1);
+            %     for j = 1:size(J,1); 
+            %         H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
+            %     end
+            % end
+            % 
+            % % Norm Hessian
+            % H = (red.*H./norm(H));
+            H = HQ;
             
             % get residual vector
             [~,~,res,~]  = obj(x1,params);
@@ -1610,10 +1616,13 @@ function plot_h_opt(x)
 s(1) = subplot(5,3,13);
 
 try
-    plot(spm_vec(x(:,end-1)),'w:','linewidth',3); hold on;
+    xp = spm_vec(x(:,end-1));
+    plot(1:length(xp),xp,'w:','linewidth',3); hold on;
 end
 
-plot(spm_vec(x(:,end)),'linewidth',3,'Color',[1 .7 .7]);
+xn = spm_vec(x(:,end));
+plot(1:length(xn),xn,'linewidth',3,'Color',[1 .7 .7]);
+xlim([1 length(xn)]);
 
 grid on;
 title('Precision Hyperprm','color','w','fontsize',18);hold off;
@@ -1638,7 +1647,7 @@ s = subplot(5,3,12); hold on;
 
 for iq = 1:length(Q)
     Q0 = Q{iq};
-    plot(y'*Q0);
+    plot(y'*Q0,'color','w');
 end
 hold off; grid on;
 title('Hyperprm Comps','color','w','fontsize',18);hold off;
@@ -2129,6 +2138,7 @@ if aopt.hyperparameters
             aopt.d   = d;
             aopt.ihC = ihC;
         end
+    %end
 end % end of if hyperparams (from spm) ... 
 
 % record hyperparameter h over iterations

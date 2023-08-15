@@ -58,6 +58,7 @@ op.fsd          = 0; % fixed-step for derivative computation
 op.FS = @(x) x(:).^2.*(1:length(x))';
 op.FS = @(x) sqrt(x); % feature selection function
 
+%op.nocheck=1;
 
 %op.FS = @(x) [sqrt(x(:)); std(diff(x))/abs(mean(diff(x)))];
 
@@ -74,6 +75,7 @@ op.order=1; % second order gradients
 op.do_gpr=0; % dont do gaussian process regression to learn Jac
 op.hypertune=1; % do hypertuning 
 op.rungekutta=8; % do an RK-line search
+%op.bayesoptls=6;
 op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
 
@@ -87,7 +89,10 @@ op.Q = eye(length(w));
 Qc = cat(1,Qc{:});
 %Qc = VtoGauss(real(DCM.xY.y{:}));
 % fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
-for iq = 1:size(Qc,1); QQ{iq} = Qc(iq,:)'*Qc(iq,:); end
+for iq = 1:size(Qc,1); 
+    %Qc(iq,:) = Qc(iq,:) ./ max(Qc(iq,:));
+    QQ{iq} = Qc(iq,:)'*Qc(iq,:); 
+end
 
 op.Q = QQ;
 

@@ -385,39 +385,25 @@ classdef AODCM < handle
             
             Y = spm_vec(obj.opts.y);
             y = spm_vec(f(x));
-            e  = (Y - y);
+            %e  = (Y - y);
             Q  = obj.opts.Q;
             nq = length(Q);
-            ny = length(e);
+            %ny = length(e);
             
-%             %L(1) = real(e'*Q*e)/2; 
-%             iS = sparse(0);
-%             h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
-%             
-%             for i  = 1:length(Q)
-%                 iS = iS + Q{i}*(exp(-32) + exp(h(i)));
-%             end
-            
-%             er = spm_vec(Y)-spm_vec(y);
-%             %er = real(er'.*iS.*er)/2;
-%             %er(isnan(er))=inf;
-%             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-%             
-%             F    = e;%-sum(L);         
 
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
 
-            %S = atcm.fun.QtoGauss(real(Y),12*2) - atcm.fun.QtoGauss(real(y),12*2);
-            %S = S'.*Q*S;
-            %e = norm( max(S) );
-            %F=e;
-
-            dY = atcm.fun.QtoGauss(real(Y),12*2);
-            dy = atcm.fun.QtoGauss(real(y),12*2);
-
-            D = dY - dy;
-
-            e = trace(D*D');
+            Dg  = dgY - dgy;
+            e   = norm(Dg*Dg') ;
             F=e;
+
+
+            %dY = atcm.fun.QtoGauss(real(Y),12*2);
+            %dy = atcm.fun.QtoGauss(real(y),12*2);
+            %D = dY - dy;
+            %e = trace(D*D');
+            
             % spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;                 
             
             

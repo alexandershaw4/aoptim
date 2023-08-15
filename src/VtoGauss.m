@@ -47,10 +47,17 @@ end
 
 % symmatric and normalised by matrix norm
 G = (G + G')./2;
+%G = tril(G,-1) + tril(G)';
 G = G ./ norm(G);
 
 % now rescaling to min/max of input
-G = reshape(rescale(G(:),min(Q),max(Q)),size(G));
+if min(Q) ~= max(Q)
+    G = reshape(rescale(G(:),min(Q),max(Q)),size(G));
+end
+
+%if norm(Gn) > norm(G)
+%    G = Gn;
+%end
 
 if nargout == 2
     % Reduce if requested

@@ -299,7 +299,7 @@ elseif ismember(order,0)
     % 0 order diff, i.e. f(x+d) - f(x) / d
     % this is a cheap approximation but requires half the number of
     % function evaluations that order 1&2 would...
-    for i = 1:length(P)
+    parfor i = 1:length(P)
             if ip(i)
                 P0     = P;
                 %d      = P0(i) * V(i);

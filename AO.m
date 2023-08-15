@@ -40,7 +40,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % noted above;
 %
 %    resid  = Gfun( Y - f(x) )
-%    Q(i,j) = trace( resid(i,:)' * Q{n}(i,j) * resid(j,:) )
+%    Q{n}(i,j) = trace( resid(i,:)' * Q{n}(i,j) * resid(j,:) )
 %
 % this error matrix is then used for feature scoring of the parameter
 % gradients (partial derivatives; J(n_param x n_out) );
@@ -51,7 +51,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % the Newton update scheme (under default settings, though see GaussNewton
 % and Trust methods also);
 %
-%    H   = score;
+%    H   = |score|;
 %    dx  = x - inv(H*H')*Jacobian        
 %
 %-----------------------------------------------------------------
@@ -441,10 +441,13 @@ while iterate
 
         for iq = 1:length(QQ)
             Q0 = QQ{iq};
+            S0 = spm_inv(Q0);
 
             if isfield(aopt,'h')
                 Q0 = Q0 * aopt.h(iq);
             end
+            
+            Q0 = Q0*S0;
 
             if isempty(Q0);Q0 = eye(length(y(:)));end
     
@@ -461,7 +464,7 @@ while iterate
         Hist.QQ(n,:,:) = Qmat;
 
         % Update graphic (1) - error comps 
-        Qplot    = cat(2,aopt.Q{:});
+        Qplot    = sum(cat(3,aopt.Q{:}),3);
         s        = subplot(5,3,14);imagesc(real(Qplot));        
         ax       = gca;
         ax.XGrid = 'off';ax.YGrid = 'on';
@@ -556,21 +559,17 @@ while iterate
             padQ = size(JJ,2) - length(Q0);
             Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
     
-            if orthogradient
-                Q0 = symmetric_orthogonalise(Q0);
-            end
-    
             for i = 1:np
                 for j = 1:np
                     % information score / approximate (weighted) Hessian
                     score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
                 end
             end
-
+        
             % store score for this Q-component
             S{iq} = score;
     
-        end
+        end   
 
         % get component means - diagonals of aopt.Q
         for iq = 1:length(Q1)
@@ -583,13 +582,12 @@ while iterate
         qb  = C'\erx(:);
         qb  = qb./sum(qb);
         HQ  = 0;
-
+         
         % assemble Q-weighted Hessian for second order methods
         for iq = 1:length(Q1)
             HQ = HQ + qb(iq)*S{iq};
         end
-
-
+        
     end
 
     % Select step size method
@@ -674,7 +672,7 @@ while iterate
             
             % Norm Hessian - incl. hessnorm; fixes issue with large cond(H)
             %H = (red.*H./norm(H));
-            H = HQ;
+            H = HQ./norm(HQ);
 
             % since the feature score is itself a derivative, score*H is
             % approximately the third derivative ("jerk")
@@ -687,6 +685,10 @@ while iterate
                 H = pinv(u);
             end
             
+            %[E,D] = eig(H);
+            %D     = diag(D);
+            %H     = E*diag(D.*(D > 0))*E';
+
             % the non-parallel finite different functions return gradients
             % in reduced space - embed in full vector space
             Jo = cat(1,aopt.Jo{:,1});
@@ -762,7 +764,7 @@ while iterate
             % 
             % % Norm Hessian
             % H = (red.*H./norm(H));
-            H = HQ;
+            H = HQ./norm(HQ);
             
             % get residual vector
             [~,~,res,~]  = obj(x1,params);
@@ -800,10 +802,10 @@ while iterate
             % 
             % % Norm Hessian
             % H = (red.*H./norm(H));
-            H = HQ;
+            H = HQ./norm(HQ);
             
             % get residual vector
-            [~,~,res,~]  = obj(x1,params);
+            [~,~,res]  = obj(x1,params);
 
             % components
             Jx  = aopt.J ./ norm(aopt.J);
@@ -948,7 +950,7 @@ while iterate
                             
         % (option) Momentum inclusion
         %------------------------------------------------------------------
-        if n > 2 && IncMomentum
+        if n > 2 && IncMomentum%Qp = Qp ./ max(Qp);
             if verbose; pupdate(loc,n,nfun,e1,e1,'momentm',toc); end
             % The idea here is that we can have more confidence in
             % parameters that are repeatedly updated in the same direction,
@@ -1055,8 +1057,8 @@ while iterate
         % gradient landed us? --> a restricted line-search around our
         % landing spot could identify a better update
 
-        if rungekutta > 0
-            pupdate(loc,n,nfun,de,e1,'RK lnsr',toc);
+        if rungekutta > 0 || bayesoptls > 0
+            
                         
             % Make the U/L bounds proportional to the probability over the
             % prior variance (derived from feature scoring on jacobian)
@@ -1069,32 +1071,77 @@ while iterate
             
             LB(B) = dx(B) - 1;
             UB(B) = dx(B) + 1;
-            
-            % Use the Runge-Kutta search algorithm
-            SearchAgents_no = rungekutta;
-            Max_iteration   = rungekutta;
-            
-            dim = length(dx);
-            fun = @(x) obj(x,params);
-    
-            %ddx  = dx - x1;
-            %fun  = @(lr) obj(x1 + lr(:).*ddx,params);
-            %init = ones(size(dx)); 
-            
-            try
-                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);            
-                rdx = rdx(:);
-                dde = obj(rdx,params);
-                %dde = fun(rdx(:));
+
+            if rungekutta
+
+                pupdate(loc,n,nfun,de,e1,'RK lnsr',toc);
+
+                % Use the Runge-Kutta search algorithm
+                SearchAgents_no = rungekutta;
+                Max_iteration   = rungekutta;
+
+                dim = length(dx);
+                fun = @(x) obj(x,params);
+
+                %ddx  = dx - x1;
+                %fun  = @(lr) obj(x1 + lr(:).*ddx,params);
+                %init = ones(size(dx));
+
+                try
+                    [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
+                    rdx = rdx(:);
+                    dde = obj(rdx,params);
+                    %dde = fun(rdx(:));
+
+                    if dde < de
+                        dx = rdx;
+
+                        %dx = x1 + rdx(:).*ddx;
+                        de = dde;
+                    end
+                    if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end
+                end
+
+            elseif bayesoptls
+
+                pupdate(loc,n,nfun,de,e1,'Baylnsr',toc);
+
+                Px  = dx;
+
+                for ip = 1:length(Px)
+                    name = sprintf('Par%d',ip);
+                    xvar(ip) = optimizableVariable(name,[LB(ip) UB(ip)],'Optimize',true);
+                    thename{ip} = name;
+                end
+
+                t = array2table(Px','VariableNames',thename)  ;
+
+                objective = @(x) obj(x,params);
+
+                reps    = bayesoptls;
+
+
+                explore = 0.2;
+                warning off;
+                RESULTS = bayesopt(objective,xvar,'IsObjectiveDeterministic',true,...
+                    'ExplorationRatio',explore,'MaxObjectiveEvaluations',reps,...
+                    'AcquisitionFunctionName','expected-improvement-plus','InitialX',t,...
+                    'PlotFcn',{});
+                warning on;
+                % Best Actually observed model
+                % = RESULTS.MinObjective;
+                dde   = RESULTS.MinObjective;
+                rdx   = RESULTS.XAtMinObjective.Variables;
 
                 if dde < de
-                    dx = rdx;
+                    dx = rdx(:);
 
                     %dx = x1 + rdx(:).*ddx;
-                    de = dde;                    
+                    de = dde;
                 end
-                if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end                   
-            end            
+                if verbose; pupdate(loc,n,nfun,de,e1,'BLSfini',toc); end
+
+            end
         end
 
         
@@ -1345,6 +1392,11 @@ while iterate
                     de = dde;
 
                     pupdate(loc,n,nfun,e1,e0,'accept ',toc);
+
+                    if doplot; 
+                        params = makeplot(x0,aopt.pp,params);
+                        aopt.oerror = params.aopt.oerror;
+                    end
 
                     % actually just udpate
                     x1 = dx;x0 = x1;
@@ -1617,12 +1669,19 @@ s(1) = subplot(5,3,13);
 
 try
     xp = spm_vec(x(:,end-1));
-    plot(1:length(xp),xp,'w:','linewidth',3); hold on;
+    xn = spm_vec(x(:,end));
+
+    bar([xp(:) xn(:)],'FaceColor',[1 .7 .7],'EdgeColor','w');
+    %plot(1:length(xp),xp,'w:','linewidth',3); hold on;
+catch
+    xn = spm_vec(x(:,end));
+    bar(xn,'FaceColor',[1 .7 .7],'EdgeColor','w');
+
 end
 
-xn = spm_vec(x(:,end));
-plot(1:length(xn),xn,'linewidth',3,'Color',[1 .7 .7]);
-xlim([1 length(xn)]);
+%xn = spm_vec(x(:,end));
+%plot(1:length(xn),xn,'linewidth',3,'Color',[1 .7 .7]);
+%try;xlim([1 length(xn)]);end
 
 grid on;
 title('Precision Hyperprm','color','w','fontsize',18);hold off;
@@ -1958,7 +2017,9 @@ function [e,J,er,mp,Cp,L,params] = obj(x0,params,varargin)
 % (vector) and covariance
 %
 
-
+if istable(x0)
+    x0 = table2array(x0);
+end
 
 aopt = params.aopt;
 method = aopt.ObjectiveMethod;
@@ -2108,8 +2169,8 @@ if aopt.hyperparameters
         %------------------------------------------------------------------
         for i = 1:nh
             dFdh(i,1)      =   trace(PS{i})*nq/2 ...
-                - real(e'*P{i}*e)/2 ...
-                - spm_trace(Cp,JPJ{i})/2;
+                             - real(e'*P{i}*e)/2 ...
+                             - spm_trace(Cp,JPJ{i})/2;
             for j = i:nh
                 dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
                 dFdhh(j,i) =   dFdhh(i,j);
@@ -2250,14 +2311,18 @@ switch lower(method)
                         
         case 'gaussfe'
 
-            % Gaussian erorr term using Frobenius distance
+            % 
             dgY = VtoGauss(real(Y));
             dgy = VtoGauss(real(y));
             
-            Dg  = dgY - dgy;
-            e   = diag(Dg*Dg');
+            Dg   = (dgY - dgy);
+            e    = Dg*Dg';
+            %e   = diag(Dg*Dg');
 
-            L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;
+            %L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;
+    
+            L(1) = spm_logdet(iS)*nq/2  - real(norm(e'*iS*e))/2 - ny*log(8*atan(1))/2;
+
 
             % (2) Complexity minus accuracy of parameters
             %--------------------------------------------------------------------------
@@ -2310,18 +2375,23 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = norm(Dg*Dg') ;
 
+            if aopt.hyperparameters
+                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;    
+            end
+
+
 
         case 'gausskl'
 
             dgY = VtoGauss(real(Y));
             dgy = VtoGauss(real(y));
 
-            D = KLDiv(dgY,dgy)*KLDiv(dgy,dgY)';
+            D = KLDiv(dgY,dgy)+KLDiv(dgy,dgY)';
 
-            e = trace(D); 
+            e = norm(D); 
 
-            gr = Y-y;
-            e  = e + sum(gr.^2); 
+            Dg = dgY - dgy;
+            e  = e + norm(Dg*Dg');
             subplot(5,3,6);imagesc(D);
 
             
@@ -3364,6 +3434,7 @@ X.isGaussNewton=0;
 X.lsqjacobian=0;
 X.forcenewton   = 0;
 X.isTrust = 0;
+X.bayesoptls=0;
 
 X.makevideo = 0;
 

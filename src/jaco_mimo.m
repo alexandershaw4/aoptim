@@ -326,6 +326,9 @@ elseif ismember(order,0)
     % function evaluations that order 1&2 would...
     for i = 1:length(P)
             if ip(i)
+
+
+                
                 P0     = P;
                 %d      = P0(i) * V(i);
                 d = V(i);
@@ -333,11 +336,18 @@ elseif ismember(order,0)
                 if d == 0;d = 0.01;end
 
                 P0(i)  = P0(i) + d  ;
-                f0     = spm_vec(spm_cat(feval(IS,P0)));
-                j(i,:) = (f0 - fx) / (d);
+
+                % This would be the mimo equivalent code
+                [f0{:}] = feval(IS,P0);
+
+                %f0     = spm_vec(spm_cat(feval(IS,P0)));
+                %j(i,:) = (f0 - fx) / (d);
+                j(i,:) = spm_unvec( ( spm_vec(f0) - spm_vec(fx) ) / (d) , fx );
             end
     end
 
+    j1=j;
+    
 elseif ismember(order,-1)
     
     % complex conjugate gradient method

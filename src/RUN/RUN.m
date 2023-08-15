@@ -36,7 +36,7 @@ Best_X = X(ind,:);
 
 Convergence_curve(1) = Best_Cost;
 
-%% Main Loop of RUN 
+% Main Loop of RUN 
 it=1;%Number of iterations
 while it<MaxIt
     it=it+1;
@@ -101,7 +101,7 @@ while it<MaxIt
             
             Cost(i)=CostNew;
         end
-%% Enhanced solution quality (ESQ)  (Eq. 19)      
+% Enhanced solution quality (ESQ)  (Eq. 19)      
         if rand<0.5
             EXP=exp(-5*rand*it/MaxIt);
             r = floor(Unifrnd(-1,2,1,1));
@@ -148,7 +148,7 @@ while it<MaxIt
             end
         end
 % End of ESQ         
-%% Determine the Best Solution
+% Determine the Best Solution
         if Cost(i)<Best_Cost
             Best_X=X(i,:);
             Best_Cost=Cost(i);

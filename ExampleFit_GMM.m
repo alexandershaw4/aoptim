@@ -79,22 +79,24 @@ op.rungekutta=8; % do an RK-line search
 op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
 
+op.nocheck=0;
+
 % % since I know y is a low-rank 1D GMM, I can set Q to have only 8 comps
 % NC = 12;
 % [~,~,QQ] = atcm.fun.approxlinfitgaussian(Y(:),[],[],NC);
 %     for iq = 1:NC; QQ{iq} = QQ{iq}'*QQ{iq}; end
 % op.Q = QQ;
 
-[~,I,Qc] = atcm.fun.approxlinfitgaussian(Y,[],[],2);
-Qc = cat(1,Qc{:});
-%Qc = VtoGauss(real(DCM.xY.y{:}));
-% fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
-for iq = 1:size(Qc,1); 
-    %Qc(iq,:) = Qc(iq,:) ./ max(Qc(iq,:));
-    QQ{iq} = Qc(iq,:)'*Qc(iq,:); 
-end
-
-op.Q = QQ;
+% [~,I,Qc] = atcm.fun.approxlinfitgaussian(Y,[],[],2);
+% Qc = cat(1,Qc{:});
+% %Qc = VtoGauss(real(DCM.xY.y{:}));
+% % fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
+% for iq = 1:size(Qc,1); 
+%     %Qc(iq,:) = Qc(iq,:) ./ max(Qc(iq,:));
+%     QQ{iq} = Qc(iq,:)'*Qc(iq,:); 
+% end
+% 
+% op.Q = QQ;
 
 %op.WeightByProbability=1;
 

@@ -16,12 +16,6 @@ classdef AODCM < handle
 % flag it with 4th input (mine does, so i use 4th input=0)
 %     m = AODCM(DCM,-,-,1);
 %
-% Or you can re-run the optimisation with different step_method and num
-% iterations:
-%     m.default_optimise([1 3 1],[10 10 10]); % run 3 optimisations: first
-%     with step_method=1, then step_method=3 and then 1 again; 10
-%     iterations on each of the 3 opts.
-%
 % AS2020
 
     properties

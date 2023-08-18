@@ -1,4 +1,4 @@
-function [j,ip,j1] = jaco_mimo(fun,x0,V,verbose,order,nout,params)
+function [j,ip,j1,f00,f11] = jaco_mimo(fun,x0,V,verbose,order,nout,params)
 % Compute the 1st or 2nd order partial numerical derivates of a function
 % - parameter version: i.e. dp/dx - using symmetric finite difference methods
 %
@@ -81,7 +81,7 @@ end
 
 % The subfunction -
 warning off; % suppress matrix singularity warnings in unstable systems
-[j,j1]  = jacf(IS,P,ip,verbose,V,order,nout);
+[j,j1,f00,f11]  = jacf(IS,P,ip,verbose,V,order,nout);
 warning on;
 
 if isnumeric(j)
@@ -99,7 +99,7 @@ end
 
 
 
-function [j,j1] = jacf(IS,P,ip,verbose,V,order,nout)
+function [j,j1,f00,f11] = jacf(IS,P,ip,verbose,V,order,nout)
 
 % Compute the Jacobian matrix using variable step-size
 n  = 0;
@@ -156,6 +156,9 @@ if ismember(order,[1 2 3 4])
             [f1{:}] = feval(IS,P1);
             j(i,:) = spm_unvec( ( spm_vec(f0) - spm_vec(f1) ) / (2 * d) , fx );
             
+            f00{i} = f0;
+            f11{i} = f1;
+
             %f0     = spm_vec(spm_cat(feval(IS,P0)));
             %f1     = spm_vec(spm_cat(feval(IS,P1)));
             %j(i,:) = (f0 - f1) / (2 * d);

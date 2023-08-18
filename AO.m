@@ -36,23 +36,18 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % and model output f(x) are approximated as a set of Gaussians, the error is 
 % smooth and matrix D represents the residuals also as a set of Gaussians.
 %
-% On each iteration, an error matrix is updated using the Gauss function
-% noted above;
+% The Hessian is approximated via a sort of feature-scoring of the parameter
+% gradients (partial derivatives; J(n_param x n_out) ) weighted by Q;
 %
-%    resid  = Gfun( Y - f(x) )
-%    Q{n}(i,j) = trace( resid(i,:)' * Q{n}(i,j) * resid(j,:) )
-%
-% this error matrix is then used for feature scoring of the parameter
-% gradients (partial derivatives; J(n_param x n_out) );
-%
-%    score(i,j) = trace(J(i,:)'*Q{n}(i,j)*J(j,:));
+%    H(i,j) = trace(J(i,:)'.*Q(i,j).*J(j,:));
 %
 % this (information matrix) scoring is then used to weight the Hessian in
 % the Newton update scheme (under default settings, though see GaussNewton
 % and Trust methods also);
 %
-%    H   = |score|;
-%    dx  = x - inv(H*H')*Jacobian        
+%    H   = |H|;
+%    t   = exp(t - spm_logdet(J)/n);    ... {t} is found using fminsearch
+%    dx  = x - inv(t*H')*(t*Jacobian)        
 %
 %-----------------------------------------------------------------
 % By default the step in the descent is a vanilla GD, however you can
@@ -360,6 +355,10 @@ if isempty(Q) && updateQ
     aopt.Q = Q;
 end
     
+if updateQ
+    Qx = Q;
+end
+
 % initial error plot(s)
 %--------------------------------------------------------------------------
 if doplot
@@ -388,8 +387,6 @@ dff          = []; % tracks changes in error over iterations
 localminflag = 0;  % triggers when stuck in local minima
 
 % print options before we start printing updates
-fprintf('Using step-method: %d\n',step_method);
-fprintf('Using Jaco (gradient) option: %d\n',order);
 fprintf('User fun has %d varying parameters\n',length(find(red)));
 
 % print start point - to console or logbook (loc)
@@ -422,59 +419,6 @@ while iterate
     if WeightByProbability
         aopt.pp = x0(:);
     end
-    
-    % update error covariance matrix for component n - to go into feature scoring
-    % Q{n}(i,j) = trace( g(resid(:,i)) * Q{n}(i,j) * g(resid(:,j))' )
-    %----------------------------------------------------------------------
-    if ~isempty(Q) && updateQ
-        if verbose; fprintf('| Updating Q...\n'); end
-
-        [~,~,erx]  = obj(x0,params);
-        %erx = erx(1:length(Q));
-        Qer = VtoGauss(erx);
-        QQ  = aopt.Q;
-
-        if ~iscell(QQ)
-            QQ = {QQ};
-            aopt.Q = [];
-        end
-
-        for iq = 1:length(QQ)
-            Q0 = QQ{iq};
-            S0 = spm_inv(Q0);
-
-            if isfield(aopt,'h')
-                Q0 = Q0 * aopt.h(iq);
-            end
-            
-            Q0 = Q0*S0;
-
-            if isempty(Q0);Q0 = eye(length(y(:)));end
-    
-            for i = 1:length(Qer)
-                for j = 1:length(Qer)
-                    Qmat(i,j) = trace(Qer(i,:)'*Q0(i,j)*Qer(j,:));
-                end
-            end
-        
-            Qmat       = Qmat ./ norm(Qmat);
-            aopt.Q{iq} = Qmat;  
-        end
-         
-        Hist.QQ(n,:,:) = Qmat;
-
-        % Update graphic (1) - error comps 
-        Qplot    = sum(cat(3,aopt.Q{:}),3);
-        s        = subplot(5,3,14);imagesc(real(Qplot));        
-        ax       = gca;
-        ax.XGrid = 'off';ax.YGrid = 'on';
-        s.YColor = [1 1 1];s.XColor = [1 1 1];s.Color  = [.3 .3 .3];
-        title('Error Components','color','w','fontsize',18);drawnow;
-
-        % Update graphic (2) - precision comps 
-        update_hyperparam_plot(y,aopt.Q)
-    end
-
 
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
@@ -542,52 +486,29 @@ while iterate
         if verbose; pupdate(loc,n,0,e0,e0,'scoring',toc); end
 
         JJ = params.aopt.J;
-        Q1 = aopt.Q;
+        Q0 = aopt.Q;
 
-        % repeat scoring for component, Q{n}
-        if ~iscell(Q1)
-            Q1 = {Q1};
+        if iscell(Q0)
+            Q0 = sum(cat(3,Q0{:}),3);
         end
 
-        for iq = 1:length(Q1)            
-            Q0 = Q1{iq};
+        if isempty(Q0)
+            Q0 = eye(length(y(:)));
+        end
 
-            if isempty(Q0)
-                Q0 = eye(length(y(:)));
-            end
-            
-            padQ = size(JJ,2) - length(Q0);
-            Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+        padQ = size(JJ,2) - length(Q0);
+        Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+
+        % information score / approximate (weighted) Hessian
+        %for i = 1:np
+        %    for j = 1:np
+        %        HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+        %    end
+        %end
+        HQ = JJ*Q0*JJ';
+
     
-            for i = 1:np
-                for j = 1:np
-                    % information score / approximate (weighted) Hessian
-                    score(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-                end
-            end
-        
-            % store score for this Q-component
-            S{iq} = score;
-    
-        end   
 
-        % get component means - diagonals of aopt.Q
-        for iq = 1:length(Q1)
-            C(iq,:) = diag(Q1{iq});
-        end
-        
-        [~,~,erx]  = obj(x0,params);
-
-        % relative contribution of each Q to residual
-        qb  = C'\erx(:);
-        qb  = qb./sum(qb);
-        HQ  = 0;
-         
-        % assemble Q-weighted Hessian for second order methods
-        for iq = 1:length(Q1)
-            HQ = HQ + qb(iq)*S{iq};
-        end
-        
     end
 
     % Select step size method
@@ -653,6 +574,7 @@ while iterate
         
         % For most methods, compute dx using subfun...
         dx   = compute_dx(x1,a,J,red,search_method,params);  
+        gdx  = dx; % simple gradient descent step to fallback on
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
          %-----------------------------------------------------------------
@@ -661,47 +583,61 @@ while iterate
          %-----------------------------------------------------------------
         if (isNewton && ismimo) || (isQuasiNewton && ismimo)
             if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc); end
-            
-            % by using the variance (red) as a lambda on the inverse
-            % Hessian, this becomes a relaxed or 'damped' Newton scheme
-            %for i = 1:size(J,1);
-            %    for j = 1:size(J,1); 
-            %        H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-            %    end
-            %end
-            
-            % Norm Hessian - incl. hessnorm; fixes issue with large cond(H)
-            %H = (red.*H./norm(H));
+                        
+            % Norm Hessian 
             H = HQ./norm(HQ);
-
-            % since the feature score is itself a derivative, score*H is
-            % approximately the third derivative ("jerk")
-            %H = score.*H;
-            %H = H ./ norm(H);
 
             % Quasi-Newton uses left singular values of H
             if isQuasiNewton
                 [u,s0,v0] = svd(H);
                 H = pinv(u);
             end
-            
-            %[E,D] = eig(H);
-            %D     = diag(D);
-            %H     = E*diag(D.*(D > 0))*E';
 
-            % the non-parallel finite different functions return gradients
+            % the mimo finite different functions return gradients
             % in reduced space - embed in full vector space
-            Jo = cat(1,aopt.Jo{:,1});
+            Jo = cat(1,aopt.Jo{:,1});%./e1;
             JJ = x0*0;
             JJ(find(diag(pC))) = Jo;
+            JJ = JJ./norm(JJ);
              
+            % recompute lambda
+            a = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
+
             % Compute step using matrix exponential (see spm_dx)
-            Hstep = spm_dx(H,JJ,{-4});            
+            % -H\J
+            Hstep = a.*spm_dx(H,JJ,{-4});            
             Gdx   = x1 - Hstep;
             dx    = Gdx;
 
-            if verbose; fprintf('Selected Newton Step\n'); end
+            dx = fixbounds(dx,x1,red);
+            
+            if obj(x1 - Hstep,params) >= obj(x1,params)
+                D = zeros(size(H));  % Modified Hessian matrix.
+                for j = 1:length(H)
+                    D(j,j) = 1.0 / max(0.01, abs(H(j,j)));
+                end
+                %  D is now a positive diagonal matrix with a diagonal scaled
+                %  by the inverse of the corresponding diagonal element of the
+                %  Hessian (or by 100 if 1/abs(xc.h(j,j)) > 100.)
+                dx = x1 - spm_dx(a.*-D,JJ,{-4});
+                dx = fixbounds(dx,x1,red);
 
+                %if obj(gdx,params) < obj(dx,params);
+                %    fprintf('switched back to gd\n');
+                %    dx = gdx;
+                %end
+                    
+                if obj(dx,params) > obj(x1,params)
+                    fprintf('Invoking search for Hessian regularisation\n');
+                    fun = @(x) obj(x1 - (x*red).*spm_dx(a.*-D,JJ,{-4}),params);
+                    [X,F] = fminsearch(fun,1);
+                    dx = x1 - (X*red).*spm_dx(a.*-D,JJ,{-4});
+                end
+                
+
+            end
+            
+            if verbose; fprintf('Selected Newton Step\n'); end
         end
         
         % Newton's Method with tunable regularisation of inverse hessian
@@ -709,16 +645,6 @@ while iterate
         if isNewtonReg && ismimo
             if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
             
-            % % by using the variance (red) as a lambda on the inverse
-            % % Hessian, this becomes a relaxed or 'damped' Newton scheme
-            % for i = 1:size(J,1);
-            %     for j = 1:size(J,1); 
-            %         H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-            %     end
-            % end
-            % 
-            % % Norm Hessian
-            % H = (red.*H./norm(H));
             H = HQ;
             
             % the non-parallel finite different functions return gradients
@@ -744,6 +670,7 @@ while iterate
             Hstep = spm_dx(H0,JJ,{-4}); 
             GRdx  = x1 - Hstep;
             dx     = GRdx;
+            dx = fixbounds(dx,x1,red);
             %if forcenewton
             %    dx = GRdx;
             %    if verbose; fprintf('Forced Newton Step\n');end
@@ -756,14 +683,7 @@ while iterate
         if isGaussNewton && ismimo
             if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
             
-            % for i = 1:size(J,1);
-            %     for j = 1:size(J,1); 
-            %         H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-            %     end
-            % end
-            % 
-            % % Norm Hessian
-            % H = (red.*H./norm(H));
+            % Norm Hessian
             H = HQ./norm(HQ);
             
             % get residual vector
@@ -778,6 +698,7 @@ while iterate
             dFdpp = H - ipC ;
             dFdp  = Jx * res - ipC * x1;
             dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
+            dx    = fixbounds(dx,x1,red);
 
         end
                      
@@ -787,6 +708,7 @@ while iterate
         if lsqjacobian
             jx = aopt.J'\y;
             dx = x1 - jx;
+            dx = fixbounds(dx,x1,red);
         end
 
         % a Trust-Region method (a variation on GN scheme)
@@ -794,14 +716,7 @@ while iterate
         if isTrust && ismimo
             if n == 1; mu = 1e-2; end
 
-            % for i = 1:size(J,1);
-            %     for j = 1:size(J,1); 
-            %         H(i,j) = spm_trace(aopt.J(i,:),aopt.J(j,:));
-            %     end
-            % end
-            % 
-            % % Norm Hessian
-            % H = (red.*H./norm(H));
+            % Norm Hessian
             H = HQ./norm(HQ);
             
             % get residual vector
@@ -835,6 +750,7 @@ while iterate
             if fx1 < fx0
                 pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
                 dx = x1 - d;
+                dx = fixbounds(dx,x1,red);
                 r  = dr;
             end
 
@@ -991,13 +907,15 @@ while iterate
             gpi = 1:length(x0);
             de  = obj(dx,params);
             DFE = ones(1,length(x0))*de;
+            
         else
             % Assess each new parameter estimate (step) individually
             if (~faster) || nfun == 1 % Once per gradient computation?
                 if ~doparallel
                     for nip = 1:length(dx)
-                        XX     = x0;
+                        XX     = x1;
                         if red(nip)
+                            %DFE(nip) = 0.5*((aopt.Jo{nip}/2)+(e0/2) ./ (2*red(nip)));
                             XX(nip)  = dx(nip);
                             DFE(nip) = obj(XX,params);
                         else
@@ -1009,6 +927,7 @@ while iterate
                     parfor nip = 1:length(dx)
                         XX     = x0;
                         if red(nip)
+                            %DFE(nip) = 0.5*((JJx{nip}/2)+(e0/2) ./ (2*red(nip)));
                             XX(nip)  = dx(nip);
                             DFE(nip) = obj(XX,params);
                         else
@@ -1504,6 +1423,38 @@ end
 % end
 % end
 
+function dx = fixbounds(dx,x1,red)
+
+limits = [(x1 - x1.*sqrt(red)*3) (x1 + x1.*sqrt(red)*3)];
+
+for i = 1:size(limits,1)
+    if limits(i,1) > limits(i,2)
+        x = limits(i,1);
+        limits(i,1) = limits(i,2);
+        limits(i,2)=x;
+    end
+end
+
+ids    = find(~(dx > limits(:,1) & dx < limits(:,2)));
+
+for i = 1:length(ids)
+    
+    if red(ids(i)) == 0
+        val = x1(ids(i));
+    else
+
+        val = dx(ids(i));
+        L   = limits(ids(i),:);
+        I   = findthenearest(L,val);
+        val = L(I);
+    end
+    dx(ids(i))=val;
+
+end
+
+end
+
+
 function [X,F,Cp,PP] = finishup(V,x0,ip,e0,doparallel,params,J,Ep,red,writelog,loc,aopt);
 
 fprintf(loc,'Finishing up...\n');
@@ -1765,8 +1716,8 @@ function prplot(pt)
 
 s = subplot(5,3,8);
     bar(real( pt(:) ),'FaceColor',[1 .7 .7],'EdgeColor','w');
-    title('P(dp)','color','w','fontsize',18);
-    ylabel('P(dp)');
+    title('p(dx) ∈ N(p,v)','color','w','fontsize',18);
+    ylabel('P(dx)');
     ylim([0 1]);
     ax = gca;
     ax.XGrid = 'off';
@@ -1914,7 +1865,7 @@ else
     s(3) = subplot(5,3,7);
     bar(real([ x(:)-ox(:) ]),'FaceColor',[1 .7 .7],'EdgeColor','w');
     title('Parameter Change','color','w','fontsize',18);
-    ylabel('Δ prior');
+    ylabel('Δ parameter value');
     ylim([-1 1]);
     ax = gca;
     ax.XGrid = 'off';
@@ -2373,10 +2324,12 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-            e   = norm(Dg*Dg') ;
+            %e   = norm(Dg*Dg') ;
+
+            e = ( norm(Dg*iS*Dg')./numel(spm_vec(y)) ).^(1/2);
 
             if aopt.hyperparameters
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;    
+                e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
             end
 
 
@@ -2423,7 +2376,7 @@ switch lower(method)
             if aopt.hyperparameters
                 % (3) Complexity minus accuracy of precision
                 %----------------------------------------------------------------------
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
+                e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );     
                 %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
             end
 
@@ -2770,7 +2723,7 @@ end
 % end
 
 % Error along output vector (when fun is a vector output function)
-er = e*( spm_vec(y) - spm_vec(Y) );
+er = e*( spm_vec(Y) - spm_vec(y) );
 mp = spm_vec(y);
 
 
@@ -2869,12 +2822,13 @@ if nargout == 2 || nargout == 7
         if ~aopt.parallel
             % option 3: dfdp, not parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            [J,ip,Jo] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+            [J,ip,Jo,f0,f1] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
         else
             % option 4: dfdp, parallel, ObjF has multiple outputs
             %----------------------------------------------------------
             [J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
         end
+
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
         J(isnan(J))=0;
@@ -2882,6 +2836,25 @@ if nargout == 2 || nargout == 7
         JI = zeros(length(ip),1);% Put J0 in full space
         JI(find(ip)) = J0;
         J0  = JI;
+    
+        % % also save second derivative
+        % J02     = cat(2,Jo{:,1})';
+        % J2     = cat(2,Jo{:,nout})';
+        % J2(isnan(J2))=0;
+        % J2(isinf(J2))=0;
+        % JI2 = zeros(length(ip),1);% Put J0 in full space
+        % JI2(find(ip)) = J02;
+        % J02  = JI2;
+        % 
+        % % embed Hessian i full space
+        % IJ = zeros(length(ip),size(J,2));
+        % try    IJ(find(ip),:) = J2;
+        % catch; IJ(find(ip),:) = J2(find(ip),:);
+        % end
+        % J2  = IJ;
+        % 
+        % aopt.J2 = {J02 J2}; 
+
         
     elseif aopt.mimo == 2
         
@@ -3452,7 +3425,7 @@ function parseinputstruct(opts)
 % Gets the user supplied options structure and assigns the options to the
 % correct variables in the AO base workspace
 
-fprintf('User supplied options / config structure...\n');
+%fprintf('User supplied options / config structure...\n');
 
 def = DefOpts();
 opt = fieldnames(def);

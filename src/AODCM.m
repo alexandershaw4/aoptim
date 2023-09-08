@@ -388,8 +388,8 @@ classdef AODCM < handle
             dgY = VtoGauss(real(Y));
             dgy = VtoGauss(real(y));
 
-            Dg  = dgY - dgy;
-            e   = norm(Dg*Dg') ;
+            Dg  = (dgY - dgy).^2;
+            e   = norm(Dg*Q*Dg') ;
             F=e;
 
 
@@ -550,6 +550,7 @@ classdef AODCM < handle
             fun = @(varargin)obj.wrapdm(varargin{:});
             objective = @(x) errfun(obj,fun,x);
             
+            options.Plot = 'on';
             [obj.X,obj.F,elbo_sd] = vbmc(objective,obj.opts.x0',[],[],LB',UB');
             
             [~, P] = obj.opts.fun(spm_vec(obj.X));

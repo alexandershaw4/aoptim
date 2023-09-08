@@ -1,4 +1,4 @@
-function [G,b,GL,wid] = VtoGauss(Q,w,model)
+function [G,b,GL,wid] = VtoGauss(Q,w,model,ampwid)
 % Approximate conversion of vector x to symmetric feature matrix Q
 % containing a Gaussian for each element in input x.
 %
@@ -6,7 +6,9 @@ function [G,b,GL,wid] = VtoGauss(Q,w,model)
 %
 % AS22
 
-ampwid = 1;
+if nargin < 4 || isempty(ampwid)
+    ampwid = 1;
+end
 
 if nargin < 3 || isempty(model)
     model = 'Gauss';

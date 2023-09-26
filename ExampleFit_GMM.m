@@ -58,6 +58,7 @@ op.fsd          = 0; % fixed-step for derivative computation
 op.FS = @(x) x(:).^2.*(1:length(x))';
 op.FS = @(x) sqrt(x); % feature selection function
 
+op.ahyper=1;
 %op.nocheck=1;
 
 %op.FS = @(x) [sqrt(x(:)); std(diff(x))/abs(mean(diff(x)))];
@@ -101,11 +102,11 @@ op.nocheck=0;
 %op.WeightByProbability=1;
 
 % or generate a confounds Q matrix
-% X0 = spm_dctmtx(length(w),8);
-% Q  = speye(length(w)) - X0*X0';
-% Q = Q .* atcm.fun.AGenQn(f(spm_vec(S)),8);
-% Q = abs(Q) + AGenQn(diag(Q),8);
-% op.Q = Q;
+X0 = spm_dctmtx(length(w),8);
+Q  = speye(length(w)) - X0*X0';
+Q = Q .* atcm.fun.AGenQn(f(spm_vec(S)),8);
+Q = abs(Q) + AGenQn(diag(Q),8);
+op.Q = Q;
 
 op.memory_optimise=1; % remember & include (optimise) prev update steps when considering new steps
 op.crit = [0 0 0 0];

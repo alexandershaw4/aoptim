@@ -306,6 +306,7 @@ aopt.factorise_gradients = factorise_gradients;
 aopt.hypertune       = hypertune;
 aopt.verbose = verbose;
 aopt.makevideo = makevideo;
+aopt.ahyper = ahyper;
 
 IncMomentum         = im;               % Observe and use momentum data            
 givetol             = allow_worsen;     % Allow bad updates within a tolerance
@@ -511,15 +512,13 @@ while iterate
         %    JJ(:,i) = rescale(JJ(:,i));
         %end
 
-        % information score / approximate (weighted) Hessian
+        % Hessian
         for i = 1:np
-            for j = 1:np
-                HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-            end
+           for j = 1:np
+               HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+           end
         end
         
-        %HQ = JJ*Q0*JJ';
-
     end
 
     % Select step size method
@@ -621,17 +620,14 @@ while iterate
             % recompute lambda
             a = 1;%compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
 
-            %if n > 1
-            %    a = 2*pt(:);
-            %end
-
             % Compute step using matrix exponential (see spm_dx)
-            Hstep = a.*spm_dx(H,JJ,{-4});            
+            Hstep = red.*spm_dx(H,JJ,{-4});            
             Gdx   = x1 - Hstep;
             dx    = Gdx;
             
-            if obj(x1 - Hstep,params) >= obj(x1,params)
+            if obj(dx,params) >= obj(x1,params)
                 D = zeros(size(H));  % Modified Hessian matrix.
+                %fprintf('flipping Hessian matrix\n');
                 for j = 1:length(H)
                     D(j,j) = 1.0 / max(0.01, abs(H(j,j)));
                 end
@@ -639,7 +635,7 @@ while iterate
                 %  by the inverse of the corresponding diagonal element of the
                 %  Hessian 
                 %dx = x1 - a.*(D\JJ);%spm_dx(a.*-D,JJ,{-4});
-                dx = x1 - a.*spm_dx(D,JJ,{-1});
+                dx = x1 - red.*spm_dx(D,JJ,{-1});
 
                 if obj(dx,params) > obj(gdx,params)
                     dx = gdx;
@@ -1725,7 +1721,7 @@ function prplot(pt)
 
 s = subplot(5,3,8);
     bar(real( pt(:) ),'FaceColor',[1 .7 .7],'EdgeColor','w');
-    title('p(dx) ∈ N(p,v)','color','w','fontsize',18);
+    title('p(dp) ∈ N(p,v)','color','w','fontsize',18);
     ylabel('P(dx)');
     ylim([0 1]);
     ax = gca;
@@ -2112,6 +2108,54 @@ if any(isnan(Cp(:)))
     Cp = Cp;
 end
 
+% other hyperparameter deal here; works with Gauss objective function
+% by projecting error on a smooth basis set, then performing hyperparameter
+% ascent on
+if aopt.ahyper
+
+    if aopt.ahyper < 1
+        N = aopt.ahyper;
+    else
+        N = 28;
+    end
+
+    if isfield(aopt,'ah')
+        ah = aopt.ah;
+    else
+        ah = ones(N,1);
+    end
+
+    % construct error basis set
+    B  = gaubasis(length(Y),N);
+    pr = B;
+
+    for pp = 1:size(pr,1)
+        
+        iQ{pp} = diag(pr(pp,:)) * ah(pp);
+        bQ{pp} = real(aopt.J*iQ{pp}*aopt.J');
+
+    end
+    
+    % derivatives; dfdQ and dfdQQ
+    for i = 1:size(pr,1)
+            dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
+                             - real(e'*iQ{i}*e)/2 ...
+                             - spm_trace(Cp,bQ{i})/2;
+            for j = i:size(pr,1)
+                dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
+                dFdQQ(j,i) =   dFdQQ(i,j);
+            end
+    end
+
+    dh      =  (dFdQQ\dFdQ);
+    dh      = denan(dh);
+    ah      = ah + dh;
+    aopt.ah = ah;
+
+end
+
+
+
 if aopt.hyperparameters
     % pulled directly from SPM's spm_nlsi_GN.m ...
     % ascent on h / precision {M-step}
@@ -2180,9 +2224,10 @@ end
 % FREE ENERGY TERMS
 %==========================================================================
 
-% (1) Complexity minus accuracy of states / observations
+% (1) Complexity minus accuracy of states / observations (likelihood)
 %--------------------------------------------------------------------------
-L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;           
+L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;      
+%L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;
 
 % (2) Complexity minus accuracy of parameters
 %--------------------------------------------------------------------------
@@ -2288,7 +2333,7 @@ switch lower(method)
 
             %L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;
     
-            L(1) = spm_logdet(iS)*nq/2  - real(norm(e'*iS*e))/2 - ny*log(8*atan(1))/2;
+            L(1) = spm_logdet(iS)*nq/2  - real(norm(e'*iS*e,'fro'))/2 - ny*log(8*atan(1))/2;
 
 
             % (2) Complexity minus accuracy of parameters
@@ -2351,8 +2396,13 @@ switch lower(method)
           
             dgY = VtoGauss(real((Y)));
             dgy = VtoGauss(real((y)));                 
-            Dg  = (dgY - dgy);   
+            Dg  = (dgY - dgy).^2;
             e   = norm(Dg*Dg','fro');
+            
+            if aopt.ahyper
+                e = e + norm(B'*diag(ah)*B,'fro');
+            end
+
 
             if aopt.hyperparameters
                 e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
@@ -2402,6 +2452,10 @@ switch lower(method)
 
             Dg  = dgY - dgy;
             e   = trace(Dg*Dg');
+
+            if aopt.ahyper
+                e = e + norm(B'*diag(ah)*B,'fro');
+            end
            
             
             if aopt.hyperparameters
@@ -2615,7 +2669,29 @@ switch lower(method)
         case 'lognorm'
             
             e=length(Y)/2*log(norm(Y-y));
+        
+    case {'qrmse_g'}
+            % rmse: root mean squaree error incorporating precision
+            % components
+            er = spm_vec(Y)-spm_vec(y)';
+            er = (er + er')./2;
+            %G = VtoGauss(ones(size(er)),20,[],0); % 30
+            %er = er.*G;
             
+            % which Q ?
+            if aopt.hyperparameters
+                er = real(er.*iS);
+            else
+                er = real(er.*aopt.precisionQ);
+            end
+            
+            er = full(er);
+
+            % complexity minus likelihood
+            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+
+            %e = e - ( L(2) + L(3) );
+
         case {'qrmse' 'q_rmse'}
             % rmse: root mean squaree error incorporating precision
             % components
@@ -2630,6 +2706,10 @@ switch lower(method)
             
             er = full(er);
             e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+
+            %if aopt.hyperparameters
+            %    e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
+            %end
                        
             
         case {'correlation','corr','cor','r2'}
@@ -2806,7 +2886,7 @@ if nargout == 2 || nargout == 7
     
     % Switch for different steps in numerical differentiation
     if aopt.fixedstepderiv == 1
-        V = (~~V)*exp(-8);
+        V = (~~V)*sqrt(eps);%exp(-8);
     elseif aopt.fixedstepderiv == -1
         nds = max(1e-7*ones(1,length(x0)),abs(x0(:)')*1e-4);
         V = nds(:).*(~~V);
@@ -2918,8 +2998,9 @@ if nargout == 2 || nargout == 7
         
         % Gaussian smoothing along oputput vector
         for i = 1:size(J,1)
-            J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
-            %J(i,:) = sign(J(i,:))'.*abs(atcm.fun.gaulinsvdfit(J(i,:)));
+            %J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
+           % J(i,:) = atcm.fun.awinsmooth(J(i,:),3);
+            J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
             %J(i,:) = atcm.fun.gausvdpca(J(i,:)',8,20);
 %           [QM,GL] = AGenQn(J(i,:),8);
 %           %J(i,:) = J(i,:)*QM;
@@ -3441,6 +3522,7 @@ X.isTrust = 0;
 X.bayesoptls=0;
 
 X.makevideo = 0;
+X.ahyper = 0;
 
 % Also check if atcm is in paths ad report
 try    atcm.fun.QtoGauss(1);

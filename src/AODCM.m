@@ -376,22 +376,41 @@ classdef AODCM < handle
             if isempty(obj.opts.Q)
                obj.opts.Q = eye(length(obj.Y));
             end
+
+            erropt = 1;
+
+            if erropt == 1
             
-            Y = spm_vec(obj.opts.y);
-            y = spm_vec(f(x));
-            %e  = (Y - y);
-            Q  = obj.opts.Q;
-            nq = length(Q);
-            %ny = length(e);
+                Y = spm_vec(obj.opts.y);
+                y = spm_vec(f(x));
+                %e  = (Y - y);
+                Q  = obj.opts.Q;
+                nq = length(Q);
+                %ny = length(e);
+                
+    
+                dgY = VtoGauss(real(Y));
+                dgy = VtoGauss(real(y));
+    
+                Dg  = (dgY - dgy).^2;
+                e   = norm(Dg*Dg','fro') ;
+                F=e;
+
+            elseif erropt == 2
+                Y = spm_vec(obj.opts.y);
+                y = spm_vec(f(x));
+                
+                dgY = VtoGauss(real((Y)));
+                dgy = VtoGauss(real((y)));                 
+                Dg  = (dgY - dgy).^2;
+                e   = norm(Dg*Dg','fro');
+                
             
+                if aopt.ahyper
+                    e = e + norm(B'*diag(ah)*B,'fro');
+                end
 
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-
-            Dg  = (dgY - dgy).^2;
-            e   = norm(Dg*Q*Dg') ;
-            F=e;
-
+            end
 
             %dY = atcm.fun.QtoGauss(real(Y),12*2);
             %dy = atcm.fun.QtoGauss(real(y),12*2);

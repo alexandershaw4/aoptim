@@ -29,7 +29,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % Gaussians (a 1D GMM). The Gauss objective is formally:
 % 
 %    D = Gfun(Y) - Gfun(f(x))
-%    e = norm(D*D');
+%    e = norm(D*D','fro');
 %
 % where Gfun is the function estimating a Gaussian process (matrix) from the 
 % input vector. The advantage here, is that because both the data we are fitting (Y) 
@@ -46,7 +46,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % and Trust methods also);
 %
 %    H   = |H|;
-%    t   = exp(t - spm_logdet(J)/n);    ... {t} is a regulariser
+%    t   = exp(t - logdet(J)/n);    ... {t} is a regulariser
 %    dx  = x - lambda * inv(t*H')*(t*Jacobian)        
 %
 %-----------------------------------------------------------------
@@ -307,6 +307,7 @@ aopt.hypertune       = hypertune;
 aopt.verbose = verbose;
 aopt.makevideo = makevideo;
 aopt.ahyper = ahyper;
+aopt.ahyper_p = ahyper_p;
 
 IncMomentum         = im;               % Observe and use momentum data            
 givetol             = allow_worsen;     % Allow bad updates within a tolerance
@@ -372,7 +373,7 @@ end
 %--------------------------------------------------------------------------
 if doplot
     f = setfig(); params = makeplot(x0,x0,params); aopt.oerror = params.aopt.oerror;
-    pl_init(x0,params)
+    pl_init(x0,params); drawnow; 
 end
 
 % initialise counters
@@ -433,7 +434,8 @@ while iterate
     %----------------------------------------------------------------------
     aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
     
-    if verbose; pupdate(loc,n,0,e0,e0,'gradnts',toc); end
+    %if verbose; pupdate(loc,n,0,e0,e0,'gradnts',toc); end
+    pupdate(loc,n,0,e0,e0,'f: dfdx',toc);
     
     % first order partial derivates of F w.r.t x0 using Jaco.m
     [e0,df0,~,~,~,~,params]  = obj(x0,params);
@@ -446,6 +448,26 @@ while iterate
     
     % catch instabilities in the gradient - ie explosive parameters
     df0(isinf(df0)) = 0;
+
+    % also get gradient of hyperparameters
+    if aopt.ahyper_p
+        if n == 1
+            h = 1;
+        end
+
+        pupdate(loc,n,0,e0,e0,'f: dfdh',toc);
+
+        if isfield(params,'nh')
+            params = rmfield(params,'nh');
+        end
+
+        hfun = @(h) obj(x0,params,h);
+        dfdh = jaco(hfun,h,1/8,0,1);
+
+        params.nh = h - (dfdh/8);
+        [e0,~,er] = obj(x0,params);
+
+    end
     
     % Update aopt structure and place in params
     aopt         = params.aopt;
@@ -901,7 +923,7 @@ while iterate
         aopt.updateh = false;
         params.aopt  = aopt;
         
-        pupdate(loc,n,nfun,e1,e1,'eval dx',toc);
+        pupdate(loc,n,nfun,e1,e1,'f: eval',toc);
         
         
         if (obj(dx,params) < obj(x1,params) && ~aopt.forcels) || nocheck
@@ -998,7 +1020,7 @@ while iterate
 
             if rungekutta
 
-                pupdate(loc,n,nfun,de,e1,'RK lnsr',toc);
+                pupdate(loc,n,nfun,de,e1,'f: line',toc);
 
                 % Use the Runge-Kutta search algorithm
                 SearchAgents_no = rungekutta;
@@ -1110,7 +1132,7 @@ while iterate
         end
         
         if integration_nc && n > 1
-            pupdate(loc,n,nfun,e1,e1,'mem int',toc);
+            pupdate(loc,n,nfun,e1,e1,'f: memr',toc);
             
             try
             
@@ -1281,7 +1303,7 @@ while iterate
         
         % *If didn't improve: invoke much more selective parameter update
         %==================================================================
-        pupdate(loc,n,nfun,e1,e0,'RK lnsr',toc);    
+        pupdate(loc,n,nfun,e1,e0,'f: line',toc);    
         e_orig = e0;
 
         if rungekutta > 0
@@ -1973,7 +1995,7 @@ function mp = obj2(x0,params,varargin)
 
 end
 
-function [e,J,er,mp,Cp,L,params] = obj(x0,params,varargin)
+function [e,J,er,mp,Cp,L,params] = obj(x0,params,hstep)
 % Computes the objective function - i.e. the Free Energy or squared error to 
 % minimise. Also returns the parameter Jacobian, error (vector), model prediction
 % (vector) and covariance
@@ -2048,6 +2070,9 @@ if isfield(aopt,'J') && isvector(aopt.J) && length(x0) > 1
     aopt.J = repmat(aopt.J,[1 length(spm_vec(y))]);
 end
 
+aopt.J = denan(aopt.J,0);
+
+
 % Free Energy Objective Function: F(p) = log evidence - divergence
 %--------------------------------------------------------------------------
 if isnumeric(Q) && ~isempty(Q) 
@@ -2105,12 +2130,12 @@ warning on
 p  = ( x0(:) - aopt.pp(:) );
 
 if any(isnan(Cp(:))) 
-    Cp = Cp;
+    Cp = denan(Cp,1/8);
 end
 
-% other hyperparameter deal here; works with Gauss objective function
+% Alex's hyperparameter routine here; works with Gauss & Gauss-trace objectives
 % by projecting error on a smooth basis set, then performing hyperparameter
-% ascent on
+% ascent on it - which goes into objective as frob norm(B*h*B')
 if aopt.ahyper
 
     if aopt.ahyper < 1
@@ -2136,21 +2161,40 @@ if aopt.ahyper
 
     end
     
-    % derivatives; dfdQ and dfdQQ
+    % derivatives; gradient (dfdQ) and curvature (dfdQQ)
     for i = 1:size(pr,1)
-            dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
-                             - real(e'*iQ{i}*e)/2 ...
-                             - spm_trace(Cp,bQ{i})/2;
-            for j = i:size(pr,1)
-                dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
-                dFdQQ(j,i) =   dFdQQ(i,j);
-            end
+        dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
+                         - real(e'*iQ{i}*e)/2 ...
+                         - spm_trace(Cp,bQ{i})/2;
+        for j = i:size(pr,1)
+            dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
+            dFdQQ(j,i) =   dFdQQ(i,j);
+        end
     end
 
-    dh      =  (dFdQQ\dFdQ);
+    if aopt.ahyper_p && nargin == 3
+        step = hstep;
+    elseif isfield(params,'nh')
+        step = params.nh;
+    else
+        step = 1;
+    end
+
+    % update by Newton step
+    dh      = step * (dFdQQ\dFdQ);
     dh      = denan(dh);
     ah      = ah + dh;
     aopt.ah = ah;
+
+    % plot it too
+    %sx=subplot(5,3,14);hold on; plot(real(ah'*B),'linewidth',3,'color',[1 .7 .7]);
+    %drawnow;
+    %ax = gca;
+    %ax.XGrid = 'on';
+    %ax.YGrid = 'on';
+    %sx.YColor = [1 1 1];
+    %sx.XColor = [1 1 1];
+    %sx.Color  = [.3 .3 .3];
 
 end
 
@@ -3523,6 +3567,7 @@ X.bayesoptls=0;
 
 X.makevideo = 0;
 X.ahyper = 0;
+X.ahyper_p = 0;
 
 % Also check if atcm is in paths ad report
 try    atcm.fun.QtoGauss(1);

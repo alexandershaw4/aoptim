@@ -128,6 +128,7 @@ classdef AONN < handle
             obj.modelspace = spm_unvec( spm_vec(obj.modelspace)./sum(spm_vec(obj.modelspace)), obj.modelspace);
 
             obj.p  = real(spm_vec(obj.modelspace)) ;
+            obj.p  = (1./length(obj.p)) + (1/8)*randn(size(obj.p));
             obj.c  = (~~obj.p)/32;
 %             obj.c  = [spm_vec(ones(size(obj.modelspace{1})))/32;
 %                  spm_vec(ones(size(obj.modelspace{2})))/32;
@@ -224,6 +225,72 @@ classdef AONN < handle
             ff(ff>=.5)=1;
         end
         
+
+        function obj = backprop(obj)
+            
+            fun = @(p) (obj.fun_nr(spm_unvec(p,obj.modelspace),obj.x));
+            x0  =  obj.p;
+            x1  = spm_unvec(x0,obj.modelspace);
+
+            for i = 1:obj.op.maxit
+
+                % forward
+                ex = fun(x0);
+               % ex = ex - mean(ex);
+                de = (obj.y - ex).^2;
+                fprintf('Iteration %d / %d: error = %d\n',i,obj.op.maxit,sum(de));
+
+                % for bp we need to work in statespace
+                dx  = spm_unvec(x0,obj.modelspace);
+                dea = de;
+
+                for k = 1:size(dea,1)
+                    de = dea(k);
+            
+                    for j = 1:length(obj.modelspace)-1
+                        unit = dx{end - (j-1)};
+                        prop =  (de.*unit')';
+    
+                        if numel((de.*unit')') ~= numel(dx{end-(j-1)})
+                            prop = (de.*unit);
+                        end
+    
+                        dx{end - (j-1)} = prop;
+    
+                        % update bp er
+                        try
+                            de = dx{end-(j-1)}*de;
+                        catch
+                            de = dx{end-(j-1)}.*de;
+                        end
+                    
+                    end
+
+                    ex = fun(x0);
+                    de = (obj.y - ex).^2;
+                    dea = de;
+                end
+
+                % update parameters
+                x0 = spm_vec(dx);
+
+                %end
+
+            end
+
+            obj.weightvec  = x0(:);
+            obj.F          = sum(de);
+            obj.pred_raw   = obj.fun_nr(spm_unvec(x0,obj.modelspace),obj.x);
+
+            [M,T] = confustionmat([obj.truth(:) obj.pred_raw(:)]);
+            obj.confusion.M = M;
+            obj.confusion.T = T;
+            
+            ac = accuracy(obj)
+
+        end
+
+
         function obj = train(obj,method)
             
             if nargin < 2
@@ -254,7 +321,13 @@ classdef AONN < handle
                 
             end
             
-            
+            obj.op.isNewton=0;
+            obj.op.ahyper=1;
+            obj.op.ahyper_p=1;
+            obj.op.ismimo=4;
+            obj.op.faster=1;
+            obj.op.nocheck=1;
+            obj.op.rungekutta=0;
                         
             [X,F,CP,Pp]    = AO(obj.op);
             %obj.prediction = obj.fun(spm_unvec(X,obj.modelspace),obj.x);

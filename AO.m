@@ -605,7 +605,14 @@ while iterate
         end
         
         % For most methods, compute dx using subfun...
-        dx   = compute_dx(x1,a,J,red,search_method,params);  
+        dx   = compute_dx(x1,a,J./norm(J),red,search_method,params);  
+
+        % catch when the gradients blow things up: i.e. obj(x) is nan and
+        % the norm of dx is waaaay bigger than norm(x)
+        %if isnan(obj(dx,params)) && norm(dx) > 8*norm(x1)
+        %    dx = compute_dx(x1,a,J./norm(J),red,search_method,params);
+        %end
+
         gdx  = dx; % simple gradient descent step to fallback on
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
@@ -993,8 +1000,8 @@ while iterate
             dx         = ddx;
             de         = obj(dx,params);
 
-        end     
-        
+        end    
+
         % runge-kutta line-search / optimisation block: fine tune dx
         %------------------------------------------------------------------
         % so far we have established a new set of parameters (a small step
@@ -1205,8 +1212,7 @@ while iterate
 
         % check last best x1/e1 and update dx/de
         de = obj(dx,params);
-        
-        
+                
         % print prediction
         pupdate(loc,n,nfun,de,e1,'predict',toc);
               
@@ -1350,6 +1356,7 @@ while iterate
                 else
                     df = 0;
                     pupdate(loc,n,nfun,e1,e0,'reject ',toc);
+                    red = red + 1/8;
                 end
                 if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end
             catch
@@ -1364,7 +1371,7 @@ while iterate
             pupdate(loc,n,nfun,e0,e0,'reject ',toc);
 
             % decrease learning rate by 50%
-            red = red * .5;
+            red = red + 1/8;
             df  = 0;
 
             % Update global store of V & keep counting rejections
@@ -2138,7 +2145,7 @@ end
 % ascent on it - which goes into objective as frob norm(B*h*B')
 if aopt.ahyper
 
-    if aopt.ahyper < 1
+    if aopt.ahyper > 1
         N = aopt.ahyper;
     else
         N = 28;
@@ -2185,6 +2192,7 @@ if aopt.ahyper
     dh      = denan(dh);
     ah      = ah + dh;
     aopt.ah = ah;
+    aopt.B  = B;
 
     % plot it too
     %sx=subplot(5,3,14);hold on; plot(real(ah'*B),'linewidth',3,'color',[1 .7 .7]);
@@ -2314,6 +2322,10 @@ switch lower(method)
                 e = -F;
             end
         end
+
+        if aopt.ahyper
+                e = e + norm(B'*diag(ah)*B,'fro');
+        end
     
         % Other Objective Functions
         %------------------------------------------------------------------ 
@@ -2441,7 +2453,7 @@ switch lower(method)
             dgY = VtoGauss(real((Y)));
             dgy = VtoGauss(real((y)));                 
             Dg  = (dgY - dgy).^2;
-            e   = norm(Dg*Dg','fro');
+            e   = norm(Dg*iS*Dg','fro');
             
             if aopt.ahyper
                 e = e + norm(B'*diag(ah)*B,'fro');
@@ -2451,6 +2463,11 @@ switch lower(method)
             if aopt.hyperparameters
                 e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
             end
+
+
+
+
+
 
         case 'gauss_svd'
             er = errorsvd(Y,y,2);
@@ -3038,7 +3055,7 @@ if nargout == 2 || nargout == 7
         Jo{:,1} = J0;
     end
     
-    if aopt.mimo
+    if aopt.mimo && (aopt.mimo ~= 4)
         
         % Gaussian smoothing along oputput vector
         for i = 1:size(J,1)
@@ -3507,24 +3524,33 @@ X.objective   = 'gauss';
 X.writelog    = 0;
 X.order       = 1;
 X.min_df      = 0;
-X.criterion   = 1e-3;
+X.criterion   = -inf;%1e-3;
 X.Q           = [];
 X.inner_loop  = 1;
-X.maxit       = 4;
+X.maxit       = 64;
 X.y           = 0;
 X.V           = [];
 X.x0          = [];
 X.fun         = [];
 
+% for coupled dfdx + dfdg systems, e.g.
+% dfdx = f(x,p0)
+% y    = g(x,p1)
+X.gfun = [];
+X.gx0  = [];
+X.gV   = [];
+
 X.hyperparams  = 1;
-X.hypertune    = 0;
+X.hypertune    = 1;
+X.ahyper = 1;
+X.ahyper_p = 1;
 
 X.force_ls     = 0;
 X.doplot       = 1;
 X.ismimo       = 1;
 X.gradmemory   = 0;
 X.doparallel   = 0;
-X.fsd          = 1;
+X.fsd          = 0;
 X.allow_worsen = 0;
 X.doimagesc    = 0;
 X.EnforcePriorProb = 0;
@@ -3543,20 +3569,20 @@ X.normalise_gradients=0;
 X.sample_mvn   = 0;
 X.steps_choice = [];
 
-X.rungekutta = 6;
-X.memory_optimise = 1;
+X.rungekutta = 8;
+X.memory_optimise = 0;
 X.updateQ = 1;
 X.crit = [0 0 0 0 0 0 0 0];
 X.save_constant = 0; 
 
-X.gradtol = 1e-4;
+X.gradtol = 1e-8;
 
 
 X.orthogradient = 1;
 X.rklinesearch=0;
 X.verbose = 0;
 
-X.isNewton = 1;
+X.isNewton = 0;
 X.isNewtonReg = 0 ;
 X.isQuasiNewton = 0;
 X.isGaussNewton=0;
@@ -3566,8 +3592,7 @@ X.isTrust = 0;
 X.bayesoptls=0;
 
 X.makevideo = 0;
-X.ahyper = 0;
-X.ahyper_p = 0;
+
 
 % Also check if atcm is in paths ad report
 try    atcm.fun.QtoGauss(1);

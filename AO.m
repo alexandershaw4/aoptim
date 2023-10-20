@@ -443,7 +443,7 @@ while iterate
     df0 = real(df0);
        
     if normalise_gradients
-        df0 = df0./sum(df0);
+        df0 = df0./norm(df0);
     end
     
     % catch instabilities in the gradient - ie explosive parameters
@@ -507,10 +507,10 @@ while iterate
     
     % Feature Scoring for MIMOs - using aopt.Q updated above   
     %----------------------------------------------------------------------    
-    if orthogradient && ismimo
-        if verbose; fprintf('Orthogonalising Jacobian\n'); end
-        params.aopt.J = symmetric_orthogonalise(params.aopt.J);
-    end
+    %if orthogradient && ismimo
+        %if verbose; fprintf('Orthogonalising Jacobian\n'); end
+        %params.aopt.J = symmetric_orthogonalise(params.aopt.J);
+    %end
 
     % i.e. where J(np,nf) & nf > 1
     if ismimo
@@ -523,22 +523,36 @@ while iterate
             Q0 = sum(cat(3,Q0{:}),3);
         end
 
-        if isempty(Q0)
-            Q0 = eye(length(y(:)));
-        end
+        if norm(Q0 - eye(length(Q0))) ~= 0
+            % when Q0 has something informative (~= eye)      
+    
+            if isempty(Q0)
+                Q0 = eye(length(y(:)));
+            end
+    
+            padQ = size(JJ,2) - length(Q0);
+            Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+    
+            % Hessian
+            for i = 1:np
+               for j = 1:np
+                   JJ(i,:) = denan(JJ(i,:));
+                   JJ(j,:) = denan(JJ(j,:));
+                   HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+               end
+            end
+        
+        else
 
-        padQ = size(JJ,2) - length(Q0);
-        Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
-
-        %for i = 1:size(JJ,2)
-        %    JJ(:,i) = rescale(JJ(:,i));
-        %end
-
-        % Hessian
-        for i = 1:np
-           for j = 1:np
-               HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-           end
+            % when Q0 is uninformative, use unweighted Hessian
+            for i = 1:np
+               for j = 1:np
+                   JJ(i,:) = denan(JJ(i,:));
+                   JJ(j,:) = denan(JJ(j,:));
+                   B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+                   HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
+               end
+            end
         end
         
     end
@@ -706,12 +720,6 @@ while iterate
             Hstep = spm_dx(H0,JJ,{-4}); 
             GRdx  = x1 - Hstep;
             dx     = GRdx;
-
-            %dx = fixbounds(dx,x1,red);
-            %if forcenewton
-            %    dx = GRdx;
-            %    if verbose; fprintf('Forced Newton Step\n');end
-            %end
             
         end
 
@@ -735,7 +743,6 @@ while iterate
             dFdpp = H - ipC ;
             dFdp  = Jx * res - ipC * x1;
             dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
-            %dx    = fixbounds(dx,x1,red);
 
         end
                      
@@ -745,7 +752,6 @@ while iterate
         if lsqjacobian
             jx = aopt.J'\y;
             dx = x1 - jx;
-            %dx = fixbounds(dx,x1,red);
         end
 
         % a Trust-Region method (a variation on GN scheme)
@@ -930,9 +936,6 @@ while iterate
         aopt.updateh = false;
         params.aopt  = aopt;
         
-        pupdate(loc,n,nfun,e1,e1,'f: eval',toc);
-        
-        
         if (obj(dx,params) < obj(x1,params) && ~aopt.forcels) || nocheck
             % Don't perform checks, assume all f(dx[i]) <= e1
             % i.e. full gradient prediction over parameters is good and we
@@ -943,6 +946,9 @@ while iterate
             DFE = ones(1,length(x0))*de;
             
         else
+
+            pupdate(loc,n,nfun,e1,e1,'f: eval',toc);
+
             % Assess each new parameter estimate (step) individually
             if (~faster) || nfun == 1 % Once per gradient computation?
                 if ~doparallel
@@ -1001,6 +1007,42 @@ while iterate
             de         = obj(dx,params);
 
         end    
+
+
+        if wolfelinesearch
+
+            pupdate(loc,n,nfun,e1,e1,'f:wolfe',toc);
+
+            funx = @(x) obj(x,params);
+            f0   = funx(dx);
+            %L = lineSearch(funx,dx,red,'wolfe',f0,J);  
+            L = lineSearch(funx,dx,J,'golden',[],[],'directionSwitch',true,'c1',0.2,'c2',1e-9);
+        
+            [xout,fval,stepSize] = L.solve;
+
+            if ~isempty(xout);
+                dx = xout(:);
+                de = fval;
+                red = red*stepSize;
+            end
+
+          % Help for lineSearch
+          % Inputs
+          %   - fun : function handle for multi-variable objective function
+          %   - x0  : Vector containing the initial point in the design space
+          %   - d   : Vector containing the search direction which minimized the objective function
+          %   - method(string)  : - none: x = x0 + d
+          %                     : - wolfe: line search method which satisfies the strong
+          %                         wolfe conditions. Based on the method outline in 
+          %                         Numerical Optimization by Nocedal and Wright, 
+          %                         second edition, page 60, algorithm 3.5
+          %                       - golden: Golden Sections method
+          %                       - backtrack: Simple backtracking method. One of the convergence
+          %                         criteria is the Armijo-Goldstein condition
+
+        end
+
+
 
         % runge-kutta line-search / optimisation block: fine tune dx
         %------------------------------------------------------------------
@@ -2502,6 +2544,10 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = norm(Dg*Dg') + trace(Dg*Dg');
 
+        case 'dfd' 
+
+            e = DiscreteFrechetDist(Y,y);
+
         case {'gauss_trace'}
 
             % first  pass gauss error
@@ -3068,7 +3114,7 @@ if nargout == 2 || nargout == 7
 %           [u,s,v] = svd(QM);
 %           J(i,:) = QM*v(:,1);
         end
-        %J = denan(J);
+        J = denan(J);
     end
     
     % Embed J in full parameter space
@@ -3153,6 +3199,33 @@ L = 1;
 D = 1;
 
 switch search_method
+        
+
+    case 10
+
+        b = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+
+        a = ones(1,size(J,2));
+        J = real(J);
+
+        for i = 1:size(J,2)
+            J(:,i) = rescale(J(:,i));
+        end
+
+        C = J'*J;
+        
+        % actually learning rate will just be a normalisation constant
+        a  = 1./(1+sum(C/prod(size(C))));
+
+        %a = a(:)'.*red(:)';
+
+        %a = red(:)';
+
+        %N = prod(size(C));
+        %a = red'./N;
+        x3 = a';
+
+        dFdpp = J'*(b./norm(b))*J;
         
     case 9
 
@@ -3481,7 +3554,7 @@ elseif search_method == 5
         
         [dx] = spm_dx(dfdx,f,{-2});
         dx = x1 + dx;
-elseif search_method == 6 || search_method == 9
+elseif search_method == 6 || search_method == 9 || search_method == 10
     % hyperparameter tuned step size
     dx = x1 + a.*J;
 elseif search_method == 8
@@ -3570,6 +3643,7 @@ X.sample_mvn   = 0;
 X.steps_choice = [];
 
 X.rungekutta = 8;
+X.wolfelinesearch=0;
 X.memory_optimise = 0;
 X.updateQ = 1;
 X.crit = [0 0 0 0 0 0 0 0];

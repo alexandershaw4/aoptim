@@ -42,7 +42,7 @@ V(3:4)=1/16;
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 9;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 10;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
@@ -75,7 +75,8 @@ op.order=1; % second order gradients
 
 op.do_gpr=0; % dont do gaussian process regression to learn Jac
 op.hypertune=1; % do hypertuning 
-op.rungekutta=8; % do an RK-line search
+op.rungekutta=0; % do an RK-line search
+op.wolfelinesearch=1;
 %op.bayesoptls=6;
 op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
@@ -108,14 +109,14 @@ Q = Q .* atcm.fun.AGenQn(f(spm_vec(S)),8);
 Q = abs(Q) + AGenQn(diag(Q),8);
 op.Q = Q;
 
-op.memory_optimise=1; % remember & include (optimise) prev update steps when considering new steps
+op.memory_optimise=0; % remember & include (optimise) prev update steps when considering new steps
 op.crit = [0 0 0 0];
 
 
 % make regular saves of the optimimsation
 op.save_constant = 0;
 
-op.isNewton=1;
+op.isNewton=0;
 op.isGaussNewton=0;
 op.isQuasiNewton=0;
 op.isNewtonReg=0;

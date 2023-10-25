@@ -435,7 +435,7 @@ while iterate
     aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
     
     %if verbose; pupdate(loc,n,0,e0,e0,'gradnts',toc); end
-    pupdate(loc,n,0,e0,e0,'f: dfdx',toc);
+    pupdate(loc,n,0,e0,e0,'f: dfdp',toc);
     
     % first order partial derivates of F w.r.t x0 using Jaco.m
     [e0,df0,~,~,~,~,params]  = obj(x0,params);
@@ -544,7 +544,8 @@ while iterate
         
         else
 
-            % when Q0 is uninformative, use unweighted Hessian
+            % when Q0 is uninformative, but hyperparameters are in use,
+            % weight the Hessian
             for i = 1:np
                for j = 1:np
                    JJ(i,:) = denan(JJ(i,:));
@@ -564,6 +565,11 @@ while iterate
     else
         [a,J,nJ,L,D] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
         J = -df0(:);
+    end
+
+    if search_method == 10
+        fprintf('using hyperparameter-weighted gradient step\n');
+        J = (nJ./norm(nJ))*J;
     end
 
     if verbose;
@@ -2984,9 +2990,12 @@ end
 
 J = [];
 
+%J = dlgradient(e,x0);
+
 % This hands off to jaco, which computes the derivatives
 % - note this can be used differently for multi-output systems
 if nargout == 2 || nargout == 7
+
     V    = aopt.pC;
     V(isnan(V))=0;
     Ord  = aopt.order; 
@@ -3103,6 +3112,10 @@ if nargout == 2 || nargout == 7
     
     if aopt.mimo && (aopt.mimo ~= 4)
         
+        % nk = ceil(rank(cov(J))*.8);
+        % [A,W] = aica(J',nk);
+        % J = W'*A';
+
         % Gaussian smoothing along oputput vector
         for i = 1:size(J,1)
             %J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
@@ -3204,6 +3217,7 @@ switch search_method
     case 10
 
         b = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+        b = b./norm(b);
 
         a = ones(1,size(J,2));
         J = real(J);
@@ -3225,7 +3239,7 @@ switch search_method
         %a = red'./N;
         x3 = a';
 
-        dFdpp = J'*(b./norm(b))*J;
+        dFdpp = J'*b*J;
         
     case 9
 

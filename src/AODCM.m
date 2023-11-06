@@ -344,7 +344,7 @@ classdef AODCM < handle
             options = statset;
             options.Display = 'iter';
             options.TolFun  = 1e-6;
-            options.MaxIter = 2;
+            options.MaxIter = 32;
             options.FunValCheck = 'on';
             options.DerivStep = 1e-8;
 
@@ -394,6 +394,20 @@ classdef AODCM < handle
     
                 Dg  = (dgY - dgy).^2;
                 e   = norm(Dg*Dg','fro') ;
+
+
+                % peaks?
+                p0  = atcm.fun.indicesofpeaks(real(Y));
+                p1  = atcm.fun.indicesofpeaks(real(y));
+                dp = cdist(p0(:),p1(:));
+                if isvector(dp)
+                    dp = diag(dp);
+                end
+
+                 e   = e * trace(diag(diag(dp)));
+
+
+
                 F=e;
 
             elseif erropt == 2
@@ -525,6 +539,27 @@ classdef AODCM < handle
             [~, P] = obj.opts.fun(spm_vec(obj.X));
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
         end
+
+        function powell(obj,N)
+
+            % Powell optimisation method
+            % FORMAT [p,f] = spm_powell(p,xi,tolsc,func,varargin)
+            %   p        - Starting parameter values
+            %   xi       - columns containing directions in which to begin searching
+            %   tolsc    - stopping criteria, optimisation stops when
+            %                sqrt(sum(((p-p_prev)./tolsc).^2))<1
+            %   func     - name of evaluated function
+            %   varargin - remaining arguments to func (after p)
+
+            fprintf('Performing Powell optimisation\n');
+
+            x0  = obj.opts.x0(:);
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            [p,f] = spm_powell(x0,ones(size(x0)),1,objective)
+
+        end
         
         function alexBayesOpt(obj,N)
             
@@ -592,6 +627,20 @@ classdef AODCM < handle
 
         end
 
+        function adam(obj)
+
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x,ind) errfun(obj,fun,x);
+
+            x0 = obj.opts.x0;
+
+            [obj.X, obj.F, exitflag, output] = fmin_adam(objective, x0);
+
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+
+        end
+
         function rungekutteopt(obj,n)
             
             if nargin < 1 || isempty(n)
@@ -656,7 +705,7 @@ classdef AODCM < handle
             Options.bVerbose= 1; 
             x0  = obj.opts.x0;
              
-            g = @(x) repmat(objective(x),[1 length(x0)]);
+            g = @(x) repmat(objective(x),[1 length(x0)])./x0;
             
             m_aX = Newton(g,x0,Options)
             % Newton-Raphson-iteration with backtracking and numerical Jacobian built 
@@ -681,7 +730,7 @@ classdef AODCM < handle
             
         end
         
-        function soce(obj)
+        function asoce(obj)
             
             opt = ceoptdef();
             
@@ -775,7 +824,7 @@ classdef AODCM < handle
         objective = @(x) errfun(obj,fun,x);
         
         opts1 = optimoptions('surrogateopt','PlotFcn','surrogateoptplot');
-        opts1.ObjectiveLimit = 1e-3;
+        opts1.ObjectiveLimit = -1;%1e-3;
         opts1.MaxFunctionEvaluations = 50*length(UB);
         opts1.InitialPoints=Px;
         [obj.X,obj.F] = surrogateopt(objective,LB,UB,opts1);

@@ -1,5 +1,5 @@
 function [X,F,Cp,PP,Hist,params] = AO(funopts)
-% A (Bayesian) gradient (curvature) descent optimisation routine, designed primarily 
+% A (Bayesian) gradient descent optimisation routine, designed primarily 
 % for parameter estimation in nonlinear models.
 %
 % Getting started with default options:
@@ -542,10 +542,9 @@ while iterate
                end
             end
         
-        else
+        elseif aopt.ahyper_p
 
-            % when Q0 is uninformative, but hyperparameters are in use,
-            % weight the Hessian
+            % when ahyper_p hyperparameter tuning is active
             for i = 1:np
                for j = 1:np
                    JJ(i,:) = denan(JJ(i,:));
@@ -554,6 +553,18 @@ while iterate
                    HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
                end
             end
+
+        else
+            % Hessian
+            for i = 1:np
+               for j = 1:np
+                   JJ(i,:) = denan(JJ(i,:));
+                   JJ(j,:) = denan(JJ(j,:));
+                   HQ(i,j) = trace(JJ(i,:).*JJ(j,:)');
+               end
+            end
+
+
         end
         
     end
@@ -626,13 +637,6 @@ while iterate
         
         % For most methods, compute dx using subfun...
         dx   = compute_dx(x1,a,J./norm(J),red,search_method,params);  
-
-        % catch when the gradients blow things up: i.e. obj(x) is nan and
-        % the norm of dx is waaaay bigger than norm(x)
-        %if isnan(obj(dx,params)) && norm(dx) > 8*norm(x1)
-        %    dx = compute_dx(x1,a,J./norm(J),red,search_method,params);
-        %end
-
         gdx  = dx; % simple gradient descent step to fallback on
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
@@ -664,34 +668,18 @@ while iterate
             Jo = cat(1,aopt.Jo{:,1});%./e1;
             JJ = x0*0;
             JJ(find(diag(pC))) = Jo;
+            JJ = denan(JJ);
             JJ = JJ./norm(JJ);
                      
             % recompute lambda
             a = 1;%compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
 
             % Compute step using matrix exponential (see spm_dx)
-            Hstep = red.*spm_dx(H,JJ,{-4});            
+            Hstep = spm_dx(-H,-JJ,{-4});            
             Gdx   = x1 - Hstep;
             dx    = Gdx;
-            
-            if obj(dx,params) >= obj(x1,params)
-                D = zeros(size(H));  % Modified Hessian matrix.
-                %fprintf('flipping Hessian matrix\n');
-                for j = 1:length(H)
-                    D(j,j) = 1.0 / max(0.01, abs(H(j,j)));
-                end
-                %  D is now a positive diagonal matrix with a diagonal scaled
-                %  by the inverse of the corresponding diagonal element of the
-                %  Hessian 
-                %dx = x1 - a.*(D\JJ);%spm_dx(a.*-D,JJ,{-4});
-                dx = x1 - red.*spm_dx(D,JJ,{-1});
-
-                if obj(dx,params) > obj(gdx,params)
-                    dx = gdx;
-                    fprintf('Switch back to vanilla GD\n')
-                end
-
-            end
+       
+            NewtonStep = dx;
             
             if verbose; fprintf('Selected Newton Step\n'); end
         end
@@ -741,14 +729,29 @@ while iterate
             [~,~,res,~]  = obj(x1,params);
 
             % components
-            Jx  = aopt.J ./ norm(aopt.J);
+            if order == 1
+                Jx  = aopt.J ./ norm(aopt.J);
+            elseif order == 2
+                Jx = cat(2,params.aopt.Jo{:,3});
+                Jx = denan(Jx);
+                Jx = Jx ./ norm(Jx);
+                JJ = zeros(length(x0*0),size(Jx,1));
+                ic = find(diag(pC));
+                JJ(ic,:) = Jx';
+                Jx = JJ;
+            end
+            
             res = res ./ norm(res);
             ipC = diag(red);%spm_inv(score);
+
+            %a = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
 
             % dFdpp & dFdp
             dFdpp = H - ipC ;
             dFdp  = Jx * res - ipC * x1;
-            dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
+            dx    = x1 - spm_dx(-dFdpp,-dFdp,{-2}); 
+
+            GNStep = dx;
 
         end
                      
@@ -815,24 +818,95 @@ while iterate
 
         end
 
+        % Compare steps if N and GN are both selected
+        %---------------------------------------------------------------
+        if isNewton && isGaussNewton
+            % compare N, GN and vanilla;
+            ec(1) = obj(gdx,params);
+            ec(2) = obj(NewtonStep,params);
+            ec(3) = obj(GNStep,params);
+
+            [~,win] = min(ec);
+
+            if win == 1
+                fprintf('Selected GD\n'); dx = gdx;
+            elseif win == 2
+                fprintf('Selected Newton\n'); dx = NewtonStep;
+            elseif win == 3
+                fprintf('Selected G-N\n'); dx = GNStep;
+            end
+        end
+
+
+        % EM: Expectation-Maximisation: Impute mean and variance of 
+        % distirbution based on successful previous updates
+        %---------------------------------------------------------------
+        if n > 1 && DoEM
+            pupdate(loc,n,nfun,e1,e1,'f: EM  ',toc);
+
+            ax    = [cat(2,Hist.p{:}) dx];
+            for i = 1:length(dx)
+                PD(i)  = fitdist(ax(i,:)','Normal');
+                ddx(i) = PD(i).mean;
+                sig    = PD(i).paramci;
+                sig    = sig(1,2);
+                red(i) = sig.^2;
+                rdx(i) = ddx(i) - dx(i);
+                dx(i)  = dx(i) + red(i)*rdx(i);
+            end
+
+        end
+
+        % Powell line search option
+        %---------------------------------------------------------------
+        if dopowell && ismimo
+            pupdate(loc,n,nfun,e1,e1,'f:powel',toc);
+
+            Jx = cat(2,params.aopt.Jo{:,3});
+            Jx = denan(Jx);
+            Jx = Jx ./ norm(Jx);
+            JJ = zeros(length(x0*0),size(Jx,1));
+            ic = find(diag(pC));
+            if length(find(sum(Jx))) ~= length(x0)
+                JJ(ic,:) = Jx';
+            else
+                JJ = Jx';
+            end
+
+            try
+                [dx,de] = spm_powell_a(dx,denan(JJ),1,@(x) obj(x,params),8);
+            catch
+                fprintf('Powell Line-Search Failed\n');
+            end
+
+        end
+
         % Probabilities Section
-        %===========================================================
+        %---------------------------------------------------------------
         
         % Compute the probabilities of each (predicted) new parameter
         % coming from the same distribution defined by the prior (last best)        
         dx  = real(dx);
         x1  = real(x1);
         red = real(red);
-        
-        % [Prior] distributions
         pt  = zeros(1,length(x1));
-        for i = 1:length(x1)
-            %vv     = real(sqrt( red(i) ));
-            vv     = real(sqrt( red(i) ))*2;
-            if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-            pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+
+        % [Prior] distributions
+        if n > 1
+            try
+                ax    = [cat(2,Hist.p{:}) dx];                  
+                for i = 1:length(x1)
+                    pd(i)  = fitdist(ax(i,:)','Normal');
+                end
+            end
+        else
+            for i = 1:length(x1)
+                try
+                    pd(i)  = makedist('normal','mu', real(x1(i)),'sigma', real(sqrt(red(i))));
+                end
+            end
         end
-        
+            
         % Curb parameter estimates trying to exceed their distirbution bounds
         if EnforcePriorProb
             odx = dx;
@@ -850,14 +924,10 @@ while iterate
         
         % Compute relative change in cdf
         pdx = pt*0;
+        f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
         for i = 1:length(x1)
             if red(i)
-                %vv     = real(sqrt( red(i) ));
-                vv     = real(sqrt( red(i) ))*2;
-                if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
-                %pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
+                pdx(i) = f(dx(i),pd(i));
             else
             end
         end
@@ -865,9 +935,10 @@ while iterate
         prplot(pt);
         aopt.pt = [aopt.pt pt(:)];
         
+        
         % If WeightByProbability is set, use p(dx) as a weight on dx
         % iteratively until n% of p(dx[i]) are > threshold
-        % -------------------------------------------------------------
+        %------------------------------------------------------------------
         if WeightByProbability
             dx = x1 + ( pt(:).*(dx-x1) );
             
@@ -2433,23 +2504,9 @@ switch lower(method)
             
             Dg   = (dgY - dgy);
             e    = Dg*Dg';
-            %e   = diag(Dg*Dg');
-
-            %L(1) = spm_logdet(iS)*nq/2  - real(e'*iS*e)/2 - ny*log(8*atan(1))/2;
     
             L(1) = spm_logdet(iS)*nq/2  - real(norm(e'*iS*e,'fro'))/2 - ny*log(8*atan(1))/2;
-
-
-            % (2) Complexity minus accuracy of parameters
-            %--------------------------------------------------------------------------
-            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
-
-            if aopt.hyperparameters
-                % (3) Complexity minus accuracy of precision
-                %----------------------------------------------------------------------
-                L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
-            end
-    
+            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
             F    = sum(L);
             e    = (-F);
             
@@ -2461,11 +2518,7 @@ switch lower(method)
             dgy = VtoGauss(real(y),12*2);
             
             Dg  = dgY - dgy;
-            e   = trace(Dg*Dg');
-
-            if aopt.hyperparameters
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; 
-            end
+            e   = norm(Dg*iS*Dg','fro');
 
             % Parameter p(th) given (prior) distributions
             for i = 1:length(p)
@@ -2488,33 +2541,25 @@ switch lower(method)
         case 'logcosh'
             error = spm_vec(Y) - spm_vec(y);
             eV = atcm.fun.VtoGauss(error);
-
             e = sum(sum(log(cosh(eV))));
-
-            if aopt.hyperparameters
-                e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
-            end
 
         case {'gauss' 'gp'}
             % Frobenius norm of (pseudo-Gaussian) error
           
-            dgY = VtoGauss(real((Y)));
-            dgy = VtoGauss(real((y)));                 
-            Dg  = (dgY - dgy).^2;
-            e   = norm(Dg*iS*Dg','fro');
-            
-            if aopt.ahyper
-                e = e + norm(B'*diag(ah)*B,'fro');
+            dgY  = VtoGauss(real((Y)));
+            dgy  = VtoGauss(real((y)));      
+            Dg   = (dgY - dgy).^2;
+            e    = norm(Dg*iS*Dg','fro');
+
+            % peaks?
+            p0  = atcm.fun.indicesofpeaks(real(Y));
+            p1  = atcm.fun.indicesofpeaks(real(y));
+            dp = cdist(p0(:),p1(:));
+            if isvector(dp)
+                dp = diag(dp);
             end
 
-
-            if aopt.hyperparameters
-                e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
-            end
-
-
-
-
+            e   = e * trace(diag(diag(dp)));
 
 
         case 'gauss_svd'
@@ -2564,19 +2609,8 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-            e   = trace(Dg*Dg');
-
-            if aopt.ahyper
-                e = e + norm(B'*diag(ah)*B,'fro');
-            end
-           
+            e   = trace(Dg*Dg');           
             
-            if aopt.hyperparameters
-                % (3) Complexity minus accuracy of precision
-                %----------------------------------------------------------------------
-                e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );     
-                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
-            end
 
         case 'gaussv'
 
@@ -2588,12 +2622,6 @@ switch lower(method)
             e   = trace(Dg'*Dg);
            
             
-            if aopt.hyperparameters
-                % (3) Complexity minus accuracy of precision
-                %----------------------------------------------------------------------
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
-                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
-            end
 
         case 'gauss_components'
 
@@ -2630,12 +2658,6 @@ switch lower(method)
             e  = trace(Dg'*Dg);
            
             
-            if aopt.hyperparameters
-                % (3) Complexity minus accuracy of precision
-                %----------------------------------------------------------------------
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
-                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
-            end
             
         case {'gaussnorm'}
             
@@ -2645,12 +2667,6 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = norm(Dg'*Dg);
                    
-            if aopt.hyperparameters
-                % (3) Complexity minus accuracy of precision
-                %----------------------------------------------------------------------
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
-                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
-            end
 
 
         case 'gausscluster'
@@ -2679,12 +2695,6 @@ switch lower(method)
             
             e   = trace(Dg*Dg');
 
-            if aopt.hyperparameters
-                % (3) Complexity minus accuracy of precision
-                %----------------------------------------------------------------------
-                e = e - spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;     
-                %L(2) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;;
-            end
             
             
         case 'jsdmvgkl'
@@ -2903,6 +2913,15 @@ switch lower(method)
             e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
 end
 
+% hyperfunctions & parameters
+if aopt.ahyper
+    e = e + norm(B'*diag(ah)*B,'fro');
+end
+
+
+if aopt.hyperparameters
+    e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );
+end
 
 % hyperparameter [noise] tuning by GD - by placing this here it can easily
 % be applied to any of the above cost functions
@@ -2950,6 +2969,15 @@ end
 er = e*( spm_vec(Y) - spm_vec(y) );
 mp = spm_vec(y);
 
+% function e = gausscomps(Y,y,x)
+%     PY = sum(atcm.fun.agauss_smooth_mat(Y,x));
+%     Py = sum(atcm.fun.agauss_smooth_mat(y,x));
+% 
+%     dgY = VtoGauss(real((PY)));
+%     dgy = VtoGauss(real((Py)));
+%     Dg  = (dgY - dgy).^2;
+%     e   = norm(Dg*iS*Dg','fro');
+% end
 
 function t = hypertune(fc,t,N)
     if nargin<3; N=1000;end
@@ -3678,6 +3706,9 @@ X.lsqjacobian=0;
 X.forcenewton   = 0;
 X.isTrust = 0;
 X.bayesoptls=0;
+X.DoEM=0;
+X.dopowell=0;
+
 
 X.makevideo = 0;
 

@@ -533,6 +533,10 @@ while iterate
             padQ = size(JJ,2) - length(Q0);
             Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
     
+            %for i = 1:size(JJ,1); 
+            %    JJ(i,:) = JJ(i,:)./norm(JJ(i,:)); 
+            %end
+
             % Hessian
             for i = 1:np
                for j = 1:np
@@ -730,15 +734,19 @@ while iterate
 
             % components
             if order == 1
-                Jx  = aopt.J ./ norm(aopt.J);
+                Jx  = aopt.J ;%./ norm(aopt.J);
             elseif order == 2
                 Jx = cat(2,params.aopt.Jo{:,3});
                 Jx = denan(Jx);
-                Jx = Jx ./ norm(Jx);
+                %Jx = Jx ./ norm(Jx);
                 JJ = zeros(length(x0*0),size(Jx,1));
                 ic = find(diag(pC));
                 JJ(ic,:) = Jx';
                 Jx = JJ;
+            end
+
+            for i = 1:size(JJ,1); 
+                Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
             end
             
             res = res ./ norm(res);
@@ -746,10 +754,10 @@ while iterate
 
             %a = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
 
-            % dFdpp & dFdp
-            dFdpp = H - ipC ;
-            dFdp  = Jx * res - ipC * x1;
-            dx    = x1 - spm_dx(-dFdpp,-dFdp,{-2}); 
+            % the GN routine jumps to the minimum of the second order Taylor-approximation
+            dFdpp  = H - ipC ;
+            dFdp   = Jx * res - ipC * x1;
+            dx     = x1 - spm_dx(-dFdpp,-dFdp,{-2}); 
 
             GNStep = dx;
 
@@ -769,15 +777,19 @@ while iterate
             if n == 1; mu = 1e-2; end
 
             % Norm Hessian
-            H = HQ./norm(HQ);
+            H = HQ;%./norm(HQ);
             
             % get residual vector
             [~,~,res]  = obj(x1,params);
 
             % components
-            Jx  = aopt.J ./ norm(aopt.J);
+            Jx  = aopt.J;% ./ norm(aopt.J);
             res = res./norm(res);
             ipC = diag(red);
+
+            for i = 1:size(JJ,1); 
+                Jx(i,:) = Jx(i,:)./norm(Jx(i,:)); 
+            end
 
             if n == 1; del = 1;  end
 
@@ -838,48 +850,48 @@ while iterate
         end
 
 
-        % EM: Expectation-Maximisation: Impute mean and variance of 
-        % distirbution based on successful previous updates
-        %---------------------------------------------------------------
-        if n > 1 && DoEM
-            pupdate(loc,n,nfun,e1,e1,'f: EM  ',toc);
-
-            ax    = [cat(2,Hist.p{:}) dx];
-            for i = 1:length(dx)
-                PD(i)  = fitdist(ax(i,:)','Normal');
-                ddx(i) = PD(i).mean;
-                sig    = PD(i).paramci;
-                sig    = sig(1,2);
-                red(i) = sig.^2;
-                rdx(i) = ddx(i) - dx(i);
-                dx(i)  = dx(i) + red(i)*rdx(i);
-            end
-
-        end
-
-        % Powell line search option
-        %---------------------------------------------------------------
-        if dopowell && ismimo
-            pupdate(loc,n,nfun,e1,e1,'f:powel',toc);
-
-            Jx = cat(2,params.aopt.Jo{:,3});
-            Jx = denan(Jx);
-            Jx = Jx ./ norm(Jx);
-            JJ = zeros(length(x0*0),size(Jx,1));
-            ic = find(diag(pC));
-            if length(find(sum(Jx))) ~= length(x0)
-                JJ(ic,:) = Jx';
-            else
-                JJ = Jx';
-            end
-
-            try
-                [dx,de] = spm_powell_a(dx,denan(JJ),1,@(x) obj(x,params),8);
-            catch
-                fprintf('Powell Line-Search Failed\n');
-            end
-
-        end
+        % % EM: Expectation-Maximisation: Impute mean and variance of 
+        % % distirbution based on successful previous updates
+        % %---------------------------------------------------------------
+        % if n > 1 && DoEM
+        %     pupdate(loc,n,nfun,e1,e1,'f: EM  ',toc);
+        % 
+        %     ax    = [cat(2,Hist.p{:}) dx];
+        %     for i = 1:length(dx)
+        %         PD(i)  = fitdist(ax(i,:)','Normal');
+        %         ddx(i) = PD(i).mean;
+        %         sig    = PD(i).paramci;
+        %         sig    = sig(1,2);
+        %         red(i) = sig.^2;
+        %         rdx(i) = ddx(i) - dx(i);
+        %         dx(i)  = dx(i) + red(i)*rdx(i);
+        %     end
+        % 
+        % end
+        % 
+        % % Powell line search option
+        % %---------------------------------------------------------------
+        % if dopowell && ismimo
+        %     pupdate(loc,n,nfun,e1,e1,'f:powel',toc);
+        % 
+        %     Jx = cat(2,params.aopt.Jo{:,3});
+        %     Jx = denan(Jx);
+        %     Jx = Jx ./ norm(Jx);
+        %     JJ = zeros(length(x0*0),size(Jx,1));
+        %     ic = find(diag(pC));
+        %     if length(find(sum(Jx))) ~= length(x0)
+        %         JJ(ic,:) = Jx';
+        %     else
+        %         JJ = Jx';
+        %     end
+        % 
+        %     try
+        %         [dx,de] = spm_powell_a(dx,denan(JJ),1,@(x) obj(x,params),8);
+        %     catch
+        %         fprintf('Powell Line-Search Failed\n');
+        %     end
+        % 
+        % end
 
         % Probabilities Section
         %---------------------------------------------------------------
@@ -1084,6 +1096,59 @@ while iterate
             de         = obj(dx,params);
 
         end    
+
+
+        % EM: Expectation-Maximisation: Impute mean and variance of
+        % distirbution based on successful previous updates
+        %---------------------------------------------------------------
+        if n > 1 && DoEM
+            pupdate(loc,n,nfun,e1,e1,'f: EM  ',toc);
+
+            ax    = [cat(2,Hist.p{:}) dx];
+            for i = 1:length(dx)
+                PD(i)  = fitdist(ax(i,:)','Normal');
+                ddx(i) = PD(i).mean;
+                sig    = PD(i).paramci;
+                sig    = sig(1,2);
+                red(i) = sig.^2;
+                rdx(i) = ddx(i) - dx(i);
+                dx(i)  = dx(i) + red(i)*rdx(i);
+            end
+
+        end
+
+        % Powell line search option
+        %---------------------------------------------------------------
+        if dopowell && ismimo
+            pupdate(loc,n,nfun,e1,e1,'f:powel',toc);
+
+            Jx = cat(2,params.aopt.Jo{:,3});
+            Jx = denan(Jx);
+            Jx = Jx ./ norm(Jx);
+            JJ = zeros(length(x0*0),size(Jx,1));
+            ic = find(diag(pC));
+            if length(find(sum(Jx))) ~= length(x0)
+                JJ(ic,:) = Jx';
+            else
+                JJ = Jx';
+            end
+
+            try
+                [pdx,pde] = spm_powell_a(dx,denan(JJ),1,@(x) obj(x,params),8);
+
+                if obj(pdx,params) < obj(dx,params)
+                    dx = pdx;
+                    de = pde;
+                else
+                    fprintF('Powell failed to improve\n');
+                end
+
+            catch
+                fprintf('Powell line-search failed\n');
+            end
+
+        end
+
 
 
         if wolfelinesearch
@@ -2504,6 +2569,16 @@ switch lower(method)
             
             Dg   = (dgY - dgy);
             e    = Dg*Dg';
+
+            % peaks?
+            p0  = atcm.fun.indicesofpeaks(real(Y));
+            p1  = atcm.fun.indicesofpeaks(real(y));
+            dp = cdist(p0(:),p1(:));
+            if isvector(dp)
+                dp = diag(dp);
+            end
+
+            e   = e * trace(diag(diag(dp)));
     
             L(1) = spm_logdet(iS)*nq/2  - real(norm(e'*iS*e,'fro'))/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
@@ -2554,12 +2629,77 @@ switch lower(method)
             % peaks?
             p0  = atcm.fun.indicesofpeaks(real(Y));
             p1  = atcm.fun.indicesofpeaks(real(y));
-            dp = cdist(p0(:),p1(:));
+            dp  = cdist(p0(:),p1(:));
             if isvector(dp)
-                dp = diag(dp);
+                dp = abs(diag(dp));
             end
 
-            e   = e * trace(diag(diag(dp)));
+            dp = denan(dp);
+
+            peake = trace(diag(diag(dp)));
+
+            peake = denan(peake);
+            peake = abs(peake);
+            peake = max(peake,1/2);
+
+            e   = abs(e) * abs(peake);
+
+            % % modal error function - 
+            % NM  = 12;
+            % BB  = gaubasis(length(Y),NM);
+            % b0  = BB'\y;
+            % b1  = BB'\Y;
+            % 
+            % B0 = b0.*BB;
+            % B1 = b1.*BB;
+            % 
+            % Dg   = (B0 - B1).^2;
+            % e    = e * norm(Dg*iS*Dg','fro');
+
+
+            % also incorporate a low-dim Gaussian series over the 'peaks'
+            % in each (data and model) and compare - this also ensures a
+            % smoothness in the objective function even for spiky data
+            % p0  = atcm.fun.indicesofpeaks(real(Y));
+            % p1  = atcm.fun.indicesofpeaks(real(y));
+            % 
+            % yy = y*0;
+            % yy(p0) = y(p0);
+            % YY = Y*0;
+            % YY(p1) = Y(p1);
+            % 
+            % 
+            % BB  = gaubasis(length(Y),12);
+            % b0  = BB'\yy;
+            % b1  = BB'\YY;
+            % 
+            % e = e * sum(abs(b0-b1)).^2;
+
+
+            % dgY = atcm.fun.agauss_smooth_mat(Y,1.5);
+            % dgy = atcm.fun.agauss_smooth_mat(y,1.5);
+            % 
+            % ni = 0;
+            % for i = 1:size(dgY,1)
+            %     for j = 1:size(dgy,1)
+            %        ni = ni + 1;
+            %        %er(ni) = spm_trace(dgY(i,:),dgy(j,:));
+            %        err(i,j) = dgY(i,:)*iS*dgy(j,:)';
+            %     end
+            % end
+            % 
+            % e = e + (e * norm(err,'fro'));
+
+            % % peaks?
+            % p0  = atcm.fun.indicesofpeaks(real(Y));
+            % p1  = atcm.fun.indicesofpeaks(real(y));
+            % dp = cdist(p0(:),p1(:));
+            % if isvector(dp)
+            %     dp = abs(diag(dp));
+            % end
+            % 
+            % peake = trace(diag(diag(dp)));
+            % e   = abs(e * peake);
 
 
         case 'gauss_svd'
@@ -2567,6 +2707,10 @@ switch lower(method)
             e  = norm(er);
         case 'crossentropy'
             e = - (1/length(Y)) * sum(Y .* log(y) + (1 - Y) .* log(1 - y));
+
+        case 'mle_iid'
+
+            e = -sum(sum(log(Y(:) - y(:)')));
 
 
         case 'gausskl'
@@ -3275,7 +3419,7 @@ switch search_method
         J = real(J);
 
         for i = 1:size(J,2)
-            J(:,i) = rescale(J(:,i));
+            J(:,i) = J(:,i) ./ norm(J(:,i));% rescale(J(:,i),0,1);
         end
 
         C = J'*J;

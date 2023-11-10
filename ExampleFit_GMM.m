@@ -68,7 +68,7 @@ op.doparallel = 0; % compute stuff using parfor
 op.DoMLE=0;
 op.factorise_gradients = 1; % factorise/normalise grads
 op.normalise_gradients=0;
-op.objective='gauss_trace';%'gauss_trace';%'mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
+op.objective='gauss';%_trace';%'gauss_trace';%'mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
 op.order=1; % second order gradients
 %

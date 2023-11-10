@@ -540,6 +540,26 @@ classdef AODCM < handle
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
         end
 
+        function anneal(obj,N)
+
+            if nargin < 2; N = 32; end
+
+            fprintf('Performing annealing optimisation\n');
+
+            x0  = obj.opts.x0(:);
+            fun = @(varargin)obj.wrapdm(varargin{:});
+            objective = @(x) errfun(obj,fun,x);
+
+            oopts.MaxTries = N;
+            oopts.Verbosity=1;
+
+            [obj.X,obj.F] = anneal(objective, x0, oopts);
+
+            [~, P] = obj.opts.fun(spm_vec(obj.X));
+            obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
+
+        end
+
         function powell(obj,N)
 
             % Powell optimisation method

@@ -968,7 +968,10 @@ while iterate
                         if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
                         pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
                         
-                        pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
+                        %pdx(i) = normcdf(dx(i),pd(i).mu,pd(i).sigma);
+                         
+                        pdx(i) = f(dx(i),pd(i));
+
                         %pdx(i) = (1./(1+exp(-pdf(pd(i),dx(i))))) ./ (1./(1+exp(-pdf(pd(i),aopt.pp(i)))));
                     else
                     end
@@ -995,7 +998,7 @@ while iterate
                             
         % (option) Momentum inclusion
         %------------------------------------------------------------------
-        if n > 2 && IncMomentum%Qp = Qp ./ max(Qp);
+        if n > 2 && IncMomentum
             if verbose; pupdate(loc,n,nfun,e1,e1,'momentm',toc); end
             % The idea here is that we can have more confidence in
             % parameters that are repeatedly updated in the same direction,
@@ -1080,6 +1083,27 @@ while iterate
                 end
                 
                 gpi = find(gp);
+
+               % if GN and some didn't work, switch those parameters onto
+               % normal gradient descent algorithm
+                if isGaussNewton && any(DFE>e0)
+
+                    swap = find(DFE > e0);
+
+                    ddx        = x0;
+                    ddx(gpi)   = dx(gpi);
+
+                    gddx = ddx;
+                    gddx(swap)  = gdx(swap);
+
+                    if obj(gddx,params) < obj(ddx,params)
+                        dx  = gddx;
+                        gpi = ones(1,length(x0));
+                        fprintf('Switched some params from GN to GD\n');
+                    end
+
+                end
+
                 
                 if isempty(gp)
                     gp  = ones(1,length(x0));
@@ -2563,45 +2587,119 @@ switch lower(method)
                         
         case 'gaussfe'
 
+            % % 
+            % dgY = VtoGauss(real(Y));
+            % dgy = VtoGauss(real(y));
             % 
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-            
-            Dg   = (dgY - dgy);
-            e    = Dg*Dg';
+            % Dg   = (dgY - dgy);
+            % e    = Dg*Dg';
+            % 
+            % % peaks?
+            % p0  = atcm.fun.indicesofpeaks(real(Y));
+            % p1  = atcm.fun.indicesofpeaks(real(y));
+            % dp = cdist(p0(:),p1(:));
+            % if isvector(dp)
+            %     dp = diag(dp);
+            % end
+            % 
+            % e   = e * trace(diag(diag(dp)));
+
+
+            dgY  = VtoGauss(real((Y)));
+            dgy  = VtoGauss(real((y)));      
+            Dg   = (dgY - dgy).^2;
+            e    = norm(Dg*iS*Dg','fro');
 
             % peaks?
             p0  = atcm.fun.indicesofpeaks(real(Y));
             p1  = atcm.fun.indicesofpeaks(real(y));
-            dp = cdist(p0(:),p1(:));
+            dp  = cdist(p0(:),p1(:));
             if isvector(dp)
-                dp = diag(dp);
+                dp = abs(diag(dp));
             end
 
-            e   = e * trace(diag(diag(dp)));
+            dp = denan(dp);
+
+            peake = trace(diag(diag(dp)));
+
+            peake = denan(peake);
+            peake = abs(peake);
+            peake = max(peake,1/2);
+
+            e   = abs(e) * abs(peake);
+
+
+
+
     
-            L(1) = spm_logdet(iS)*nq/2  - real(norm(e'*iS*e,'fro'))/2 - ny*log(8*atan(1))/2;
+            L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
             F    = sum(L);
             e    = (-F);
             
 
         case 'gaussmap'
+            %  this Maximum apriori error function is composed of 3 terms;
+            %
+            %  ec(1) = norm(Dg*iS*Dg','fro'); where Dg is a g.p. model of the residual
+            %  ec(2) = trace(diag(diag(dp))); where dp Euc dist between peaks in Y
+            %  e     = log(f(X|p)) + log(g(p)) == log(sum(ec)) + log(g(p))
+
 
             % Gaussian erorr term using Frobenius distance
-            dgY = VtoGauss(real(Y),12*2);
-            dgy = VtoGauss(real(y),12*2);
+            dgY  = VtoGauss(real((Y)));
+            dgy  = VtoGauss(real((y)));      
+            Dg   = (dgY - dgy).^2;
+            e    = norm(Dg*iS*Dg','fro');
+
+            % peaks?
+            p0  = atcm.fun.indicesofpeaks(real(Y));
+            p1  = atcm.fun.indicesofpeaks(real(y));
+            dp  = cdist(p0(:),p1(:));
+            if isvector(dp)
+                dp = abs(diag(dp));
+            end
+
+            dp = denan(dp);
+
+            peake = trace(diag(diag(dp)));
+
+            peake = denan(peake);
+            peake = abs(peake);
+            peake = max(peake,1/2);
+
+            e   = abs(e) * abs(peake);
+
+            % [Prior] distributions
             
-            Dg  = dgY - dgy;
-            e   = norm(Dg*iS*Dg','fro');
+            for i = 1:length(aopt.pp)
+                try
+                    vv(i) = real(sqrt( Cp(i,i) ))*2;
+                    pd(i) = makedist('normal','mu', real(aopt.pp(i)),'sigma',vv(i));
+                end
+            end
+           
+
+            % Compute relative change in cdf
+            f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
+            for i = 1:length(x0)
+                if vv(i)
+                    pdx(i) = f(x0(i),pd(i));
+                else
+                end
+            end
+
+
+
+
 
             % Parameter p(th) given (prior) distributions
-            for i = 1:length(p)
-                vv     = real(sqrt( Cp(i,i) ))*2;
-                if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                pdx(i) = normcdf(x0(i),pd(i).mu,pd(i).sigma);
-            end
+            % for i = 1:length(p)
+            %     vv     = real(sqrt( Cp(i,i) ))*2;
+            %     if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+            %     pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+            %     pdx(i) = normcdf(x0(i),pd(i).mu,pd(i).sigma);
+            % end
 
             % full map: log(f(X|p)) + log(g(p))
             e         = log(e) + 1./(1-log(prod(pdx*2)));
@@ -2617,6 +2715,26 @@ switch lower(method)
             error = spm_vec(Y) - spm_vec(y);
             eV = atcm.fun.VtoGauss(error);
             e = sum(sum(log(cosh(eV))));
+
+        case 'gausspdf'
+
+            % PpY  = atcm.fun.agauss_smooth_mat(Y,1.5); 
+            % Ppy  = atcm.fun.agauss_smooth_mat(y,1.5); 
+            % 
+            % w    = (1:length(Y))';
+            % 
+            % for i = 1:size(PpY,1)
+            %     F(i) = fitdist(PpY(i,:)','normal');
+            % 
+            %     for j = 1:size(Ppy,1)
+            %         ex(i,j) = -sum(pdf(F(i),Ppy(j,:)'));
+            %     end
+            % 
+            % end
+            % 
+            % e = norm(ex,'fro');
+
+
 
         case {'gauss' 'gp'}
             % Frobenius norm of (pseudo-Gaussian) error
@@ -2644,63 +2762,7 @@ switch lower(method)
 
             e   = abs(e) * abs(peake);
 
-            % % modal error function - 
-            % NM  = 12;
-            % BB  = gaubasis(length(Y),NM);
-            % b0  = BB'\y;
-            % b1  = BB'\Y;
-            % 
-            % B0 = b0.*BB;
-            % B1 = b1.*BB;
-            % 
-            % Dg   = (B0 - B1).^2;
-            % e    = e * norm(Dg*iS*Dg','fro');
-
-
-            % also incorporate a low-dim Gaussian series over the 'peaks'
-            % in each (data and model) and compare - this also ensures a
-            % smoothness in the objective function even for spiky data
-            % p0  = atcm.fun.indicesofpeaks(real(Y));
-            % p1  = atcm.fun.indicesofpeaks(real(y));
-            % 
-            % yy = y*0;
-            % yy(p0) = y(p0);
-            % YY = Y*0;
-            % YY(p1) = Y(p1);
-            % 
-            % 
-            % BB  = gaubasis(length(Y),12);
-            % b0  = BB'\yy;
-            % b1  = BB'\YY;
-            % 
-            % e = e * sum(abs(b0-b1)).^2;
-
-
-            % dgY = atcm.fun.agauss_smooth_mat(Y,1.5);
-            % dgy = atcm.fun.agauss_smooth_mat(y,1.5);
-            % 
-            % ni = 0;
-            % for i = 1:size(dgY,1)
-            %     for j = 1:size(dgy,1)
-            %        ni = ni + 1;
-            %        %er(ni) = spm_trace(dgY(i,:),dgy(j,:));
-            %        err(i,j) = dgY(i,:)*iS*dgy(j,:)';
-            %     end
-            % end
-            % 
-            % e = e + (e * norm(err,'fro'));
-
-            % % peaks?
-            % p0  = atcm.fun.indicesofpeaks(real(Y));
-            % p1  = atcm.fun.indicesofpeaks(real(y));
-            % dp = cdist(p0(:),p1(:));
-            % if isvector(dp)
-            %     dp = abs(diag(dp));
-            % end
-            % 
-            % peake = trace(diag(diag(dp)));
-            % e   = abs(e * peake);
-
+        
 
         case 'gauss_svd'
             er = errorsvd(Y,y,2);

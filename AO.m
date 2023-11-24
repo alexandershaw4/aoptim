@@ -134,11 +134,47 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % Expectation-Maximization
 %---------------------------------------------------------------------------
-% To invoke an EM routine, set opts.WeightByProbability = 1.
-% This will invoke a switching between optimising the probability of the
-% parameters and minimising the objective function. The two steps work
-% against eachother and the relative parameter probabilities on each 
-% iteration are also used in comuting the step size.
+% Setting either (or both) opts.hyperparams = 1 or opts.ahyper=1 & opts.ahyper_p=1
+% will invoke an EM routine whereby hyperparameter estimation acts as the
+% E-step and the gradient flow / Gauss-Newton step acts as the
+% maximisation. These are linked through;
+%
+%   E-step
+% ---------------------------
+%  B  = gausfit(data);
+%  b  = B'\model
+%  B  = b.*B;          <- residuals modelled as ~multivariate Gaussian
+%
+%  for pp = 1:size(B,1)
+%     iQ{pp} = diag(B(pp,:)) * ah(pp);
+%     bQ{pp} = real(J*iQ{pp}*aopt.J');
+%  end
+% 
+%  derivatives; gradient (dfdQ) and curvature (dfdQQ)
+%  for i = 1:size(pr,1)
+%      dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
+%                       - real(e'*iQ{i}*e)/2 ...
+%                       - spm_trace(Cp,bQ{i})/2;
+%      for j = i:size(pr,1)
+%          dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
+%          dFdQQ(j,i) =   dFdQQ(i,j);
+%      end
+%  end
+% 
+%  Newton's step: ascent on ah; (hyperparameter)
+%
+%  dh      = step * (dFdQQ\dFdQ);
+%  dh      = denan(dh);
+%  ah      = ah + dh;
+%
+%   M-step
+% ---------------------------
+%  H  = trace( J(i,:)*B'*diag(ah)*B*J(j,:) )'; <-- weighted Hessian
+%
+%  dFdpp  = H - ipC ;
+%  dFdp   = Jx * res - ipC * x;
+%  dx     = x  - red.*spm_dx(-dFdpp,-dFdp,{4}); <-- GN-step
+%
 %
 % ALSO SET:
 %
@@ -432,7 +468,8 @@ while iterate
 
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
-    aopt.updatej = true; aopt.updateh = true; params.aopt  = aopt;
+    aopt.updatej  = true; aopt.updateh = true; params.aopt  = aopt;
+    params.aopt.n = n;
     
     %if verbose; pupdate(loc,n,0,e0,e0,'gradnts',toc); end
     pupdate(loc,n,0,e0,e0,'f: dfdp',toc);
@@ -448,6 +485,7 @@ while iterate
     
     % catch instabilities in the gradient - ie explosive parameters
     df0(isinf(df0)) = 0;
+
 
     % also get gradient of hyperparameters
     if aopt.ahyper_p
@@ -465,7 +503,15 @@ while iterate
         dfdh = jaco(hfun,h,1/8,0,1);
 
         params.nh = h - (dfdh/8);
-        [e0,~,er] = obj(x0,params);
+        [ex,~,er] = obj(x0,params);
+
+        iex = 0;
+        while ex < e0
+            e0 = ex;
+            iex = iex + 1;
+            params.nh = h - (iex*dfdh/8);
+            [ex,~,er] = obj(x0,params);
+        end
 
     end
     
@@ -507,10 +553,11 @@ while iterate
     
     % Feature Scoring for MIMOs - using aopt.Q updated above   
     %----------------------------------------------------------------------    
-    %if orthogradient && ismimo
-        %if verbose; fprintf('Orthogonalising Jacobian\n'); end
-        %params.aopt.J = symmetric_orthogonalise(params.aopt.J);
-    %end
+    % this section computes the Hessian matrix for routines that need it
+    % (Newton, GaussNewton, Trust) - but since matrix Q0 contains the
+    % features we aim to fit on this iteration, H = J*Q*J' gives us a
+    % weighted Hessian that links the E-step with a corresponding
+    % maximisation
 
     % i.e. where J(np,nf) & nf > 1
     if ismimo
@@ -533,9 +580,14 @@ while iterate
             padQ = size(JJ,2) - length(Q0);
             Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
     
-            %for i = 1:size(JJ,1); 
-            %    JJ(i,:) = JJ(i,:)./norm(JJ(i,:)); 
-            %end
+            for i = 1:size(JJ,1); 
+                JJ(i,:) = JJ(i,:)./norm(JJ(i,:)); 
+            end
+
+            if ahyper
+                Q0 = Q0 + aopt.B'*diag(aopt.ah)*aopt.B;
+            end
+
 
             % Hessian
             for i = 1:np
@@ -570,11 +622,24 @@ while iterate
 
 
         end
+
+        %normalise out magnitudes
+        ah = ones(size(HQ,2),1);
+        [L,D] = ldl_smola(HQ,ah);
+        HQ = L*(D./sum(diag(D)))*L';
         
     end
 
     % Select step size method
     %----------------------------------------------------------------------    
+    %if ismimo
+    %    JJ = params.aopt.J;
+    %    for i = 1:size(JJ,1)
+    %        JJ(i,:) = JJ(i,:)./norm(JJ(i,:));
+    %    end
+    %    params.aopt.J = JJ;
+    %end
+
     if ~ismimo
         [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0);
     else
@@ -757,7 +822,7 @@ while iterate
             % the GN routine jumps to the minimum of the second order Taylor-approximation
             dFdpp  = H - ipC ;
             dFdp   = Jx * res - ipC * x1;
-            dx     = x1 - spm_dx(-dFdpp,-dFdp,{-2}); 
+            dx     = x1 - red.*spm_dx(-dFdpp,-dFdp,{4}); 
 
             GNStep = dx;
 
@@ -848,50 +913,6 @@ while iterate
                 fprintf('Selected G-N\n'); dx = GNStep;
             end
         end
-
-
-        % % EM: Expectation-Maximisation: Impute mean and variance of 
-        % % distirbution based on successful previous updates
-        % %---------------------------------------------------------------
-        % if n > 1 && DoEM
-        %     pupdate(loc,n,nfun,e1,e1,'f: EM  ',toc);
-        % 
-        %     ax    = [cat(2,Hist.p{:}) dx];
-        %     for i = 1:length(dx)
-        %         PD(i)  = fitdist(ax(i,:)','Normal');
-        %         ddx(i) = PD(i).mean;
-        %         sig    = PD(i).paramci;
-        %         sig    = sig(1,2);
-        %         red(i) = sig.^2;
-        %         rdx(i) = ddx(i) - dx(i);
-        %         dx(i)  = dx(i) + red(i)*rdx(i);
-        %     end
-        % 
-        % end
-        % 
-        % % Powell line search option
-        % %---------------------------------------------------------------
-        % if dopowell && ismimo
-        %     pupdate(loc,n,nfun,e1,e1,'f:powel',toc);
-        % 
-        %     Jx = cat(2,params.aopt.Jo{:,3});
-        %     Jx = denan(Jx);
-        %     Jx = Jx ./ norm(Jx);
-        %     JJ = zeros(length(x0*0),size(Jx,1));
-        %     ic = find(diag(pC));
-        %     if length(find(sum(Jx))) ~= length(x0)
-        %         JJ(ic,:) = Jx';
-        %     else
-        %         JJ = Jx';
-        %     end
-        % 
-        %     try
-        %         [dx,de] = spm_powell_a(dx,denan(JJ),1,@(x) obj(x,params),8);
-        %     catch
-        %         fprintf('Powell Line-Search Failed\n');
-        %     end
-        % 
-        % end
 
         % Probabilities Section
         %---------------------------------------------------------------
@@ -1120,26 +1141,6 @@ while iterate
             de         = obj(dx,params);
 
         end    
-
-
-        % EM: Expectation-Maximisation: Impute mean and variance of
-        % distirbution based on successful previous updates
-        %---------------------------------------------------------------
-        if n > 1 && DoEM
-            pupdate(loc,n,nfun,e1,e1,'f: EM  ',toc);
-
-            ax    = [cat(2,Hist.p{:}) dx];
-            for i = 1:length(dx)
-                PD(i)  = fitdist(ax(i,:)','Normal');
-                ddx(i) = PD(i).mean;
-                sig    = PD(i).paramci;
-                sig    = sig(1,2);
-                red(i) = sig.^2;
-                rdx(i) = ddx(i) - dx(i);
-                dx(i)  = dx(i) + red(i)*rdx(i);
-            end
-
-        end
 
         % Powell line search option
         %---------------------------------------------------------------
@@ -1814,6 +1815,7 @@ function f = setfig()
 %figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
 %figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 910 842];
 figpos = get(0,'defaultfigureposition');
+figpos = figpos + [0 0 500 1000];
 
 %1          87        1024        1730
 
@@ -2366,7 +2368,12 @@ if aopt.ahyper
     end
 
     % construct error basis set
-    B  = gaubasis(length(Y),N);
+    %B  = gaubasis(length(Y),N);
+    B = atcm.fun.agauss_smooth_mat(Y,1);
+    b = B'\y;
+    B = b.*B;
+    B = B(1:N,:);
+
     pr = B;
 
     for pp = 1:size(pr,1)
@@ -2402,15 +2409,17 @@ if aopt.ahyper
     aopt.ah = ah;
     aopt.B  = B;
 
-    % plot it too
-    %sx=subplot(5,3,14);hold on; plot(real(ah'*B),'linewidth',3,'color',[1 .7 .7]);
-    %drawnow;
-    %ax = gca;
-    %ax.XGrid = 'on';
-    %ax.YGrid = 'on';
-    %sx.YColor = [1 1 1];
-    %sx.XColor = [1 1 1];
-    %sx.Color  = [.3 .3 .3];
+    if isfield(params.aopt,'n');%params.aopt.n > 1
+        % plot it too
+        sx=subplot(5,3,14); imagesc(real(B'*diag(ah)*B));
+        drawnow;
+        ax = gca;
+        ax.XGrid = 'on';
+        ax.YGrid = 'on';
+        sx.YColor = [1 1 1];
+        sx.XColor = [1 1 1];
+        sx.Color  = [.3 .3 .3];
+    end
 
 end
 
@@ -2555,6 +2564,12 @@ switch lower(method)
             er = spm_vec(Y)-spm_vec(y);
             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
 
+        case 'chi'
+
+            gY  = VtoGauss(real((Y)));
+            gy  = VtoGauss(real((y)));   
+
+            e = sum( ((y(:) - Y(:)).^2) ./ y(:) );
             
         case 'mvgkl'
             % multivariate gaussian kullback lieb div
@@ -2605,10 +2620,18 @@ switch lower(method)
             % e   = e * trace(diag(diag(dp)));
 
 
+            %dgY  = VtoGauss(real((Y)));
+            %dgy  = VtoGauss(real((y)));      
+            %Dg   = (dgY - dgy).^2;
+            %e    = norm(Dg*iS*Dg','fro');
+
             dgY  = VtoGauss(real((Y)));
             dgy  = VtoGauss(real((y)));      
             Dg   = (dgY - dgy).^2;
-            e    = norm(Dg*iS*Dg','fro');
+
+            e = (iS.*(dgY - dgy).^2)/Y(:)';
+
+            e = norm(e,'fro');
 
             % peaks?
             p0  = atcm.fun.indicesofpeaks(real(Y));
@@ -2634,6 +2657,7 @@ switch lower(method)
     
             L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
+           
             F    = sum(L);
             e    = (-F);
             
@@ -2737,12 +2761,21 @@ switch lower(method)
 
 
         case {'gauss' 'gp'}
-            % Frobenius norm of (pseudo-Gaussian) error
+            % Frobenius norm of (~Gaussian) chi-sq error
           
             dgY  = VtoGauss(real((Y)));
             dgy  = VtoGauss(real((y)));      
             Dg   = (dgY - dgy).^2;
-            e    = norm(Dg*iS*Dg','fro');
+
+            e = (iS.*(dgY - dgy).^2)/Y(:)';
+
+            %dgY = atcm.fun.agauss_smooth_mat(Y,1);
+            %dgy = atcm.fun.agauss_smooth_mat(y,1);
+            %e = ((dgY*iS*dgy').^2)'/dgY';
+
+            e = norm(e,'fro');
+
+            %e    = norm(Dg*iS*Dg','fro');
 
             % peaks?
             p0  = atcm.fun.indicesofpeaks(real(Y));
@@ -2805,6 +2838,15 @@ switch lower(method)
 
             e = DiscreteFrechetDist(Y,y);
 
+        case 'gaussb'
+
+            %dgY = VtoGauss(real(Y));
+            %dgy = VtoGauss(real(y));
+
+            %Dg  = dgY - dgy;
+            e   = Y'*B'*diag(ah)*B*y;
+
+
         case {'gauss_trace'}
 
             % first  pass gauss error
@@ -2815,7 +2857,7 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-            e   = trace(Dg*Dg');           
+            e   = trace(Dg*iS*Dg');           
             
 
         case 'gaussv'

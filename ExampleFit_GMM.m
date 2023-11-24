@@ -59,6 +59,7 @@ op.FS = @(x) x(:).^2.*(1:length(x))';
 op.FS = @(x) sqrt(x); % feature selection function
 
 op.ahyper=1;
+%op.ahyper_p=1;
 %op.nocheck=1;
 
 %op.FS = @(x) [sqrt(x(:)); std(diff(x))/abs(mean(diff(x)))];

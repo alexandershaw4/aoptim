@@ -42,7 +42,7 @@ V(3:4)=1/16;
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
-op.step_method = 9;  % aggressive steps = 1, careful = 3, vanilla = 4.
+op.step_method = 1;  % aggressive steps = 1, careful = 3, vanilla = 4.
 op.fun = f;          % function/model
 op.x0  = x0(:);      % start values
 op.y   = Y(:);       % data we're fitting (for computation of objective fun)
@@ -67,7 +67,7 @@ op.ahyper=1;
 op.criterion  = -inf; 1e-3;
 op.doparallel = 0; % compute stuff using parfor
 op.DoMLE=0;
-op.factorise_gradients = 1; % factorise/normalise grads
+op.factorise_gradients = 0; % factorise/normalise grads
 op.normalise_gradients=0;
 op.objective='gauss_trace';%'gauss_trace';%'mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;

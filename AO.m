@@ -147,7 +147,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 %  for pp = 1:size(B,1)
 %     iQ{pp} = diag(B(pp,:)) * ah(pp);
-%     bQ{pp} = real(J*iQ{pp}*aopt.J');
+%     bQ{pp} = real(J*iQ{pp}*aopt.J');  <- J = dp/dy, i.e. partial gradients
 %  end
 % 
 %  derivatives; gradient (dfdQ) and curvature (dfdQQ)
@@ -169,11 +169,13 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 %   M-step
 % ---------------------------
-%  H  = trace( J(i,:)*B'*diag(ah)*B*J(j,:) )'; <-- weighted Hessian
+%  b     = J \ (B'*diag(ah)*B);
+%  [L,D] = ldl(b,Cp); 
+%  H     = L*D*L';    <-- weighted Hessian
 %
 %  dFdpp  = H - ipC ;
 %  dFdp   = Jx * res - ipC * x;
-%  dx     = x  - red.*spm_dx(-dFdpp,-dFdp,{4}); <-- GN-step
+%  dx     = x  - red.*spm_dx(-H,-J,{4}); <-- GN-step
 %
 %
 % ALSO SET:
@@ -555,7 +557,7 @@ while iterate
     %----------------------------------------------------------------------    
     % this section computes the Hessian matrix for routines that need it
     % (Newton, GaussNewton, Trust) - but since matrix Q0 contains the
-    % features we aim to fit on this iteration, H = J*Q*J' gives us a
+    % features we aim to fit on this iteration, fitting the gradients to this gives us a
     % weighted Hessian that links the E-step with a corresponding
     % maximisation
 
@@ -580,35 +582,57 @@ while iterate
             padQ = size(JJ,2) - length(Q0);
             Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
     
-            for i = 1:size(JJ,1); 
-                JJ(i,:) = JJ(i,:)./norm(JJ(i,:)); 
-            end
+            %for i = 1:size(JJ,1); 
+            %    JJ(i,:) = JJ(i,:)./norm(JJ(i,:)); 
+            %end
 
             if ahyper
-                Q0 = Q0 + aopt.B'*diag(aopt.ah)*aopt.B;
+                B = aopt.B'*diag(aopt.ah)*aopt.B;
             end
 
+            warning off;
+            bJ = JJ'\Q0;
+            JJ = JJ.*bJ;
+            warning on;
+
+
+            [L,D] = ldl_smola(JJ,ones(size(JJ,1),1));
+            L = denan(L);
+            D = denan(D);
+            HQ = L*D*L';
 
             % Hessian
-            for i = 1:np
-               for j = 1:np
-                   JJ(i,:) = denan(JJ(i,:));
-                   JJ(j,:) = denan(JJ(j,:));
-                   HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-               end
-            end
+            %for i = 1:np
+            %   for j = 1:np
+            %       JJ(i,:) = denan(JJ(i,:));
+            %       JJ(j,:) = denan(JJ(j,:));
+            %       HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+            %   end
+            %end
         
         elseif aopt.ahyper_p
 
             % when ahyper_p hyperparameter tuning is active
-            for i = 1:np
-               for j = 1:np
-                   JJ(i,:) = denan(JJ(i,:));
-                   JJ(j,:) = denan(JJ(j,:));
-                   B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
-                   HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
-               end
-            end
+            Q0 = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+            warning off;
+            bJ = JJ'\Q0;
+            JJ = bJ;% JJ.*bJ;
+            warning on;
+
+
+            [L,D] = ldl_smola(JJ,ones(size(JJ,1),1));
+            L = denan(L);
+            D = denan(D);
+            HQ = L*D*L';
+
+            %for i = 1:np
+               %for j = 1:np
+                   %JJ(i,:) = denan(JJ(i,:));
+                   %JJ(j,:) = denan(JJ(j,:));
+                   %B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+                   %HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
+               %end
+            %end
 
         else
             % Hessian
@@ -623,10 +647,13 @@ while iterate
 
         end
 
+      
+
         %normalise out magnitudes
-        ah = ones(size(HQ,2),1);
-        [L,D] = ldl_smola(HQ,ah);
-        HQ = L*(D./sum(diag(D)))*L';
+        %ah = ones(size(HQ,2),1);
+        %ah = red;
+        %[L,D] = ldl_smola(HQ,ah);
+        %HQ = L*(D./sum(diag(D)))*L';
         
     end
 
@@ -707,6 +734,25 @@ while iterate
         % For most methods, compute dx using subfun...
         dx   = compute_dx(x1,a,J./norm(J),red,search_method,params);  
         gdx  = dx; % simple gradient descent step to fallback on
+
+
+        % alex toying around with using a basis-set fit to residuals as a
+        % method for choosing parameter steps
+        fit_resid = 0;
+        if fit_resid
+            [~,~,~,mp]  = obj(x1,params);
+            residual    = y(:) - mp(:);
+
+            B  = gaubasis(length(residual),8);
+            b  = B'\residual;
+            
+            newstep = (aopt.J*B'*b);
+            newstep = newstep./norm(newstep);
+
+            dx = x1 + newstep;
+
+        end
+
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
          %-----------------------------------------------------------------
@@ -1120,7 +1166,7 @@ while iterate
                     if obj(gddx,params) < obj(ddx,params)
                         dx  = gddx;
                         gpi = ones(1,length(x0));
-                        fprintf('Switched some params from GN to GD\n');
+                        fprintf('Switched some params (N=%d) from GN to GD\n',length(swap));
                     end
 
                 end
@@ -1815,7 +1861,7 @@ function f = setfig()
 %figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
 %figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 910 842];
 figpos = get(0,'defaultfigureposition');
-figpos = figpos + [0 0 500 1000];
+figpos = figpos + [0 0 350 1000];
 
 %1          87        1024        1730
 
@@ -2368,12 +2414,17 @@ if aopt.ahyper
     end
 
     % construct error basis set
-    %B  = gaubasis(length(Y),N);
-    B = atcm.fun.agauss_smooth_mat(Y,1);
+    B  = gaubasis(length(Y),N);
+    
+
+    warning off;
+    %B = atcm.fun.agauss_smooth_mat(Y,1);
+
     b = B'\y;
     B = b.*B;
     B = B(1:N,:);
-
+    warning on;
+    
     pr = B;
 
     for pp = 1:size(pr,1)
@@ -2403,23 +2454,24 @@ if aopt.ahyper
     end
 
     % update by Newton step
-    dh      = step * (dFdQQ\dFdQ);
+    dh       = step*spm_dx(dFdQQ,dFdQ,{-4});
+    %dh      = step * (dFdQQ\dFdQ);
     dh      = denan(dh);
     ah      = ah + dh;
     aopt.ah = ah;
     aopt.B  = B;
 
-    if isfield(params.aopt,'n');%params.aopt.n > 1
-        % plot it too
-        sx=subplot(5,3,14); imagesc(real(B'*diag(ah)*B));
-        drawnow;
-        ax = gca;
-        ax.XGrid = 'on';
-        ax.YGrid = 'on';
-        sx.YColor = [1 1 1];
-        sx.XColor = [1 1 1];
-        sx.Color  = [.3 .3 .3];
-    end
+    % if isfield(params.aopt,'n');%params.aopt.n > 1
+    %     % plot it too
+    %     sx=subplot(5,3,14); imagesc(real(B'*diag(ah)*B));
+    %     drawnow;
+    %     ax = gca;
+    %     ax.XGrid = 'on';
+    %     ax.YGrid = 'on';
+    %     sx.YColor = [1 1 1];
+    %     sx.XColor = [1 1 1];
+    %     sx.Color  = [.3 .3 .3];
+    % end
 
 end
 
@@ -2602,36 +2654,11 @@ switch lower(method)
                         
         case 'gaussfe'
 
-            % % 
-            % dgY = VtoGauss(real(Y));
-            % dgy = VtoGauss(real(y));
-            % 
-            % Dg   = (dgY - dgy);
-            % e    = Dg*Dg';
-            % 
-            % % peaks?
-            % p0  = atcm.fun.indicesofpeaks(real(Y));
-            % p1  = atcm.fun.indicesofpeaks(real(y));
-            % dp = cdist(p0(:),p1(:));
-            % if isvector(dp)
-            %     dp = diag(dp);
-            % end
-            % 
-            % e   = e * trace(diag(diag(dp)));
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
 
-
-            %dgY  = VtoGauss(real((Y)));
-            %dgy  = VtoGauss(real((y)));      
-            %Dg   = (dgY - dgy).^2;
-            %e    = norm(Dg*iS*Dg','fro');
-
-            dgY  = VtoGauss(real((Y)));
-            dgy  = VtoGauss(real((y)));      
-            Dg   = (dgY - dgy).^2;
-
-            e = (iS.*(dgY - dgy).^2)/Y(:)';
-
-            e = norm(e,'fro');
+            Dg  = dgY - dgy;
+            e   = trace(Dg*iS*Dg'); 
 
             % peaks?
             p0  = atcm.fun.indicesofpeaks(real(Y));
@@ -2652,9 +2679,6 @@ switch lower(method)
             e   = abs(e) * abs(peake);
 
 
-
-
-    
             L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
            
@@ -2857,8 +2881,39 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-            e   = trace(Dg*iS*Dg');           
+            e   = trace(Dg*iS*Dg');         
+
+
+    case {'gauss_trace_peaks'}
+
+            % first  pass gauss error
+            %dgY = QtoGauss(real(Y),12*2);
+            %dgy = QtoGauss(real(y),12*2);
+
+            dgY = VtoGauss(real(Y));
+            dgy = VtoGauss(real(y));
+
+            Dg  = dgY - dgy;
+            e   = trace(Dg*iS*Dg');     
             
+            % peaks?
+            p0  = atcm.fun.indicesofpeaks(real(Y));
+            p1  = atcm.fun.indicesofpeaks(real(y));
+            dp  = cdist(p0(:),p1(:));
+            if isvector(dp)
+                dp = abs(diag(dp));
+            end
+
+            dp = denan(dp);
+
+            peake = trace(diag(diag(dp)));
+
+            peake = denan(peake);
+            peake = abs(peake);
+            peake = max(peake,1/2);
+
+            e   = abs(e) * abs(peake);
+
 
         case 'gaussv'
 
@@ -3392,11 +3447,16 @@ if nargout == 2 || nargout == 7
         % [A,W] = aica(J',nk);
         % J = W'*A';
 
+
         % Gaussian smoothing along oputput vector
         for i = 1:size(J,1)
             %J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
            % J(i,:) = atcm.fun.awinsmooth(J(i,:),3);
-            J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
+            
+           J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
+
+            %J(i,:) = agauss_smooth(J(i,:),2);
+
             %J(i,:) = atcm.fun.gausvdpca(J(i,:)',8,20);
 %           [QM,GL] = AGenQn(J(i,:),8);
 %           %J(i,:) = J(i,:)*QM;
@@ -3608,6 +3668,7 @@ switch search_method
         if aopt.factorise_gradients
             a = ones(size(J,2),1);
             [L,D] = ldl_smola(J',a);
+
             dFdpp = -(L*(D./sum(diag(D)))*L');
         else
             dFdpp  = -(J'*J);

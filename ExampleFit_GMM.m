@@ -39,6 +39,9 @@ V(3:4)=1/16;
 
 %V = V*8;
 
+%g = @(x0) atcm.fun.gausserror(Y,f(x0));
+%[x0,ex]=agpropt(g,x0,V,128);
+
 % Setting up the optimiser
 %-------------------------------------------------------------
 op = AO('options');  % this returns the optimiser input options structure
@@ -77,7 +80,8 @@ op.DoEM=0;
 
 op.do_gpr=0; % dont do gaussian process regression to learn Jac
 op.hypertune=1; % do hypertuning 
-op.rungekutta=6; % do an RK-line search
+op.agproptls=0;
+op.rungekutta=8; % do an RK-line search
 op.dopowell=1;
 op.wolfelinesearch=0;
 %op.bayesoptls=6;
@@ -85,6 +89,7 @@ op.updateQ=1; % update the precision matrix on each iteration
 op.Q = eye(length(w));
 
 op.nocheck=0;
+
 
 % % since I know y is a low-rank 1D GMM, I can set Q to have only 8 comps
 % NC = 12;

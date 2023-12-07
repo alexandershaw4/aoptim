@@ -468,6 +468,7 @@ while iterate
         aopt.pp = x0(:);
     end
 
+
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
     aopt.updatej  = true; aopt.updateh = true; params.aopt  = aopt;
@@ -1220,7 +1221,7 @@ while iterate
 
         end
 
-
+ 
 
         if wolfelinesearch
 
@@ -1265,7 +1266,7 @@ while iterate
         % gradient landed us? --> a restricted line-search around our
         % landing spot could identify a better update
 
-        if rungekutta > 0 || bayesoptls > 0
+        if rungekutta > 0 || bayesoptls > 0 || agproptls > 0
             
                         
             % Make the U/L bounds proportional to the probability over the
@@ -1349,7 +1350,26 @@ while iterate
                 end
                 if verbose; pupdate(loc,n,nfun,de,e1,'BLSfini',toc); end
 
-            end
+            elseif agproptls
+
+                pupdate(loc,n,nfun,de,e1,'Surlnsr',toc);
+
+                if n > 1
+                    pp  = [cat(2,Hist.p{:})];
+                else
+                    pp = x0;
+                end
+
+                [ddx,ex]=agpropt(@(x) obj(x,params),dx,red,agproptls,[],pp);
+
+                if obj(ddx,params) < obj(dx,params)
+                    dx = ddx;
+                    de = ex;
+                else
+                    fprintf('SurOpt Fail\n');
+                end
+
+           end
         end
 
         
@@ -1861,7 +1881,7 @@ function f = setfig()
 %figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 710 842];
 %figpos = get(0,'defaultfigureposition').*[1 1 0 0] + [0 0 910 842];
 figpos = get(0,'defaultfigureposition');
-figpos = figpos + [0 0 350 1000];
+figpos = figpos + [0 0 200 1000];
 
 %1          87        1024        1730
 
@@ -2660,23 +2680,25 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = trace(Dg*iS*Dg'); 
 
-            % peaks?
-            p0  = atcm.fun.indicesofpeaks(real(Y));
-            p1  = atcm.fun.indicesofpeaks(real(y));
-            dp  = cdist(p0(:),p1(:));
-            if isvector(dp)
-                dp = abs(diag(dp));
-            end
-
-            dp = denan(dp);
-
-            peake = trace(diag(diag(dp)));
-
-            peake = denan(peake);
-            peake = abs(peake);
-            peake = max(peake,1/2);
-
-            e   = abs(e) * abs(peake);
+            
+            % 
+            % % peaks?
+            % p0  = atcm.fun.indicesofpeaks(real(Y));
+            % p1  = atcm.fun.indicesofpeaks(real(y));
+            % dp  = cdist(p0(:),p1(:));
+            % if isvector(dp)
+            %     dp = abs(diag(dp));
+            % end
+            % 
+            % dp = denan(dp);
+            % 
+            % peake = trace(diag(diag(dp)));
+            % 
+            % peake = denan(peake);
+            % peake = abs(peake);
+            % peake = max(peake,1/2);
+            % 
+            % e   = abs(e) * abs(peake);
 
 
             L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
@@ -3995,6 +4017,7 @@ X.steps_choice = [];
 
 X.rungekutta = 8;
 X.wolfelinesearch=0;
+X.agproptls = 0;
 X.memory_optimise = 0;
 X.updateQ = 1;
 X.crit = [0 0 0 0 0 0 0 0];
@@ -4018,6 +4041,7 @@ X.bayesoptls=0;
 X.DoEM=0;
 X.dopowell=0;
 
+X.alex_mvn_ls = 0;
 
 X.makevideo = 0;
 

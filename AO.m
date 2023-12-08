@@ -737,22 +737,22 @@ while iterate
         gdx  = dx; % simple gradient descent step to fallback on
 
 
-        % alex toying around with using a basis-set fit to residuals as a
-        % method for choosing parameter steps
-        fit_resid = 0;
-        if fit_resid
-            [~,~,~,mp]  = obj(x1,params);
-            residual    = y(:) - mp(:);
-
-            B  = gaubasis(length(residual),8);
-            b  = B'\residual;
-            
-            newstep = (aopt.J*B'*b);
-            newstep = newstep./norm(newstep);
-
-            dx = x1 + newstep;
-
-        end
+        % % alex toying around with using a basis-set fit to residuals as a
+        % % method for choosing parameter steps
+        % fit_resid = 0;
+        % if fit_resid
+        %     [~,~,~,mp]  = obj(x1,params);
+        %     residual    = y(:) - mp(:);
+        % 
+        %     B  = gaubasis(length(residual),8);
+        %     b  = B'\residual;
+        % 
+        %     newstep = (aopt.J*B'*b);
+        %     newstep = newstep./norm(newstep);
+        % 
+        %     dx = x1 + newstep;
+        % 
+        % end
 
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
@@ -889,19 +889,30 @@ while iterate
             if n == 1; mu = 1e-2; end
 
             % Norm Hessian
-            H = HQ;%./norm(HQ);
+            H = HQ./norm(HQ);
             
             % get residual vector
-            [~,~,res]  = obj(x1,params);
+            [~,~,res,~]  = obj(x1,params);
 
             % components
-            Jx  = aopt.J;% ./ norm(aopt.J);
-            res = res./norm(res);
-            ipC = diag(red);
+            if order == 1
+                Jx  = aopt.J ;%./ norm(aopt.J);
+            elseif order == 2
+                Jx = cat(2,params.aopt.Jo{:,3});
+                Jx = denan(Jx);
+                %Jx = Jx ./ norm(Jx);
+                JJ = zeros(length(x0*0),size(Jx,1));
+                ic = find(diag(pC));
+                JJ(ic,:) = Jx';
+                Jx = JJ;
+            end
 
             for i = 1:size(JJ,1); 
-                Jx(i,:) = Jx(i,:)./norm(Jx(i,:)); 
+                Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
             end
+            
+            res = res ./ norm(res);
+            ipC = diag(red);%spm_inv(score);
 
             if n == 1; del = 1;  end
 
@@ -2679,7 +2690,6 @@ switch lower(method)
 
             Dg  = dgY - dgy;
             e   = trace(Dg*iS*Dg'); 
-
             
             % 
             % % peaks?
@@ -2903,7 +2913,8 @@ switch lower(method)
             dgy = VtoGauss(real(y));
 
             Dg  = dgY - dgy;
-            e   = trace(Dg*iS*Dg');         
+            e   = trace(Dg*iS*Dg');  
+
 
 
     case {'gauss_trace_peaks'}

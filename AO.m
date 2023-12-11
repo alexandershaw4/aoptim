@@ -2691,25 +2691,7 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = trace(Dg*iS*Dg'); 
             
-            % 
-            % % peaks?
-            % p0  = atcm.fun.indicesofpeaks(real(Y));
-            % p1  = atcm.fun.indicesofpeaks(real(y));
-            % dp  = cdist(p0(:),p1(:));
-            % if isvector(dp)
-            %     dp = abs(diag(dp));
-            % end
-            % 
-            % dp = denan(dp);
-            % 
-            % peake = trace(diag(diag(dp)));
-            % 
-            % peake = denan(peake);
-            % peake = abs(peake);
-            % peake = max(peake,1/2);
-            % 
-            % e   = abs(e) * abs(peake);
-
+            
 
             L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
@@ -2914,7 +2896,6 @@ switch lower(method)
 
             Dg  = dgY - dgy;
             e   = trace(Dg*iS*Dg');  
-
 
 
     case {'gauss_trace_peaks'}
@@ -3486,7 +3467,11 @@ if nargout == 2 || nargout == 7
             %J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
            % J(i,:) = atcm.fun.awinsmooth(J(i,:),3);
             
+           %S = [min(J(i,:)) max(J(i,:))];
            J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
+           %J(i,:) = rescale(J(i,:),S(1),S(2));
+
+           %J(i,:) = gauseriesfit(J(i,:));
 
             %J(i,:) = agauss_smooth(J(i,:),2);
 

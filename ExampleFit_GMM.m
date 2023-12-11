@@ -53,7 +53,6 @@ op.V   = V(:);       % corresponding vars/step sizes for each param (x0)
 
 op.maxit        = 16; % maximum number of iterations
 op.inner_loop   = 10;
-op.DoMLE        = 0; % do use MLE for param estimation
 op.ismimo       = 1; % compute jacobian on full model output not objective
 op.hyperparams  = 1; % estimate noise hyperparameters
 op.im           = 1; % use momentum acceleration
@@ -69,14 +68,11 @@ op.ahyper=1;
 
 op.criterion  = -inf; 1e-3;
 op.doparallel = 0; % compute stuff using parfor
-op.DoMLE=0;
 op.factorise_gradients = 0; % factorise/normalise grads
 op.normalise_gradients=0;
 op.objective='gauss_trace';%'gauss_trace';%'mvgkl';%'log_mvgkl';%'mvgkl'; % set objective fun: multivariate gaussian KL div
 op.EnforcePriorProb=0;
 op.order=1; % second order gradients
-%
-op.DoEM=0;
 
 op.do_gpr=0; % dont do gaussian process regression to learn Jac
 op.hypertune=1; % do hypertuning 
@@ -125,7 +121,7 @@ op.crit = [0 0 0 0];
 op.save_constant = 0;
 
 op.isNewton=0;
-op.isGaussNewton=0;
+op.isGaussNewton=1;
 op.isQuasiNewton=0;
 op.isNewtonReg=0;
 op.isTrust=0;

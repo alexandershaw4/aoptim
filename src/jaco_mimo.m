@@ -121,6 +121,9 @@ f0 = cell(1,nout);
 fx = f0;
 f1 = f0;
 
+ff = f1;
+
+
 %f0    = spm_cat( feval(IS,P) );
 %fx    = f0(:);
 
@@ -203,6 +206,10 @@ if ismember(order,[1 2 3 4])
                 
                 
             end
+
+        else
+            j(i,:) = spm_unvec(spm_vec(ff)*0,ff);
+            j1(i,:) = j(i,:);
         end
     end
     

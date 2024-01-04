@@ -27,7 +27,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % as such output y is formed (approximated) by a sum of multiple, univariate 
 % Gaussians (a 1D GMM). The Gauss objective is formally:
-% 
+%  
 %    D = Gfun(Y) - Gfun(f(x))
 %    e = norm(D*D','fro');
 %
@@ -324,7 +324,16 @@ end
 %--------------------------------------------------------------------------
 aopt.x0x0    = x0;
 aopt.order   = order;    % first or second order derivatives [-1,0,1,2]
-aopt.fun     = fun;      % (objective?) function handle
+
+if isDynamicalSS
+    % fun is fun(P,M)
+    rfun = fun;
+    fun  = @(P) rfun(P,M);
+    aopt.fun = fun;
+else
+    aopt.fun     = fun;      % (objective?) function handle
+end
+
 aopt.yshape  = y;
 aopt.y       = y(:);     % truth / data to fit
 aopt.pp      = x0(:);    % starting parameters
@@ -386,6 +395,7 @@ red_x0       = red;
 % initial probs
 aopt.pt = zeros(length(x0),1) + (1/length(x0));
 params.aopt = aopt;
+    
 
 % initial objective value (approx at this point as missing covariance data)
 [e0]       = obj(x0,params);
@@ -468,6 +478,28 @@ while iterate
         aopt.pp = x0(:);
     end
 
+    % is optimising parameters of a state-space dynamical system, find a
+    % fixed point in the system at the beginning of each optimisation
+    % iteration
+    %----------------------------------------------------------------------
+    if isDynamicalSS    
+
+        k = 1e-6;
+
+        if n > 1
+            fprintf('Search for fixed point...\n');
+
+            % trigger the fixed-point (Newton-Raphson) search function
+            FPSS = atcm.fun.alexfixed(spm_unvec(x0,M.pE),M,k);
+            M.x  = spm_unvec(FPSS,M.x);
+            % update function handles with new points
+            fun  = @(P)rfun(P,M);
+            aopt.fun = fun;
+            params.aopt.fun = fun;
+            e0 = obj(x0,params);
+        end
+
+    end
 
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
@@ -483,12 +515,19 @@ while iterate
     df0 = real(df0);
        
     if normalise_gradients
-        df0 = df0./norm(df0);
+        if ~ismimo
+            df0 = df0./norm(df0);
+        elseif ismimo
+            df0 = df0./norm(df0);
+            for i = 1:size(params.aopt.J,1);
+                params.aopt.J(i,:) = params.aopt.J(i,:)./norm(params.aopt.J(i,:)); 
+                params.aopt.J(i,:) = denan(params.aopt.J(i,:));
+            end
+        end
     end
     
     % catch instabilities in the gradient - ie explosive parameters
     df0(isinf(df0)) = 0;
-
 
     % also get gradient of hyperparameters
     if aopt.ahyper_p
@@ -675,11 +714,6 @@ while iterate
         J = -df0(:);
     end
 
-    if search_method == 10
-        fprintf('using hyperparameter-weighted gradient step\n');
-        J = (nJ./norm(nJ))*J;
-    end
-
     if verbose;
         if search_method ~= 6
             pupdate(loc,n,0,e0,e0,'stp-fin',toc);
@@ -693,6 +727,9 @@ while iterate
     Hist.p{n} = x0;
     Hist.J{n} = df0;
     Hist.a{n} = a;
+
+    % update error plot
+    errordot(Hist.e)
     
     if ismimo
         Hist.Jfull{n} = aopt.J;
@@ -736,24 +773,11 @@ while iterate
         dx   = compute_dx(x1,a,J./norm(J),red,search_method,params);  
         gdx  = dx; % simple gradient descent step to fallback on
 
-
-        % % alex toying around with using a basis-set fit to residuals as a
-        % % method for choosing parameter steps
-        % fit_resid = 0;
-        % if fit_resid
-        %     [~,~,~,mp]  = obj(x1,params);
-        %     residual    = y(:) - mp(:);
-        % 
-        %     B  = gaubasis(length(residual),8);
-        %     b  = B'\residual;
-        % 
-        %     newstep = (aopt.J*B'*b);
-        %     newstep = newstep./norm(newstep);
-        % 
-        %     dx = x1 + newstep;
-        % 
-        % end
-
+        %if aopt.ahyper_p
+        %    betax = (aopt.J'\aopt.B')*aopt.ah;
+        %    betax = betax ./ norm(betax);
+        %    dx    = x1 - red.*betax;
+        %end
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
          %-----------------------------------------------------------------
@@ -872,105 +896,106 @@ while iterate
             dx     = x1 - red.*spm_dx(-dFdpp,-dFdp,{4}); 
 
             GNStep = dx;
+            de  = obj(dx,params);
 
         end
                      
-        % For almost-linear systems, a lsq fit of the partial gradients to
-        % the data would give an estimate of the parameter update
-        %------------------------------------------------------------------
-        if lsqjacobian
-            jx = aopt.J'\y;
-            dx = x1 - jx;
-        end
-
-        % a Trust-Region method (a variation on GN scheme)
-        %------------------------------------------------------------------
-        if isTrust && ismimo
-            if n == 1; mu = 1e-2; end
-
-            % Norm Hessian
-            H = HQ./norm(HQ);
-            
-            % get residual vector
-            [~,~,res,~]  = obj(x1,params);
-
-            % components
-            if order == 1
-                Jx  = aopt.J ;%./ norm(aopt.J);
-            elseif order == 2
-                Jx = cat(2,params.aopt.Jo{:,3});
-                Jx = denan(Jx);
-                %Jx = Jx ./ norm(Jx);
-                JJ = zeros(length(x0*0),size(Jx,1));
-                ic = find(diag(pC));
-                JJ(ic,:) = Jx';
-                Jx = JJ;
-            end
-
-            for i = 1:size(JJ,1); 
-                Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
-            end
-            
-            res = res ./ norm(res);
-            ipC = diag(red);%spm_inv(score);
-
-            if n == 1; del = 1;  end
-
-            % solve trust problem
-            d  = subproblem(H,J,del);
-            dr = J' * d + (1/2) * d' * H * d;
-        
-            if n == 1; r   = dr; end
-
-            % evaluate
-            fx0 = obj(x1,params);
-            fx1 = obj(x1 - d,params);
-            rk  = (fx1 - fx0) / max((dr - r),1);
-
-            % adjust radius of trust region
-            rtol = 0;
-            if rk < rtol;  del = 1.2 * del;           
-            else;          del = del * .8;
-            end
-
-            % accept update
-            if fx1 < fx0
-                pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
-                dx = x1 - d;
-                %dx = fixbounds(dx,x1,red);
-                r  = dr;
-            end
-
-            % essentially the GN routine with a constraint [d]
-            % d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
-            % d     = d ./ norm(d);
-            % dFdpp = (d*d') - ipC;
-            % dFdp  = Jx * res - ipC * x1;
-            % dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
-
-            %dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
-            mu  = mu * 2;
-
-        end
-
-        % Compare steps if N and GN are both selected
-        %---------------------------------------------------------------
-        if isNewton && isGaussNewton
-            % compare N, GN and vanilla;
-            ec(1) = obj(gdx,params);
-            ec(2) = obj(NewtonStep,params);
-            ec(3) = obj(GNStep,params);
-
-            [~,win] = min(ec);
-
-            if win == 1
-                fprintf('Selected GD\n'); dx = gdx;
-            elseif win == 2
-                fprintf('Selected Newton\n'); dx = NewtonStep;
-            elseif win == 3
-                fprintf('Selected G-N\n'); dx = GNStep;
-            end
-        end
+        % % For almost-linear systems, a lsq fit of the partial gradients to
+        % % the data would give an estimate of the parameter update
+        % %------------------------------------------------------------------
+        % if lsqjacobian
+        %     jx = aopt.J'\y;
+        %     dx = x1 - jx;
+        % end
+        % 
+        % % a Trust-Region method (a variation on GN scheme)
+        % %------------------------------------------------------------------
+        % if isTrust && ismimo
+        %     if n == 1; mu = 1e-2; end
+        % 
+        %     % Norm Hessian
+        %     H = HQ./norm(HQ);
+        % 
+        %     % get residual vector
+        %     [~,~,res,~]  = obj(x1,params);
+        % 
+        %     % components
+        %     if order == 1
+        %         Jx  = aopt.J ;%./ norm(aopt.J);
+        %     elseif order == 2
+        %         Jx = cat(2,params.aopt.Jo{:,3});
+        %         Jx = denan(Jx);
+        %         %Jx = Jx ./ norm(Jx);
+        %         JJ = zeros(length(x0*0),size(Jx,1));
+        %         ic = find(diag(pC));
+        %         JJ(ic,:) = Jx';
+        %         Jx = JJ;
+        %     end
+        % 
+        %     for i = 1:size(JJ,1); 
+        %         Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
+        %     end
+        % 
+        %     res = res ./ norm(res);
+        %     ipC = diag(red);%spm_inv(score);
+        % 
+        %     if n == 1; del = 1;  end
+        % 
+        %     % solve trust problem
+        %     d  = subproblem(H,J,del);
+        %     dr = J' * d + (1/2) * d' * H * d;
+        % 
+        %     if n == 1; r   = dr; end
+        % 
+        %     % evaluate
+        %     fx0 = obj(x1,params);
+        %     fx1 = obj(x1 - d,params);
+        %     rk  = (fx1 - fx0) / max((dr - r),1);
+        % 
+        %     % adjust radius of trust region
+        %     rtol = 0;
+        %     if rk < rtol;  del = 1.2 * del;           
+        %     else;          del = del * .8;
+        %     end
+        % 
+        %     % accept update
+        %     if fx1 < fx0
+        %         pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
+        %         dx = x1 - d;
+        %         %dx = fixbounds(dx,x1,red);
+        %         r  = dr;
+        %     end
+        % 
+        %     % essentially the GN routine with a constraint [d]
+        %     % d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
+        %     % d     = d ./ norm(d);
+        %     % dFdpp = (d*d') - ipC;
+        %     % dFdp  = Jx * res - ipC * x1;
+        %     % dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
+        % 
+        %     %dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
+        %     mu  = mu * 2;
+        % 
+        % end
+        % 
+        % % Compare steps if N and GN are both selected
+        % %---------------------------------------------------------------
+        % if isNewton && isGaussNewton
+        %     % compare N, GN and vanilla;
+        %     ec(1) = obj(gdx,params);
+        %     ec(2) = obj(NewtonStep,params);
+        %     ec(3) = obj(GNStep,params);
+        % 
+        %     [~,win] = min(ec);
+        % 
+        %     if win == 1
+        %         fprintf('Selected GD\n'); dx = gdx;
+        %     elseif win == 2
+        %         fprintf('Selected Newton\n'); dx = NewtonStep;
+        %     elseif win == 3
+        %         fprintf('Selected G-N\n'); dx = GNStep;
+        %     end
+        % end
 
         % Probabilities Section
         %---------------------------------------------------------------
@@ -1084,38 +1109,50 @@ while iterate
             % so we can take bigger steps for those parameters
             imom = sum( diff(full(spm_cat(Hist.p))')' > 0 ,2);
             dmom = sum( diff(full(spm_cat(Hist.p))')' < 0 ,2);
-            
+
             timom = imom >= (2);
             tdmom = dmom >= (2);
-            
+
             moments = (timom .* imom) + (tdmom .* dmom);
-            
+
             if any(moments)
                 % parameter update
                 ddx = dx - x1;
                 dx  = dx + ( ddx .* (moments./n) );
             end
         end
-        
-        % Given (gradient) predictions, dx[i..n], optimise obj(dx)
-        % Either by:
-        % (1) just update all parameters
-        % (2) update all parameters whose updated value improves obj
-        % (3) update only parameters whose probability exceeds a threshold
-        %------------------------------------------------------------------
+        % 
+        % 
+        % % check flip direction;
+        % %------------------------------------------------------------------
+        % % fdx = dx - x1;
+        % % idx = x1 - fdx;
+        % % 
+        % % if obj(idx,params) < obj(dx,params)
+        % %     %fprintf('Flipping direction of update...\n');
+        % %     dx = idx;
+        % % end
+        % % 
+        % % Given (gradient) predictions, dx[i..n], optimise obj(dx)
+        % % Either by:
+        % % (1) just update all parameters
+        % % (2) update all parameters whose updated value improves obj
+        % % (3) update only parameters whose probability exceeds a threshold
+        % %------------------------------------------------------------------
         aopt.updatej = false; % switch off objective fun triggers
         aopt.updateh = false;
         params.aopt  = aopt;
-        
+
         if (obj(dx,params) < obj(x1,params) && ~aopt.forcels) || nocheck
             % Don't perform checks, assume all f(dx[i]) <= e1
             % i.e. full gradient prediction over parameters is good and we
             % don't want to be explicitly Bayesian about it ...
-            gp  = ones(1,length(x0));
-            gpi = 1:length(x0);
+            ipp = find(pC);
+            gp  = ones(1,length(ipp));
+            gpi = ipp;
             de  = obj(dx,params);
-            DFE = ones(1,length(x0))*de;
-            
+            DFE = ones(1,length(ipp))*de;
+
         else
 
             pupdate(loc,n,nfun,e1,e1,'f: eval',toc);
@@ -1146,21 +1183,21 @@ while iterate
                         end
                     end
                 end
-                
+
                 DFE  = real(DFE(:));
-                
+
                 if givetol;
                             etol = 1./1+exp(1./(n))/(maxit*2);
                 else;       etol = 0;
                 end
-                
+
                 % Identify improver-parameters
                 if nfun == 1
                     gp  = double(DFE <= (e0+abs(etol))); % e0
                 else
                     gp  = double(DFE <= (e1+abs(etol))); % e0
                 end
-                
+
                 gpi = find(gp);
 
                % if GN and some didn't work, switch those parameters onto
@@ -1183,15 +1220,15 @@ while iterate
 
                 end
 
-                
+
                 if isempty(gp)
                     gp  = ones(1,length(x0));
                     gpi = find(gp);
                     DFE = ones(1,length(x0))*de;
                 end
-                
+
             end
-            
+
             % end of assessment 
             ddx        = x0;
             ddx(gpi)   = dx(gpi);
@@ -1200,21 +1237,21 @@ while iterate
 
         end    
 
-        % Powell line search option
+        %Powell line search option
         %---------------------------------------------------------------
         if dopowell && ismimo
             pupdate(loc,n,nfun,e1,e1,'f:powel',toc);
 
-            Jx = cat(2,params.aopt.Jo{:,3});
+            Jx = JJ;%cat(2,params.aopt.Jo{:,3});
             Jx = denan(Jx);
             Jx = Jx ./ norm(Jx);
-            JJ = zeros(length(x0*0),size(Jx,1));
-            ic = find(diag(pC));
-            if length(find(sum(Jx))) ~= length(x0)
-                JJ(ic,:) = Jx';
-            else
-                JJ = Jx';
-            end
+            %JJ = zeros(length(x0*0),size(Jx,1));
+            %ic = find(diag(pC));
+            %if length(find(sum(Jx))) ~= length(x0)
+            %    JJ(ic,:) = Jx';
+            %else
+            %    JJ = Jx';
+            %end
 
             try
                 [pdx,pde] = spm_powell_a(dx,denan(JJ),1,@(x) obj(x,params),8);
@@ -1232,41 +1269,42 @@ while iterate
 
         end
 
- 
+        % if wolfelinesearch
+        % 
+        %     pupdate(loc,n,nfun,e1,e1,'f:wolfe',toc);
+        % 
+        %     funx = @(x) obj(x,params);
+        %     f0   = funx(dx);
+        %     %L = lineSearch(funx,dx,red,'wolfe',f0,J);  
+        %     L = lineSearch(funx,dx,J,'golden',[],[],'directionSwitch',true,'c1',0.2,'c2',1e-9);
+        % 
+        %     [xout,fval,stepSize] = L.solve;
+        % 
+        %     if ~isempty(xout);
+        %         dx = xout(:);
+        %         de = fval;
+        %         red = red*stepSize;
+        %     end
+        % 
+        %   % Help for lineSearch
+        %   % Inputs
+        %   %   - fun : function handle for multi-variable objective function
+        %   %   - x0  : Vector containing the initial point in the design space
+        %   %   - d   : Vector containing the search direction which minimized the objective function
+        %   %   - method(string)  : - none: x = x0 + d
+        %   %                     : - wolfe: line search method which satisfies the strong
+        %   %                         wolfe conditions. Based on the method outline in 
+        %   %                         Numerical Optimization by Nocedal and Wright, 
+        %   %                         second edition, page 60, algorithm 3.5
+        %   %                       - golden: Golden Sections method
+        %   %                       - backtrack: Simple backtracking method. One of the convergence
+        %   %                         criteria is the Armijo-Goldstein condition
+        % 
+        % end
 
-        if wolfelinesearch
 
-            pupdate(loc,n,nfun,e1,e1,'f:wolfe',toc);
-
-            funx = @(x) obj(x,params);
-            f0   = funx(dx);
-            %L = lineSearch(funx,dx,red,'wolfe',f0,J);  
-            L = lineSearch(funx,dx,J,'golden',[],[],'directionSwitch',true,'c1',0.2,'c2',1e-9);
-        
-            [xout,fval,stepSize] = L.solve;
-
-            if ~isempty(xout);
-                dx = xout(:);
-                de = fval;
-                red = red*stepSize;
-            end
-
-          % Help for lineSearch
-          % Inputs
-          %   - fun : function handle for multi-variable objective function
-          %   - x0  : Vector containing the initial point in the design space
-          %   - d   : Vector containing the search direction which minimized the objective function
-          %   - method(string)  : - none: x = x0 + d
-          %                     : - wolfe: line search method which satisfies the strong
-          %                         wolfe conditions. Based on the method outline in 
-          %                         Numerical Optimization by Nocedal and Wright, 
-          %                         second edition, page 60, algorithm 3.5
-          %                       - golden: Golden Sections method
-          %                       - backtrack: Simple backtracking method. One of the convergence
-          %                         criteria is the Armijo-Goldstein condition
-
-        end
-
+        % check last best x1/e1 and update dx/de
+        de = obj(dx,params);
 
 
         % runge-kutta line-search / optimisation block: fine tune dx
@@ -1277,13 +1315,25 @@ while iterate
         % gradient landed us? --> a restricted line-search around our
         % landing spot could identify a better update
 
-        if rungekutta > 0 || bayesoptls > 0 || agproptls > 0
+        if rungekutta > 0 || bayesoptls > 0 || agproptls > 0 || surrls > 0
             
+
+            % sub-problem
+            QR = atcm.fun.computereducedoperator(pC);
+            np = size(QR,1);
+
+            sp = ones(1,np)*0;
+            
+            rv = diag(QR*pC*QR');
+
+            LB = QR*dx - (QR*pt(:))./rv;
+            UB = QR*dx + (QR*pt(:))./rv;
+
                         
             % Make the U/L bounds proportional to the probability over the
             % prior variance (derived from feature scoring on jacobian)
-            LB  = denan( dx - ( pt(:)./red ) );
-            UB  = denan( dx + ( pt(:)./red ) );
+             %LB  = denan( dx - ( pt(:)./red ) );
+             %UB  = denan( dx + ( pt(:)./red ) );
             
             %LB  = denan(  (1 - pt(:)) .* (1 - sqrt(red(:))*2) );
             %UB  = denan(  (1 - pt(:)) .* (1 + sqrt(red(:))*2) );
@@ -1301,15 +1351,25 @@ while iterate
                 Max_iteration   = rungekutta;
 
                 dim = length(dx);
-                fun = @(x) obj(x,params);
+                %fun = @(x) obj(x,params);
+
+                fun = @(sp) obj((sp*QR)' + dx,params);
 
                 %ddx  = dx - x1;
-                %fun  = @(lr) obj(x1 + lr(:).*ddx,params);
+               % fun  = @(lr) obj(x1 + lr(:).*ddx,params);
                 %init = ones(size(dx));
 
+                
+
+
+
                 try
-                    [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
+                    %[Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
+                    
+                    %[Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',length(dx),fun,dx,red);
+                    [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',length(sp)',fun,sp',red(find(red)));
                     rdx = rdx(:);
+                    rdx = (rdx'*QR)' + dx;
                     dde = obj(rdx,params);
                     %dde = fun(rdx(:));
 
@@ -1321,6 +1381,29 @@ while iterate
                     end
                     if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end
                 end
+
+            elseif surrls
+                
+                fun = @(sp) obj((sp*QR)' + dx,params);
+
+                opts1 = optimoptions('surrogateopt','PlotFcn',[]);%'surrogateoptplot');
+                opts1.ObjectiveLimit = -1;%1e-3;
+                opts1.MaxFunctionEvaluations = surrls;
+                %opts1.InitialPoints=sp;
+                [rdx,F] = surrogateopt(fun,LB,UB,opts1);
+
+                rdx = rdx(:);
+                rdx = (rdx'*QR)' + dx;
+                dde = obj(rdx,params);
+
+                if dde < de
+                    dx = rdx;
+
+                    %dx = x1 + rdx(:).*ddx;
+                    de = dde;
+                end
+
+
 
             elseif bayesoptls
 
@@ -1382,15 +1465,15 @@ while iterate
 
            end
         end
-
+  
         
         % Evaluation of dx and report total parameter movement
         thisdist = cdist(dx',x1');
         if verbose; fprintf('| --> euc dist(dp) = %d\n',thisdist); end
         
-        if thisdist < 1e-4
-            break;
-        end
+        %if thisdist < 1e-4
+        %    break;
+        %end
         
         % Update global parameter and error store
         all_dx = [all_dx dx(:)];
@@ -1398,14 +1481,16 @@ while iterate
        
         % Tolerance on update error as function of iteration number
         % - this can be helpful in functions with lots of local minima
-        if givetol; 
+        if givetol == 1
                     etol = 1./1+exp(1./(n))/(maxit*2);
+        elseif givetol > 1
+                    etol = givetol;
         else;       etol = 0; 
         end
         
-        if etol ~= 0
-            inner_loop=2;
-        end
+        %if etol ~= 0
+        %    inner_loop=2;
+        %end
         
         deltap = cdist(dx',x1');
         deltaptol = 1e-6;
@@ -1504,7 +1589,7 @@ while iterate
               
         % Evaluation of the prediction(s)
         %------------------------------------------------------------------
-        if de  < ( obj(x1,params) + abs(etol) ) && (deltap > deltaptol)
+        if de  < ( obj(x1,params) + abs(etol) ) ;%&& (deltap > deltaptol)
             
             % If the objective function has improved...
             if verbose; if nfun == 1; pupdate(loc,n,nfun,de,e1,'improve',toc); end; end
@@ -1544,36 +1629,36 @@ while iterate
         e0 =  e1;
         
         % increase learning rate
-        red = red * 1.1;
+        %red = red * 1.1;
                 
         % Extrapolate...
         %==================================================================        
         
         % we know what param-step caused what improvement, so try again...
         %------------------------------------------------------------------
-        exploit = true;
-        nexpl   = 0;
-        if verbose; pupdate(loc,n,nexpl,e1,e0,'descend',toc);end
-                
-        while exploit
-            % local linear extrapolation
-            extrapx = x1+(-dp);
-            if obj(extrapx,params) < (e1+abs(etol))
-                x1    = extrapx(:);
-                e1    = obj(x1,params);
-                nexpl = nexpl + 1;
-            else
-                % if this didn't work, just stop and move on to accepting
-                % the best set from the while loop above
-                exploit = false;
-                if verbose;pupdate(loc,n,nexpl,e1,e0,'finish ',toc);end
-            end
-            
-            % upper limit on the length of this loop: no don't do this
-            if nexpl == (inner_loop)
-                exploit = false;
-            end
-        end
+        % exploit = true;
+        % nexpl   = 0;
+        % if verbose; pupdate(loc,n,nexpl,e1,e0,'descend',toc);end
+        % 
+        % while exploit
+        %     % local linear extrapolation
+        %     extrapx = x1+(-dp);
+        %     if obj(extrapx,params) < (e1+abs(etol))
+        %         x1    = extrapx(:);
+        %         e1    = obj(x1,params);
+        %         nexpl = nexpl + 1;
+        %     else
+        %         % if this didn't work, just stop and move on to accepting
+        %         % the best set from the while loop above
+        %         exploit = false;
+        %         if verbose;pupdate(loc,n,nexpl,e1,e0,'finish ',toc);end
+        %     end
+        % 
+        %     % upper limit on the length of this loop: no don't do this
+        %     if nexpl == (inner_loop)
+        %         exploit = false;
+        %     end
+        % end
         
         % Update best-so-far estimates
         e0 = e1;
@@ -1742,6 +1827,14 @@ end
 %     
 % end
 % end
+
+function errordot(e)
+
+    subplot(5,3,14);
+    plot((1:length(e))-1,e,'*',(1:length(e))-1,e);drawnow;
+    xlabel('Iteration'); ylabel('Error');
+
+end
 
 function dx = fixbounds(dx,x1,red)
 
@@ -2692,7 +2785,6 @@ switch lower(method)
             e   = trace(Dg*iS*Dg'); 
             
             
-
             L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
            
@@ -3283,7 +3375,7 @@ end
 % end
 
 % Error along output vector (when fun is a vector output function)
-er = e*( spm_vec(Y) - spm_vec(y) );
+er = ( spm_vec(Y) - spm_vec(y) );
 mp = spm_vec(y);
 
 % function e = gausscomps(Y,y,x)
@@ -3390,7 +3482,8 @@ if nargout == 2 || nargout == 7
             [J,ip,Jo] = jacopar(@obj,x0,V,0,Ord,{params});
         end
     elseif aopt.mimo == 1
-        nout   = 3;
+        nout   = 4;
+
         if ~aopt.parallel
             % option 3: dfdp, not parallel, ObjF has multiple outputs
             %----------------------------------------------------------
@@ -3399,15 +3492,23 @@ if nargout == 2 || nargout == 7
             % option 4: dfdp, parallel, ObjF has multiple outputs
             %----------------------------------------------------------
             [J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
+
+            %objfunn = @(x) obj(x,params);[J,~] = spm_diff(objfunn,x0,1);
+                    
+            %[dfdp,f] = spm_diff(IS,Ep,M,U,1,{V});
+                
+            %dfdp     = reshape(spm_vec(dfdp),ny,np);
+
         end
 
         J0     = cat(2,J{:,1})';
         J      = cat(2,J{:,nout})';
         J(isnan(J))=0;
         J(isinf(J))=0;
-        JI = zeros(length(ip),1);% Put J0 in full space
-        JI(find(ip)) = J0;
-        J0  = JI;
+        %JI = zeros(length(ip),1);% Put J0 in full space
+        %JI(find(ip)) = J0;
+        %J0  = JI;
+       % J0 = J;
     
         % % also save second derivative
         % J02     = cat(2,Jo{:,1})';
@@ -4014,6 +4115,7 @@ X.steps_choice = [];
 X.rungekutta = 8;
 X.wolfelinesearch=0;
 X.agproptls = 0;
+X.surrls = 0;
 X.memory_optimise = 0;
 X.updateQ = 1;
 X.crit = [0 0 0 0 0 0 0 0];
@@ -4041,6 +4143,9 @@ X.alex_mvn_ls = 0;
 
 X.makevideo = 0;
 
+X.isDynamicalSS=0;
+
+X.M = [];
 
 % Also check if atcm is in paths ad report
 try    atcm.fun.QtoGauss(1);

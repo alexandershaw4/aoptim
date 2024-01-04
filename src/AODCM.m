@@ -41,6 +41,8 @@ classdef AODCM < handle
     
     methods
         
+
+        
         function obj = update_parameters(obj,P)
             % after contruction, allow updating object priors
             P        = spm_unvec( spm_vec(P), obj.DCM.M.pE);
@@ -207,11 +209,22 @@ classdef AODCM < handle
             PP = spm_unvec(X0,DD.SP);
             
             if isfield(PP,'J')
-                % neural masses with a J parameter
-                PP.J(PP.J==0)=-1000;
+               % neural masses with a J parameter
+               PP.J(PP.J==0)=-1000;
             end
             
             IS   = spm_funcheck(DD.M.IS);       % Integrator
+
+            if nargin == 3 
+                if ~isstruct(varargin{1}) && varargin{1} == 1
+                    % trigger fixed-point search
+                    x0 = atcm.fun.alexfixed(PP,DD.M,1e-6);
+                    
+                    obj.DD.M.x = spm_unvec(x0,obj.DD.M.x);
+                    
+                end
+
+            end
             
             if nargout(IS) < 8
             % generic, works for all functions....
@@ -364,6 +377,20 @@ classdef AODCM < handle
             obj.CP = COVB;
             obj.F  = MSE;
             
+        end
+
+        function obj = alex_lm(obj)
+
+            funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
+
+
+            [beta,J,iter,cause,fullr] = a_lm_fit(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32)
+
+             [ff,pp]=obj.opts.fun(beta(:).*obj.opts.x0(:));
+            
+            obj.X = spm_vec(pp);
+            obj.Ep = spm_unvec(spm_vec(pp),obj.DCM.M.pE);
+
         end
         
         function F = errfun(obj,f,x)
@@ -523,6 +550,18 @@ classdef AODCM < handle
 
         end
 
+        function obj = a_optim(obj)
+           
+            fun = @(P,M) spm_vec(obj.DCM.M.IS(spm_unvec(P,obj.DCM.M.pE),obj.DCM.M,obj.DCM.xU));
+
+            x0 = spm_vec(obj.DCM.M.pE);
+            M  = obj.DCM.M;
+            V  = spm_vec(obj.DCM.M.pC);
+            y  = spm_vec(obj.DCM.xY.y);
+            
+            [x0,e] = aoptim(fun,x0,V,y)
+
+        end
 
         function agdopt(obj,N)
 

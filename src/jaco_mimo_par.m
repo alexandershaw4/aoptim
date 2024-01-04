@@ -123,6 +123,8 @@ f0 = repmat(f0,[length(P),1]);
 f1 = f0;
 j = cell(length(P),nout);
 j1=j;
+ff = f1;
+
 
 if ismember(order,[1 2 3 4])
     parfor i = 1:length(P)
@@ -172,6 +174,9 @@ if ismember(order,[1 2 3 4])
                 j(i,:)  = spm_unvec( ( (spm_vec(deriv1a) + spm_vec(deriv1b))./2 ) ./ spm_vec(deriv2a), fx);
                 
             end
+        else
+            j(i,:) = spm_unvec(spm_vec(ff{1})*0,ff{1});
+            j1(i,:) = j(i,:);
         end
     end
     

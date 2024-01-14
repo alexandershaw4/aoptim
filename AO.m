@@ -26,7 +26,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %    y(i) s.t. N(mu[i],sigma[i])
 %
 % as such output y is formed (approximated) by a sum of multiple, univariate 
-% Gaussians (a 1D GMM). The Gauss objective is formally:
+% Gaussians (a 1D GMM). Thssee Gauss objective is formally:
 %  
 %    D = Gfun(Y) - Gfun(f(x))
 %    e = norm(D*D','fro');
@@ -2726,6 +2726,20 @@ switch lower(method)
             % sse: sum of error squared
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); 
             e  = abs(e);
+
+
+        % case 'sseg'
+        % 
+        %     gY = atcm.fun.VtoGauss(Y);
+        %     gy = atcm.fun.VtoGauss(y);
+        % 
+        %     e = 0;
+        %     for i = 1:length(Y)
+        % 
+        %         e = e + (gY(i,:) * iS * gy(i,:)');
+        % 
+        %     end
+
             
         case 'sse2' % sse robust to complex systems
             e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
@@ -2907,23 +2921,23 @@ switch lower(method)
 
             %e    = norm(Dg*iS*Dg','fro');
 
-            % peaks?
-            p0  = atcm.fun.indicesofpeaks(real(Y));
-            p1  = atcm.fun.indicesofpeaks(real(y));
-            dp  = cdist(p0(:),p1(:));
-            if isvector(dp)
-                dp = abs(diag(dp));
-            end
-
-            dp = denan(dp);
-
-            peake = trace(diag(diag(dp)));
-
-            peake = denan(peake);
-            peake = abs(peake);
-            peake = max(peake,1/2);
-
-            e   = abs(e) * abs(peake);
+            % % peaks?
+            % p0  = atcm.fun.indicesofpeaks(real(Y));
+            % p1  = atcm.fun.indicesofpeaks(real(y));
+            % dp  = cdist(p0(:),p1(:));
+            % if isvector(dp)
+            %     dp = abs(diag(dp));
+            % end
+            % 
+            % dp = denan(dp);
+            % 
+            % peake = trace(diag(diag(dp)));
+            % 
+            % peake = denan(peake);
+            % peake = abs(peake);
+            % peake = max(peake,1/2);
+            % 
+            % e   = abs(e) * abs(peake);
 
         
 
@@ -3569,7 +3583,9 @@ if nargout == 2 || nargout == 7
            % J(i,:) = atcm.fun.awinsmooth(J(i,:),3);
             
            %S = [min(J(i,:)) max(J(i,:))];
-           J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
+     %      J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
+            %J(i,:) = atcm.fun.agauss_smooth(J(i,i),2);
+
            %J(i,:) = rescale(J(i,:),S(1),S(2));
 
            %J(i,:) = gauseriesfit(J(i,:));

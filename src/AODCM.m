@@ -379,20 +379,53 @@ classdef AODCM < handle
             
         end
 
+        function obj = compute_covariance(obj)
+
+            funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
+
+
+            [beta,J,iter,cause,fullr,sse] = a_lm_fit(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],0)
+
+            Cp = spm_inv(J'*J);
+
+            obj.CP = obj.DD.cm*Cp*obj.DD.cm';
+
+        end
+
         function obj = alex_lm(obj)
 
             funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
 
 
-            [beta,J,iter,cause,fullr] = a_lm_fit(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32)
+            [beta,J,iter,cause,fullr,sse] = a_lm_fit(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32)
 
              [ff,pp]=obj.opts.fun(beta(:).*obj.opts.x0(:));
             
             obj.X = spm_vec(pp);
             obj.Ep = spm_unvec(spm_vec(pp),obj.DCM.M.pE);
+            obj.F  = sse;
+
+            Cp = spm_inv(J'*J);
+
+            obj.CP = obj.DD.cm*Cp*obj.DD.cm';
 
         end
         
+        function obj = alex_lm_fe(obj)
+
+            funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
+
+
+            [beta,J,iter,cause,fullr,sse] = a_lm_fit_fe(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32)
+
+             [ff,pp]=obj.opts.fun(beta(:).*obj.opts.x0(:));
+            
+            obj.X = spm_vec(pp);
+            obj.Ep = spm_unvec(spm_vec(pp),obj.DCM.M.pE);
+            obj.F  = sse;
+
+        end
+
         function F = errfun(obj,f,x)
             % error / cost function - precision weighted RMSE
             
@@ -415,27 +448,27 @@ classdef AODCM < handle
                 nq = length(Q);
                 %ny = length(e);
                 
+                F = sum( (Y-y).^2 );
+                F=abs(F);
     
-                dgY = VtoGauss(real(Y));
-                dgy = VtoGauss(real(y));
-    
-                Dg  = (dgY - dgy).^2;
-                e   = norm(Dg*Dg','fro') ;
+                % dgY = VtoGauss(real(Y));
+                % dgy = VtoGauss(real(y));
+                % 
+                % Dg  = (dgY - dgy).^2;
+                % e   = norm(Dg*Dg','fro') ;
+                % 
+                % 
+                % % peaks?
+                % p0  = atcm.fun.indicesofpeaks(real(Y));
+                % p1  = atcm.fun.indicesofpeaks(real(y));
+                % dp = cdist(p0(:),p1(:));
+                % if isvector(dp)
+                %     dp = diag(dp);
+                % end
+                % 
+                %  e   = e * trace(diag(diag(dp)));
 
-
-                % peaks?
-                p0  = atcm.fun.indicesofpeaks(real(Y));
-                p1  = atcm.fun.indicesofpeaks(real(y));
-                dp = cdist(p0(:),p1(:));
-                if isvector(dp)
-                    dp = diag(dp);
-                end
-
-                 e   = e * trace(diag(diag(dp)));
-
-
-
-                F=e;
+               % F=e;
 
             elseif erropt == 2
                 Y = spm_vec(obj.opts.y);

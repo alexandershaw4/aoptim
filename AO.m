@@ -1572,7 +1572,7 @@ while iterate
                 title('Update Rate','color','w','fontsize',18);
                 s(1).YColor = [1 1 1];
                 s(1).XColor = [1 1 1];
-                s(1).Color  = [.3 .3 .3];
+                s(1).Color  = [38 54 72]./255;
                 set(gca,'ytick',1:3,'yticklabel',{'STM' 'LTM' 'GradFlow'});
                 
             end         
@@ -1956,7 +1956,7 @@ ax.XGrid = 'off';
 ax.YGrid = 'on';
 s.YColor = [1 1 1];
 s.XColor = [1 1 1];
-s.Color  = [.3 .3 .3];
+s.Color  = [38 54 72]./255;
 drawnow;
 
 
@@ -1990,7 +1990,8 @@ figpos = figpos + [0 0 200 1000];
 %1          87        1024        1730
 
 %figpos = [816         405        1082        1134];
-f = figure('Name','AO Optimiser','Color',[.3 .3 .3],'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
+col = [38 54 72]./255;
+f = figure('Name','AO Optimiser','Color',col,'InvertHardcopy','off','position',figpos); % [2436,360,710,842]
 set(gcf, 'MenuBar', 'none');
 set(gcf, 'ToolBar', 'none');
 drawnow;
@@ -2010,10 +2011,10 @@ ax.XGrid = 'off';
 ax.YGrid = 'on';
 s(3).YColor = [1 1 1];
 s(3).XColor = [1 1 1];
-s(3).Color  = [.3 .3 .3];
+s(3).Color  = [38 54 72]./255;
 s(4).YColor = [1 1 1];
 s(4).XColor = [1 1 1];
-s(4).Color  = [.3 .3 .3];
+s(4).Color  = [38 54 72]./255;
 drawnow;
 end
 
@@ -2053,7 +2054,7 @@ title('Precision Hyperprm','color','w','fontsize',18);hold off;
 
 s(1).YColor = [1 1 1];
 s(1).XColor = [1 1 1];
-s(1).Color  = [.3 .3 .3];    
+s(1).Color  = [38 54 72]./255;   
 
 end
 
@@ -2078,7 +2079,7 @@ title('Hyperprm Comps','color','w','fontsize',18);hold off;
 
 s(1).YColor = [1 1 1];
 s(1).XColor = [1 1 1];
-s(1).Color  = [.3 .3 .3];    
+s(1).Color  = [38 54 72]./255;   
 box on;
 
 end
@@ -2099,7 +2100,7 @@ zlabel('e','color','w');
 s(1).YColor = [1 1 1];
 s(1).XColor = [1 1 1];
 s(1).ZColor = [1 1 1];
-s(1).Color  = [.3 .3 .3];
+s(1).Color  = [38 54 72]./255;
 grid minor;
 
 
@@ -2121,7 +2122,7 @@ plot(spm_vec(y),     'linewidth',3,'Color',[1 .7 .7]); hold off;
 grid on;grid minor;title('Start Point','color','w','fontsize',18);
 s(1).YColor = [1 1 1];
 s(1).XColor = [1 1 1];
-s(1).Color  = [.3 .3 .3];
+s(1).Color  = [38 54 72]./255;
 
 end
 
@@ -2138,7 +2139,7 @@ s = subplot(5,3,8);
     ax.YGrid = 'on';
     s.YColor = [1 1 1];
     s.XColor = [1 1 1];
-    s.Color  = [.3 .3 .3];
+    s.Color  = [38 54 72]./255;
     drawnow;
 
 
@@ -2161,7 +2162,7 @@ growth(isnan(growth))=0;
     ax.YGrid = 'on';
     s.YColor = [1 1 1];
     s.XColor = [1 1 1];
-    s.Color  = [.3 .3 .3];
+    s.Color  = [38 54 72]./255;
     
     %plot(1:length(growth),growth*0+thresh)
     hold off;
@@ -2193,7 +2194,7 @@ if isfield(params,'userplotfun') && ~isempty(params.userplotfun);
     ax        = gca;
     ax.YColor = [1 1 1];
     ax.XColor = [1 1 1];
-    ax.Color  = [.3 .3 .3];
+    ax.Color  = [38 54 72]./255;
 end
 
 
@@ -2215,7 +2216,7 @@ if length(y)==1 && length(Y) == 1 && isnumeric(y)
     ax        = gca;
     ax.YColor = [1 1 1];
     ax.XColor = [1 1 1];
-    ax.Color  = [.3 .3 .3];hold on;
+    ax.Color  = [38 54 72]./255;;hold on;
     
     % memory based error trace when y==e
     aopt.history = [aopt.history y];
@@ -2233,7 +2234,7 @@ else
         grid on;grid minor;title('AO MAP Estimation: Current Best','color','w','fontsize',18);
         s(1).YColor = [1 1 1];
         s(1).XColor = [1 1 1];
-        s(1).Color  = [.3 .3 .3];
+        s(1).Color  = [38 54 72]./255;
     else
         s(1) = subplot(5,3,1);
         %imagesc(spm_unvec(spm_vec(Y),aopt.yshape));
@@ -2247,7 +2248,7 @@ else
         s(1).YColor = [1 1 1];
         s(1).XColor = [1 1 1];
         s(1).ZColor = [1 1 1];
-        s(1).Color  = [.3 .3 .3];
+        s(1).Color  = [38 54 72]./255;
         s(6) = subplot(5,3,2);
         %imagesc(spm_unvec(spm_vec(y),aopt.yshape));
         if iscell(aopt.yshape)
@@ -2260,7 +2261,7 @@ else
         s(6).YColor = [1 1 1];
         s(6).XColor = [1 1 1];
         s(6).ZColor = [1 1 1];
-        s(6).Color  = [.3 .3 .3];
+        s(6).Color  = [38 54 72]./255;
     end
 
     %s(2) = subplot(412);
@@ -2272,7 +2273,7 @@ else
     ylabel('Δ error');
     s(2).YColor = [1 1 1];
     s(2).XColor = [1 1 1];
-    s(2).Color  = [.3 .3 .3];
+    s(2).Color  = [38 54 72]./255;
     
     
     %s(3) = subplot(413);
@@ -2286,7 +2287,7 @@ else
     ax.YGrid = 'on';
     s(3).YColor = [1 1 1];
     s(3).XColor = [1 1 1];
-    s(3).Color  = [.3 .3 .3];
+    s(3).Color  = [38 54 72]./255;
     drawnow;
     
     s(4) = subplot(5,3,[4 5]);
@@ -2300,7 +2301,7 @@ else
     ax.YGrid = 'on';
     s(4).YColor = [1 1 1];
     s(4).XColor = [1 1 1];
-    s(4).Color  = [.3 .3 .3];
+    s(4).Color  = [38 54 72]./255;
     drawnow;    
     
     if isfield(params,'r2')
@@ -2321,7 +2322,7 @@ else
     ax.YGrid = 'on';
     s(5).YColor = [1 1 1];
     s(5).XColor = [1 1 1];
-    s(5).Color  = [.3 .3 .3];
+    s(5).Color  = [38 54 72]./255;
     ylim([0 1]);
     drawnow;        
 end
@@ -3814,6 +3815,19 @@ switch search_method
         dFdpp(isinf(dFdpp))=0;
         red(isnan(red))=0;
         red(isinf(red))=0;
+
+        % if params.aopt.hyperparameters
+        %     iS = params.aopt.iS;
+        %     if aopt.factorise_gradients
+        %         a = ones(size(J,2),1);
+        %         [L,D] = ldl_smola(J'*iS,a);
+        % 
+        %         dFdpp = -(L*(D./sum(diag(D)))*L');
+        %     else
+        %         dFdpp  = -(J'*iS*J);
+        %     end
+        % end
+
 
         % Compatibility with older matlabs
         x3  = repmat(red,[1 length(red)])./(1-dFdpp);

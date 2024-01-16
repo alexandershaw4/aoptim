@@ -37,6 +37,7 @@ classdef AODCM < handle
         hist
         params
         Pp
+        FreeEnergyF
     end
     
     methods
@@ -184,6 +185,22 @@ classdef AODCM < handle
                 
                 %yy = [spm_vec(y); log(spm_vec(centrefreqs))./8];
             
+        end
+
+        function obj = compute_free_energy(obj,Ep);
+
+            % call a zero-iteration of spm_nlsi_GN with M.P set as
+            % deviation from M.pE to compute the FE;
+
+            DCM = obj.DCM;
+            DCM.M.P = spm_unvec(spm_vec(Ep),DCM.M.pE);
+            DCM.M.nograph = 1;
+            DCM.M.Nmax = 1;
+
+             [Qp,Cp,Eh,F] = spm_nlsi_GN(DCM.M,DCM.xU,DCM.xY);
+
+             obj.FreeEnergyF = F;
+             obj.CP = Cp;
         end
         
         function [y,PP,s,t,centrefreqs] = wrapdm(obj,Px,varargin)

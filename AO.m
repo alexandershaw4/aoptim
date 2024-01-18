@@ -3816,17 +3816,17 @@ switch search_method
         red(isnan(red))=0;
         red(isinf(red))=0;
 
-        % if params.aopt.hyperparameters
-        %     iS = params.aopt.iS;
-        %     if aopt.factorise_gradients
-        %         a = ones(size(J,2),1);
-        %         [L,D] = ldl_smola(J'*iS,a);
-        % 
-        %         dFdpp = -(L*(D./sum(diag(D)))*L');
-        %     else
-        %         dFdpp  = -(J'*iS*J);
-        %     end
-        % end
+        if params.aopt.hyperparameters
+            iS = params.aopt.iS;
+            if aopt.factorise_gradients
+                a = ones(size(J,2),1);
+                [L,D] = ldl_smola(J'*iS,a);
+
+                dFdpp = -(L*(D./sum(diag(D)))*L');
+            else
+                dFdpp  = -(J'*iS*J);
+            end
+        end
 
 
         % Compatibility with older matlabs

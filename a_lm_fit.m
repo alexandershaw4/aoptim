@@ -79,7 +79,7 @@ yfit = model(beta,X,V);
 fullr = sweights(:) .* (y(:) - yfit(:));
 nans = isnan(fullr); % a col vector
 r = fullr(~nans);
-sse = r'*r;
+sse = (r'*r);% * (1 - corr(y(:), yfit(:)).^2);
 
 %pp  = X;
 %iS  = eye(length(r));
@@ -123,7 +123,7 @@ while iter < maxiter
     yfit = model(beta,X,V);
     fullr = sweights(:) .* (y(:) - yfit(:));
     r = fullr(~nans);
-    sse = r'*r;
+    sse = (r'*r) ;%* (1 - corr(y(:),yfit(:)).^2);
 
     % line search here?
 
@@ -160,7 +160,7 @@ while iter < maxiter
             yfit = model(beta,X,V);
             fullr = sweights(:) .* (y(:) - yfit(:));
             r = fullr(~nans);
-            sse = r'*r;
+            sse = (r'*r) ;%* (1 - corr(y(:),yfit(:)).^2);
 
             %sse = objective(r,iS,beta.*X,J',pp);
 

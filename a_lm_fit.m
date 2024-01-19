@@ -1,4 +1,4 @@
-function  [beta,J,iter,cause,fullr,sse] = a_lm_fit(X,V,y,model,options,maxiter)
+function  [beta,J,iter,cause,fullr,sse] = a_lm_fit(X,V,y,model,options,maxiter,usepar)
 % Re-write of the Levenberg-Marquardt algorithm for dynamical model fitting
 % to data...
 %
@@ -35,6 +35,12 @@ if nargin < 5 || isempty(options)
     options.UseSubstreams= [];
     options.Streams= {};
     options.OutputFcn= [];
+end
+
+if nargin == 7 && usepar
+    usepar=1;
+else 
+    usepar=0; % still need to implement to parallel version of jacobian routine
 end
 
 if nargin < 6 || isempty(maxiter)
@@ -95,7 +101,7 @@ cause = '';
 
 if nargout>=2 && maxiter==0
     % Special case, no iterations but Jacobian needed
-    J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V);
+    J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,usepar);
 end
 
 while iter < maxiter
@@ -104,7 +110,7 @@ while iter < maxiter
     sseold = sse;
     
     % Compute a finite difference approximation to the Jacobian
-    J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V);
+    J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,usepar);
     
     % Levenberg-Marquardt step: inv(J'*J+lambda*D)*J'*r
     diagJtJ = sum(abs(J).^2, 1);
@@ -233,14 +239,14 @@ if any(~isfinite(v))
 end
 end % function checkFunVals
 
-function J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V)
+function J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,UseParallel)
     %function yplus = call_model_nested(betaNew)
     %    yplus = model(betaNew, X,V);
     %    yplus(nans) = [];
     %end
 
 
-    J = statjacobian(@(beta) model(beta,X), beta, fdiffstep, yfit(~nans),V);
+    J = statjacobian(@(beta) model(beta,X), beta, fdiffstep, yfit(~nans),V,UseParallel);
 
 %J = statjacobian(@call_model_nested, beta, fdiffstep, yfit(~nans),V);
 if ~isempty(sweights)
@@ -249,7 +255,7 @@ if ~isempty(sweights)
 end
 end % function getjacobian
 
-function J = statjacobian(func, theta, DerivStep, y0,V)
+function J = statjacobian(func, theta, DerivStep, y0,V,UseParallel)
 %STATJACOBIAN Estimate the Jacobian of a function
 
 % J is a matrix with one row per observation and one column per model
@@ -339,23 +345,24 @@ end
 
 delta = zeros(numThetaRows, numParams, classname);
 J = zeros(numel(y0), numParams, classname);
-for ii = 1:numParams
-    if ~~full(V(ii))
-        % Calculate delta(:,ii), but remember to set it back to 0 at the end of the loop.
-        delta(:,ii) = DerivStep(ii) * theta(:,ii);
-        deltaZero = delta(:,ii) == 0;
-        if any(deltaZero)
-            % Use the norm as the "scale", or 1 if the norm is 0.
-            nTheta = sqrt(sum(theta(deltaZero,:).^2, 2));
-            delta(deltaZero,ii) = DerivStep(ii) * (nTheta + (nTheta==0));
+    for ii = 1:numParams
+        if ~~full(V(ii))
+            % Calculate delta(:,ii), but remember to set it back to 0 at the end of the loop.
+            delta(:,ii) = DerivStep(ii) * theta(:,ii);
+            deltaZero = delta(:,ii) == 0;
+            if any(deltaZero)
+                % Use the norm as the "scale", or 1 if the norm is 0.
+                nTheta = sqrt(sum(theta(deltaZero,:).^2, 2));
+                delta(deltaZero,ii) = DerivStep(ii) * (nTheta + (nTheta==0));
+            end
+            thetaNew = theta + delta;
+            yplus = funct(thetaNew);
+            dy = yplus(:) - y0(:);
+            J(:,ii) = dy./delta(rowIdx,ii);
+            delta(:,ii) = 0;
+        else
+            J(:,ii) = 0;
         end
-        thetaNew = theta + delta;
-        yplus = funct(thetaNew);
-        dy = yplus(:) - y0(:);
-        J(:,ii) = dy./delta(rowIdx,ii);
-        delta(:,ii) = 0;
-    else
-        J(:,ii) = 0;
     end
-end
+
 end

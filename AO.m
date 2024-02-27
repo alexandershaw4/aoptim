@@ -407,8 +407,10 @@ Vb         = V;
 if isempty(Q) && updateQ
     Qc  = VtoGauss(real(y(:)));    
     fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
-    for iq = 1:size(Qc,1); 
-        Q{iq} = fun(Qc(iq,:)); 
+    b = atcm.fun.lsqnonneg(Qc,y);
+    bi = find(b);
+    for iq = 1:length(bi); 
+        Q{iq} = b(bi(iq))*fun(Qc(bi(iq),:)); 
     end
     aopt.Q = Q;
 end
@@ -486,7 +488,7 @@ while iterate
 
         k = 1e-6;
 
-        if n > 1
+        if n > 0
             fprintf('Search for fixed point...\n');
 
             % trigger the fixed-point (Newton-Raphson) search function
@@ -626,53 +628,54 @@ while iterate
             %    JJ(i,:) = JJ(i,:)./norm(JJ(i,:)); 
             %end
 
-            if ahyper
-                B = aopt.B'*diag(aopt.ah)*aopt.B;
+            % if ahyper
+            %     B = aopt.B'*diag(aopt.ah)*aopt.B;
+            % end
+            % 
+            % warning off;
+            % bJ = JJ'\Q0;
+            % JJ = JJ.*bJ;
+            % warning on;
+            % 
+            % 
+            % [L,D] = ldl_smola(JJ,ones(size(JJ,1),1));
+            % L = denan(L);
+            % D = denan(D);
+            % HQ = L*D*L';
+
+            %Hessian
+            for i = 1:np
+              for j = 1:np
+                  JJ(i,:) = denan(JJ(i,:));
+                  JJ(j,:) = denan(JJ(j,:));
+                  HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+              end
             end
-
-            warning off;
-            bJ = JJ'\Q0;
-            JJ = JJ.*bJ;
-            warning on;
-
-
-            [L,D] = ldl_smola(JJ,ones(size(JJ,1),1));
-            L = denan(L);
-            D = denan(D);
-            HQ = L*D*L';
-
-            % Hessian
-            %for i = 1:np
-            %   for j = 1:np
-            %       JJ(i,:) = denan(JJ(i,:));
-            %       JJ(j,:) = denan(JJ(j,:));
-            %       HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-            %   end
-            %end
         
         elseif aopt.ahyper_p
 
-            % when ahyper_p hyperparameter tuning is active
-            Q0 = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
-            warning off;
-            bJ = JJ'\Q0;
-            JJ = bJ;% JJ.*bJ;
-            warning on;
+            % % when ahyper_p hyperparameter tuning is active
+            % Q0 = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+            % warning off;
+            % %bJ = JJ'\Q0;
+            % %JJ = bJ;% JJ.*bJ;
+            % JJ = JJ*Q0;
+            % warning on;
+            % 
+            % 
+            % [L,D] = ldl_smola(JJ,ones(size(JJ,1),1));
+            % L = denan(L);
+            % D = denan(D);
+            % HQ = L*D*L';
 
-
-            [L,D] = ldl_smola(JJ,ones(size(JJ,1),1));
-            L = denan(L);
-            D = denan(D);
-            HQ = L*D*L';
-
-            %for i = 1:np
-               %for j = 1:np
-                   %JJ(i,:) = denan(JJ(i,:));
-                   %JJ(j,:) = denan(JJ(j,:));
-                   %B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
-                   %HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
-               %end
-            %end
+            for i = 1:np
+               for j = 1:np
+                   JJ(i,:) = denan(JJ(i,:));
+                   JJ(j,:) = denan(JJ(j,:));
+                   B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+                   HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
+               end
+            end
 
         else
             % Hessian
@@ -711,7 +714,8 @@ while iterate
         [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0);
     else
         [a,J,nJ,L,D] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
-        J = -df0(:);
+        %J = -df0(:);
+        J = df0;
     end
 
     if verbose;
@@ -770,7 +774,23 @@ while iterate
         end
         
         % For most methods, compute dx using subfun...
-        dx   = compute_dx(x1,a,J./norm(J),red,search_method,params);  
+        %dx   = compute_dx(x1,a,J./norm(J),red,search_method,params);  
+        [~,~,res,~]  = obj(x1,params);
+        res = res./norm(res);
+
+        %dx   = compute_dx(x1,a,-J*res,red,search_method,params);  
+
+        % switched default step method here to Levenberg-Marquardt
+        lambda  = .01;
+
+        diagJtJ = sum(abs(J').^2, 1);
+        zerosp  = zeros(length(x0),1);
+
+        Jplus = [J'; diag(sqrt(lambda*diagJtJ))];
+        rplus = [res; zerosp];
+        step = Jplus \ rplus;
+    
+        dx = x1 + step;
         gdx  = dx; % simple gradient descent step to fallback on
 
         %if aopt.ahyper_p
@@ -788,7 +808,7 @@ while iterate
             if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc); end
                         
             % Norm Hessian 
-            H = HQ;%/norm(HQ);
+            H = HQ./norm(HQ);
 
             % search (step) method 7 performs a factorisation of the full
             % Jacobian for the vanilla descent scheme, incorporate into
@@ -805,17 +825,38 @@ while iterate
 
             % the mimo finite different functions return gradients
             % in reduced space - embed in full vector space
-            Jo = cat(1,aopt.Jo{:,1});%./e1;
-            JJ = x0*0;
-            JJ(find(diag(pC))) = Jo;
-            JJ = denan(JJ);
-            JJ = JJ./norm(JJ);
+            %Jo = cat(1,aopt.Jo{:,1});%./e1;
+            %JJ = x0*0;
+            %JJ(find(diag(pC))) = Jo;
+            %JJ = denan(JJ);
+            %JJ = JJ./norm(JJ);
+
+            % components
+            if order == 1 || order == 5
+                Jx  = aopt.J ;%./ norm(aopt.J);
+            elseif order == 2
+                Jx = cat(2,params.aopt.Jo{:,3});
+                Jx = denan(Jx);
+                %Jx = Jx ./ norm(Jx);
+                JJ = zeros(length(x0*0),size(Jx,1));
+                ic = find(diag(pC));
+                JJ(ic,:) = Jx';
+                Jx = JJ;
+            end
+
+            for i = 1:size(JJ,1); 
+                JJ(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
+            end
+
+            % get residual vector
+            [~,~,res,~]  = obj(x1,params);
+            res = res./norm(res);
                      
             % recompute lambda
             a = 1;%compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
 
             % Compute step using matrix exponential (see spm_dx)
-            Hstep = spm_dx(-H,-JJ,{-4});            
+            Hstep = spm_dx(-H,-JJ*res,{-4});            
             Gdx   = x1 - Hstep;
             dx    = Gdx;
        
@@ -869,7 +910,7 @@ while iterate
             [~,~,res,~]  = obj(x1,params);
 
             % components
-            if order == 1
+            if order == 1 || order == 5
                 Jx  = aopt.J ;%./ norm(aopt.J);
             elseif order == 2
                 Jx = cat(2,params.aopt.Jo{:,3});
@@ -893,7 +934,7 @@ while iterate
             % the GN routine jumps to the minimum of the second order Taylor-approximation
             dFdpp  = H - ipC ;
             dFdp   = Jx * res - ipC * x1;
-            dx     = x1 - red.*spm_dx(-dFdpp,-dFdp,{4}); 
+            dx     = x1 - red.*spm_dx(-dFdpp,-dFdp,{-4}); 
 
             GNStep = dx;
             de  = obj(dx,params);
@@ -1876,13 +1917,15 @@ fprintf(loc,'Finishing up...\n');
 X = x0;
 F = e0;
 
+Cp = aopt.Cp;
+
 % Use best covariance estimate
-if doparallel
-    aopt = params.aopt;
-    Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
-else
-    Cp = aopt.Cp;
-end
+%if doparallel
+%    aopt = params.aopt;
+%    Cp = spm_inv( (J(:)*J(:)')*aopt.ipC );
+%else
+%    Cp = aopt.Cp;
+%end
 
 % Peform Bayesian Inference
 PP = BayesInf(x0,Ep,diag(red));
@@ -3483,7 +3526,10 @@ if nargout == 2 || nargout == 7
     % ~ para   |  3     1
     %
     
-    f = @(x) obj(x,params);
+   % f = @(x) obj(x,params);
+
+    f = @aopt.fun;
+
     
     if ~aopt.mimo 
         if ~aopt.parallel
@@ -3502,24 +3548,42 @@ if nargout == 2 || nargout == 7
         if ~aopt.parallel
             % option 3: dfdp, not parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            [J,ip,Jo,f0,f1] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+            %[J,ip,Jo,f0,f1] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+            [J,ip,Jo,f0,f1] = jaco_mimo(f,x0,V,0,Ord);
+            %J=J';
+            %J0     = cat(1,J{:,1});
         else
             % option 4: dfdp, parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            [J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
+            %[J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
+            
+            % %[J,ip,Jo] = jaco_mimo_par(f,x0,V,0,Ord);
+            J = getjacobian(x0,1/8,f,Y,[],V,aopt.parallel);
+            J=J';
+            return;
 
             %objfunn = @(x) obj(x,params);[J,~] = spm_diff(objfunn,x0,1);
                     
             %[dfdp,f] = spm_diff(IS,Ep,M,U,1,{V});
                 
             %dfdp     = reshape(spm_vec(dfdp),ny,np);
-
+            %J0     = cat(2,J{:,1})';
         end
 
-        J0     = cat(2,J{:,1})';
-        J      = cat(2,J{:,nout})';
-        J(isnan(J))=0;
-        J(isinf(J))=0;
+        % J0     = cat(2,J{:,1})';
+        % 
+        % if size(J0) ~= ny
+        %     J0     = cat(1,J{:,1});
+        % end
+        % 
+        % J = J0;
+
+
+        %J      = cat(2,J{:,nout})';
+        %J(isnan(J))=0;
+        %J(isinf(J))=0;
+
+
         %JI = zeros(length(ip),1);% Put J0 in full space
         %JI(find(ip)) = J0;
         %J0  = JI;
@@ -3569,6 +3633,10 @@ if nargout == 2 || nargout == 7
         ip = ~~(V);
         J  = J(find(ip),:);
         Jo{:,1} = J0;
+    elseif aopt.mimo == 5
+
+        J = getjacobian(x0,1/8,f,Y,[],V,aopt.parallel)
+
     end
     
     if aopt.mimo && (aopt.mimo ~= 4)
@@ -3579,20 +3647,25 @@ if nargout == 2 || nargout == 7
 
 
         % Gaussian smoothing along oputput vector
+        w = 1:length(J);
         for i = 1:size(J,1)
             %J(i,:) = gaufun.SearchGaussPCA(J(i,:),8);
-           % J(i,:) = atcm.fun.awinsmooth(J(i,:),3);
-            
+           % J(i,:) = atcm.fun.awinsmooth(J(i,:),3);      
            %S = [min(J(i,:)) max(J(i,:))];
      %      J(i,:) = atcm.fun.gaulinsvdfit(J(i,:));
-            %J(i,:) = atcm.fun.agauss_smooth(J(i,i),2);
+            
+    
+            J(i,:) = atcm.fun.agauss_smooth(J(i,:),2);
+
+             %I = atcm.fun.indicesofpeaks(J(i,:).^2);
+             %if any(I)
+             %    J(i,:) = atcm.fun.makef(w,I-1,J(i,I),repmat(sqrt(V(i)),length(I),1));
+             %end
+
 
            %J(i,:) = rescale(J(i,:),S(1),S(2));
-
            %J(i,:) = gauseriesfit(J(i,:));
-
             %J(i,:) = agauss_smooth(J(i,:),2);
-
             %J(i,:) = atcm.fun.gausvdpca(J(i,:)',8,20);
 %           [QM,GL] = AGenQn(J(i,:),8);
 %           %J(i,:) = J(i,:)*QM;
@@ -3601,13 +3674,15 @@ if nargout == 2 || nargout == 7
         end
         J = denan(J);
     end
+
     
-    % Embed J in full parameter space
-    IJ = zeros(length(ip),size(J,2));
-    try    IJ(find(ip),:) = J;
-    catch; IJ(find(ip),:) = J(find(ip),:);
-    end
-    J  = IJ;
+    
+    % % Embed J in full parameter space
+    % IJ = zeros(length(ip),size(J,2));
+    % try    IJ(find(ip),:) = J;
+    % catch; IJ(find(ip),:) = J(find(ip),:);
+    % end
+    % J  = IJ;
     
     % unstable parameters can introduce NaN and inf's into J: set gradient
     % to 0 and it won't get updated...
@@ -3638,9 +3713,9 @@ if nargout == 2 || nargout == 7
         end
     end
     
-    if aopt.mimo && (aopt.mimo~=3)
-        J = spm_vec(J0);
-    end
+    %if aopt.mimo && (aopt.mimo~=3)
+    %    J = spm_vec(J0);
+    %end
     params.aopt = aopt;
     
 end
@@ -4115,8 +4190,8 @@ X.gV   = [];
 
 X.hyperparams  = 1;
 X.hypertune    = 1;
-X.ahyper = 1;
-X.ahyper_p = 1;
+X.ahyper = 0;
+X.ahyper_p = 0;
 
 X.force_ls     = 0;
 X.doplot       = 1;

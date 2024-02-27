@@ -61,8 +61,8 @@ op.FS = @(x) x(:).^2.*(1:length(x))';
 op.FS = @(x) sqrt(x); % feature selection function
 
 op.ahyper=1;
-%op.ahyper_p=1;
-%op.nocheck=1;
+op.ahyper_p=0;
+op.nocheck=0;
 
 %op.FS = @(x) [sqrt(x(:)); std(diff(x))/abs(mean(diff(x)))];
 
@@ -121,7 +121,7 @@ op.crit = [0 0 0 0];
 op.save_constant = 0;
 
 op.isNewton=0;
-op.isGaussNewton=1;
+op.isGaussNewton=0;
 op.isQuasiNewton=0;
 op.isNewtonReg=0;
 op.isTrust=0;
@@ -140,6 +140,8 @@ op.makevideo=0;
 %op.nocheck=1;
 
 %op.Q = (eye(length(w)) + AGenQ(Y));
+
+% [x0,e] = aoptim(f,x0,V,Y)
 
 % Step 1. Optimise the x- and y- values of the GMM but holding the width
 % constant...

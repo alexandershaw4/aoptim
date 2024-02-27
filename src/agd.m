@@ -1,5 +1,6 @@
 function [X,F] = agd(f,x,n,a)
 % super simple gradient descent of a multivariate function
+% using Newton steps ('Newton's method')
 %
 % [X,F] = agd(fun,x0,Niterations,[initial_lr])
 %

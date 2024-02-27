@@ -409,6 +409,24 @@ classdef AODCM < handle
 
         end
 
+        function obj = alex_lm_VL(obj)
+            funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
+
+
+            [beta,J,iter,cause,fullr,sse] = a_lm_VL(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32)
+
+             [ff,pp]=obj.opts.fun(beta(:).*obj.opts.x0(:));
+            
+            obj.X = spm_vec(pp);
+            obj.Ep = spm_unvec(spm_vec(pp),obj.DCM.M.pE);
+            obj.F  = sse;
+
+            Cp = spm_inv(J'*J);
+
+            obj.CP = obj.DD.cm*Cp*obj.DD.cm';
+
+        end
+
         function obj = alex_lm(obj)
 
             funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
@@ -714,7 +732,8 @@ classdef AODCM < handle
             objective = @(x) errfun(obj,fun,x);
             
             options.Plot = 'on';
-            [obj.X,obj.F,elbo_sd] = vbmc(objective,obj.opts.x0',[],[],LB',UB');
+            options.iterations = 32;
+            [obj.X,obj.F,elbo_sd] = vbmc(objective,obj.opts.x0',[],[],LB',UB',options);
             
             [~, P] = obj.opts.fun(spm_vec(obj.X));
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);

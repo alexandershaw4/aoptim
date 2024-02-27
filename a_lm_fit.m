@@ -8,6 +8,14 @@ function  [beta,J,iter,cause,fullr,sse] = a_lm_fit(X,V,y,model,options,maxiter,u
 
 beta  = ones(size(X));
 
+% try
+%     model(X,X,V)
+% catch
+%     M = model;
+%     f = @(b,p,V) full(spm_vec((M(b(:).*p(:)))));
+%     model = f;
+% end
+
 doplot = 1;
 
 if doplot
@@ -99,6 +107,8 @@ iter = 0;
 breakOut = false;
 cause = '';
 
+w = 1:length(y);
+
 if nargout>=2 && maxiter==0
     % Special case, no iterations but Jacobian needed
     J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,usepar);
@@ -111,6 +121,15 @@ while iter < maxiter
     
     % Compute a finite difference approximation to the Jacobian
     J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,usepar);
+
+    % Gaussians
+    %for i = 1:size(J,2)
+    %    I = atcm.fun.indicesofpeaks(J(:,i).^2);
+    %    if any(I)
+    %        J(:,i) = atcm.fun.makef(w,I-1,J(I,i),repmat(V(i),length(I),1));
+    %    end
+    %end
+
     
     % Levenberg-Marquardt step: inv(J'*J+lambda*D)*J'*r
     diagJtJ = sum(abs(J).^2, 1);

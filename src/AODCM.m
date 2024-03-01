@@ -962,7 +962,7 @@ classdef AODCM < handle
             
         end
         
-        function ps(obj)
+        function ps(obj,N)
             % particle swarm
             
             fprintf('Performing Particle-Swarm Optimisation\n');
@@ -976,6 +976,11 @@ classdef AODCM < handle
         
             options = optimoptions('particleswarm','MaxTime', 86400/2);
             options.InitialSwarmMatrix = Px';
+
+            if nargin == 2 && ~isempty(N)
+                options.MaxIterations = N;
+                options.UseParallel=true;
+            end
             
             [obj.X,obj.F] = particleswarm(objective,length(Px),LB,UB,options);
 

@@ -123,6 +123,9 @@ while iter < maxiter
     J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,usepar);
 
     % Gaussians
+    for i = 1:size(J,2)
+        J(:,i) = atcm.fun.agauss_smooth(J(:,i),4);
+    end
     %for i = 1:size(J,2)
     %    I = atcm.fun.indicesofpeaks(J(:,i).^2);
     %    if any(I)
@@ -137,6 +140,7 @@ while iter < maxiter
     Jplus = [J; diag(sqrt(lambda*diagJtJ))];
     rplus = [r; zerosp];
     step = Jplus \ rplus;
+    %step = atcm.fun.aregress(Jplus,rplus,'MAP');
 
     %step = spm_dx(Jplus'*Jplus,rplus'*Jplus);
     %step = step(:);
@@ -148,7 +152,15 @@ while iter < maxiter
     yfit = model(beta,X,V);
     fullr = sweights(:) .* (y(:) - yfit(:));
     r = fullr(~nans);
-    sse = (r'*r) ;%* (1 - corr(y(:),yfit(:)).^2);
+    sse = (r'*r) ;
+
+    %fprintf('Optimising step size\n');
+    %fun = @(p) obj(beta(:)' + atcm.fun.aregress(Jplus,rplus,'Bayes',p(1),p(2))',X,V,model,sweights,y,nans);
+    %X = fminsearch(fun,[2 1/8]);
+
+    %step = atcm.fun.aregress(Jplus,rplus,'Bayes',X(1),X(2))';
+    %beta(:) = beta(:)' + step;
+
 
     % line search here?
 
@@ -177,15 +189,23 @@ while iter < maxiter
             end
             Jplus = [J; diag(sqrt(lambda*sum(J.^2,1)))];
             step = Jplus \ rplus;
+            %step = atcm.fun.aregress(Jplus,rplus,'Bayes',2);
 
             %step = spm_dx(Jplus'*Jplus,rplus'*Jplus);
             %step = step(:);
+
+            % fprintf('Optimising step size(2)\n');
+            % fun = @(p) obj(beta(:)' + atcm.fun.aregress(Jplus,rplus,'Bayes',p(1),p(2))',X,V,model,sweights,y,nans);
+            % X = fminsearch(fun,[2 1/8]);
+            % 
+            % step = atcm.fun.aregress(Jplus,rplus,'Bayes',X(1),X(2))';
+            % beta(:) = betaold(:) + step;
 
             beta(:) = betaold(:) + step;
             yfit = model(beta,X,V);
             fullr = sweights(:) .* (y(:) - yfit(:));
             r = fullr(~nans);
-            sse = (r'*r) ;%* (1 - corr(y(:),yfit(:)).^2);
+            sse = (r'*r) ;
 
             %sse = objective(r,iS,beta.*X,J',pp);
 
@@ -228,6 +248,17 @@ if (iter >= maxiter)
     cause = 'maxiter';
 end
 end % function LMfit
+
+function sse = obj(beta,X,V,model,sweights,y,nans)
+
+% Evaluate the fitted values at the new coefficients and
+% compute the residuals and the SSE.
+yfit = model(beta,X,V);
+fullr = sweights(:) .* (y(:) - yfit(:));
+r = fullr(~nans);
+sse = (r'*r) ;
+
+end
 
 function sse = objective(r,iS,X,J,pp)
 

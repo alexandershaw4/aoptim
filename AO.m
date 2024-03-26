@@ -789,8 +789,22 @@ while iterate
         Jplus = [J'; diag(sqrt(lambda*diagJtJ))];
         rplus = [res; zerosp];
         step = Jplus \ rplus;
+        LM = x1 + step;
+
+        % Use MAP estimate for step
+        MAP = x1 + red.*atcm.fun.aregress(J',res,'MAP');
+
+        if obj(MAP,params) < obj(LM,params)
+            dx = MAP;
+            fprintf('Using MAP estimates\n');
+        else
+            dx = LM;
+            fprintf('Using Levenberg-Marquardt estimates\n');
+        end
+
+        %dx = x1 + red.*atcm.fun.aregress(J',res,'Bayesian',2);
     
-        dx = x1 + step;
+        %dx = x1 + step;
         gdx  = dx; % simple gradient descent step to fallback on
 
         %if aopt.ahyper_p
@@ -1200,7 +1214,7 @@ while iterate
 
             % Assess each new parameter estimate (step) individually
             if (~faster) || nfun == 1 % Once per gradient computation?
-                if ~doparallel
+                %if ~doparallel
                     for nip = 1:length(dx)
                         XX     = x1;
                         if red(nip)
@@ -1211,19 +1225,19 @@ while iterate
                             DFE(nip) = e0;
                         end
                     end
-                else
-                    % Works way faster in parfor, ...
-                    parfor nip = 1:length(dx)
-                        XX     = x0;
-                        if red(nip)
-                            %DFE(nip) = 0.5*((JJx{nip}/2)+(e0/2) ./ (2*red(nip)));
-                            XX(nip)  = dx(nip);
-                            DFE(nip) = obj(XX,params);
-                        else
-                            DFE(nip) = e0;
-                        end
-                    end
-                end
+                % else
+                %     % Works way faster in parfor, ...
+                %     parfor nip = 1:length(dx)
+                %         XX     = x0;
+                %         if red(nip)
+                %             %DFE(nip) = 0.5*((JJx{nip}/2)+(e0/2) ./ (2*red(nip)));
+                %             XX(nip)  = dx(nip);
+                %             DFE(nip) = obj(XX,params);
+                %         else
+                %             DFE(nip) = e0;
+                %         end
+                %     end
+                % end
 
                 DFE  = real(DFE(:));
 
@@ -2842,6 +2856,14 @@ switch lower(method)
             Dg  = dgY - dgy;
             e   = trace(Dg*iS*Dg'); 
             
+            % and scaled version
+            dgYn = VtoGauss(real(Y./sum(Y)));
+            dgyn = VtoGauss(real(y./sum(y)));
+
+            Dgn  = dgYn - dgyn;
+            en   = trace(Dgn*iS*Dgn'); 
+
+            e = e + 8*en;
             
             L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
             L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
@@ -3557,10 +3579,11 @@ if nargout == 2 || nargout == 7
             %----------------------------------------------------------
             %[J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
             
-            % %[J,ip,Jo] = jaco_mimo_par(f,x0,V,0,Ord);
-            J = getjacobian(x0,1/8,f,Y,[],V,aopt.parallel);
-            J=J';
-            return;
+            [J,ip,Jo] = jaco_mimo_par(f,x0,V,0,Ord);
+            
+            %J = getjacobian(x0,1/8,f,Y,[],V,aopt.parallel);
+            %J=J';
+            %return;
 
             %objfunn = @(x) obj(x,params);[J,~] = spm_diff(objfunn,x0,1);
                     
@@ -3570,13 +3593,13 @@ if nargout == 2 || nargout == 7
             %J0     = cat(2,J{:,1})';
         end
 
-        % J0     = cat(2,J{:,1})';
-        % 
-        % if size(J0) ~= ny
-        %     J0     = cat(1,J{:,1});
-        % end
-        % 
-        % J = J0;
+         J0     = cat(2,J{:,1})';
+         %
+         % if size(J0) ~= ny
+         %     J0     = cat(1,J{:,1});
+         % end
+         %
+         J = J0;
 
 
         %J      = cat(2,J{:,nout})';

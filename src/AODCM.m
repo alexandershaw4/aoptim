@@ -413,7 +413,7 @@ classdef AODCM < handle
             funfun = @(b,p,V) full(spm_vec(spm_cat(obj.opts.fun(b.*p))));
 
 
-            [beta,J,iter,cause,fullr,sse] = a_lm_VL(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32)
+            [beta,J,iter,cause,fullr,sse] = a_lm_VL(obj.opts.x0',obj.opts.V',obj.opts.y,funfun,[],32,0,obj.opts.Q);
 
              [ff,pp]=obj.opts.fun(beta(:).*obj.opts.x0(:));
             
@@ -484,6 +484,12 @@ classdef AODCM < handle
                 %ny = length(e);
                 
                 F = sum( (Y-y).^2 );
+
+                Yn = Y./sum(Y);
+                yn = y./sum(y);
+
+                F = F + 8*sum( (Yn-yn).^2 );
+
                 F=abs(F);
     
                 % dgY = VtoGauss(real(Y));
@@ -628,6 +634,19 @@ classdef AODCM < handle
             y  = spm_vec(obj.DCM.xY.y);
             
             [x0,e] = aoptim(fun,x0,V,y)
+
+        end
+
+        function aoptim_(obj)
+
+            fun = @(P,M) spm_vec(obj.DCM.M.IS(spm_unvec(P,obj.DCM.M.pE),obj.DCM.M,obj.DCM.xU));
+
+            x0 = spm_vec(obj.DCM.M.pE);
+            M  = obj.DCM.M;
+            V  = spm_vec(obj.DCM.M.pC);
+            y  = spm_vec(obj.DCM.xY.y);
+
+            [X,F] = aoptim_(fun,x0,V,y,32)
 
         end
 

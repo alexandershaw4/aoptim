@@ -148,6 +148,10 @@ op.makevideo=0;
 %--------------------------------------------------------------------
 [X,F,CV,~,Hi] = AO(op);    % RUN IT
 
+% or try VL optimsation;
+funfun = @(b,x0,V) f(b.*x0);
+[beta,J,iter,cause,fullr,sse] = a_lm_VL(x0,V,Y(:),funfun,[],12)
+
 % % Step 2. Optimise the x- and y- values and the width
 % %--------------------------------------------------------------------
 % op.x0 = X;

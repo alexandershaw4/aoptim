@@ -1,21 +1,15 @@
-function  [beta,J,iter,cause,fullr,sse] = a_lm_fit(X,V,y,model,options,maxiter,usepar)
-% Re-write of the Levenberg-Marquardt algorithm for dynamical model fitting
-% to data...
+function  [beta,J,iter,cause,fullr,sse] = a_lm_VL(X,V,y,model,options,maxiter,usepar,Q)
+% Returns maximum aposteriori estimates (MAP) for the parameters of the
+% nonlinear 'model' given initial parameters 'X', variances 'V' and target data
+% to fit 'y'. Uses Gauss-Newton & Levenberg-Marquardt steps, objective function 
+% is the free energy / ELBO; this version approximates Variational Laplace
 %
+% [beta,J,iter,cause,fullr,sse] = a_lm_VL(X,V,y,model,options,maxiter,usepar)
 %
-% AS
+% AS2024
 
 
 beta  = ones(size(X));
-
-% try
-%     model(X,X,V)
-% catch
-%     M = model;
-%     f = @(b,p,V) full(spm_vec((M(b(:).*p(:)))));
-%     model = f;
-% end
-
 doplot = 1;
 
 if doplot
@@ -58,7 +52,7 @@ end
 verbose = 3;
 
 if verbose > 2
-    fprintf('    Iteration    |   error      |   norm grad    |   norm step\n');
+    fprintf('    Iteration    |   objective  |   norm grad    |   norm step\n');
 end
 
 % Set up convergence tolerances from options.
@@ -82,27 +76,29 @@ sqrteps = sqrt(eps(class(beta)));
 
 p = numel(beta);
 
-if nargin<8 || isempty(weights)
+%if nargin<8 || isempty(weights)
     sweights = ones(size(y));
-else
-    sweights = sqrt(weights);
-end
+%else
+%    sweights = sqrt(weights);
+%end
 
 % treatment for nans
 yfit = model(beta,X,V);
 fullr = sweights(:) .* (y(:) - yfit(:));
 nans = isnan(fullr); % a col vector
 r = fullr(~nans);
-sse = (r'*r);% * (1 - corr(y(:), yfit(:)).^2);
+%sse = (r'*r);% * (1 - corr(y(:), yfit(:)).^2);
 
-sse = sse + 4*sum(y(:)./sum(y(:)) - yfit(:)./sum(yfit(:))).^2;
+% initialise aopt structure for objective
+pp  = X;
+aopt.Q = [];
+aopt.ipC = denan(diag(1./V),1/8);
 
-%pp  = X;
-%iS  = eye(length(r));
-%sse = objective(r,iS,X,ones(length(X),length(r)),pp);
+if nargin == 8 && ~isempty(Q)
+    aopt.Q = Q;
+end
 
-%vr = VtoGauss(r);
-%sse = trace(vr*vr');
+[sse,aopt] = objective(r,V,X,ones(length(X),length(r)),pp,y(:),aopt);
 
 zerosp = zeros(p,1,class(r));
 iter = 0;
@@ -110,6 +106,9 @@ breakOut = false;
 cause = '';
 
 w = 1:length(y);
+
+% switch for Jacobian regularisation when step size too small
+RegJac = 0;
 
 if nargout>=2 && maxiter==0
     % Special case, no iterations but Jacobian needed
@@ -123,30 +122,17 @@ while iter < maxiter
     
     % Compute a finite difference approximation to the Jacobian
     J = getjacobian(beta,fdiffstep,model,X,yfit,nans,sweights,V,usepar);
-
-    % Gaussians
-    %for i = 1:size(J,2)
-    %    J(:,i) = atcm.fun.agauss_smooth(J(:,i),4);
-    %end
-    %for i = 1:size(J,2)
-    %    I = atcm.fun.indicesofpeaks(J(:,i).^2);
-    %    if any(I)
-    %        J(:,i) = atcm.fun.makef(w,I-1,J(I,i),repmat(V(i),length(I),1));
-    %    end
-    %end
-
+    %J = jaco_gauss(@(beta) model(beta,X,V),beta); J = J';
     
     % Levenberg-Marquardt step: inv(J'*J+lambda*D)*J'*r
     diagJtJ = sum(abs(J).^2, 1);
+    Cp  = diag( sqrt(lambda*sum(J'*aopt.iS*J,1)) );
     if funValCheck && ~all(isfinite(diagJtJ)), checkFunVals(J(:)); end
-    Jplus = [J; diag(sqrt(lambda*diagJtJ))];
+    %Jplus = [J*aopt.ipC; diag(sqrt(lambda*diagJtJ))]; 
+    Jplus = [J; Cp];
     rplus = [r; zerosp];
-    step = Jplus \ rplus;
-    %step = atcm.fun.aregress(Jplus,rplus,'MAP');
-
-    %step = spm_dx(Jplus'*Jplus,rplus'*Jplus);
-    %step = step(:);
-
+    %step = Jplus \ rplus;
+    step =  atcm.fun.aregress(Jplus,rplus,'MAP');
     beta(:) = beta(:) + step;
     
     % Evaluate the fitted values at the new coefficients and
@@ -154,26 +140,9 @@ while iter < maxiter
     yfit = model(beta,X,V);
     fullr = sweights(:) .* (y(:) - yfit(:));
     r = fullr(~nans);
-    sse = (r'*r) ;
+    %sse = (r'*r) ;
 
-    sse = sse + 4*sum(y(:)./sum(y(:)) - yfit(:)./sum(yfit(:))).^2;
-
-    %fprintf('Optimising step size\n');
-    %fun = @(p) obj(beta(:)' + atcm.fun.aregress(Jplus,rplus,'Bayes',p(1),p(2))',X,V,model,sweights,y,nans);
-    %X = fminsearch(fun,[2 1/8]);
-
-    %step = atcm.fun.aregress(Jplus,rplus,'Bayes',X(1),X(2))';
-    %beta(:) = beta(:)' + step;
-
-
-    % line search here?
-
-
-    %sse = objective(r,iS,beta.*X,J',pp);
-
-    %vr = VtoGauss(r);
-    %sse = trace(vr*vr');
-
+    [sse,n_aopt] = objective(r,V,X,J',pp,y(:),aopt);
     if funValCheck && ~isfinite(sse), checkFunVals(r); end
     % If the LM step decreased the SSE, decrease lambda to downweight the
     % steepest descent direction.  Prevent underflowing to zero after many
@@ -181,6 +150,8 @@ while iter < maxiter
     if sse < sseold
         lambda = max(0.1*lambda,eps);
         
+        aopt = n_aopt;
+
         % If the LM step increased the SSE, repeatedly increase lambda to
         % upweight the steepest descent direction and decrease the step size
         % until we get a step that does decrease SSE.
@@ -191,35 +162,23 @@ while iter < maxiter
                 breakOut = true;
                 break
             end
-            Jplus = [J; diag(sqrt(lambda*sum(J.^2,1)))];
-            step = Jplus \ rplus;
-            %step = atcm.fun.aregress(Jplus,rplus,'Bayes',2);
-
-            %step = spm_dx(Jplus'*Jplus,rplus'*Jplus);
-            %step = step(:);
-
-            % fprintf('Optimising step size(2)\n');
-            % fun = @(p) obj(beta(:)' + atcm.fun.aregress(Jplus,rplus,'Bayes',p(1),p(2))',X,V,model,sweights,y,nans);
-            % X = fminsearch(fun,[2 1/8]);
-            % 
-            % step = atcm.fun.aregress(Jplus,rplus,'Bayes',X(1),X(2))';
-            % beta(:) = betaold(:) + step;
+            Cp  = diag( sqrt(lambda*sum(J'*aopt.iS*J,1)) );
+            %Jplus = [J*aopt.ipC; diag(sqrt(lambda*sum(J.^2,1)))];
+            Jplus = [J; Cp];
+            %step = Jplus \ rplus;
+            step =  atcm.fun.aregress(Jplus,rplus,'MAP');
 
             beta(:) = betaold(:) + step;
             yfit = model(beta,X,V);
             fullr = sweights(:) .* (y(:) - yfit(:));
             r = fullr(~nans);
-            sse = (r'*r) ;
+            %sse = (r'*r) ;
 
-            sse = sse + 4*sum(y(:)./sum(y(:)) - yfit(:)./sum(yfit(:))).^2;
-
-            %sse = objective(r,iS,beta.*X,J',pp);
-
-            %vr = VtoGauss(r);
-            %sse = trace(vr*vr');
+            [sse,n_aopt] = objective(r,V,X,J',pp,y(:),aopt);
 
             if funValCheck && ~isfinite(sse), checkFunVals(r); end
         end
+        aopt = n_aopt;
     end
     if verbose > 2 % iter
         disp(sprintf('      %6d    %12g    %12g    %12g', ...
@@ -239,7 +198,10 @@ while iter < maxiter
     if norm(step) < betatol*(sqrteps+norm(beta))
         cause = 'tolx';
         cause
-        break
+        %break
+        %fprintf('Regularising gradients (hit %s)\n',cause);
+        %RegJac = 1;
+
     elseif abs(sse-sseold) <= rtol*sse
         cause = 'tolfun';
         cause
@@ -253,36 +215,222 @@ end
 if (iter >= maxiter)
     cause = 'maxiter';
 end
-end % function LMfit
+end 
 
-function sse = obj(beta,X,V,model,sweights,y,nans)
+function [e,aopt] = objective(r,V,X,J,pp,data,aopt)
 
-% Evaluate the fitted values at the new coefficients and
-% compute the residuals and the SSE.
-yfit = model(beta,X,V);
-fullr = sweights(:) .* (y(:) - yfit(:));
-r = fullr(~nans);
-sse = (r'*r) ;
+y = data - r(:); Y = data; x0 = X;
 
+% dgY = VtoGauss(real(Y));
+% dgy = VtoGauss(real(y));
+% 
+% Dg  = dgY - dgy;
+% e   = trace(Dg*iS*Dg');
+% 
+% % and scaled version
+% dgYn = VtoGauss(real(Y./sum(Y)));
+% dgyn = VtoGauss(real(y./sum(y)));
+% 
+% Dgn  = dgYn - dgyn;
+% en   = trace(Dgn*iS*Dgn');
+% 
+% e = e + 8*en;
+
+% end accuracy of model
+
+
+% Free Energy Objective Function: F(p) = log evidence - divergence
+%--------------------------------------------------------------------------
+Q  = aopt.Q;
+
+if isnumeric(Q) && ~isempty(Q) 
+    % If user supplied a precision matrix, store it so that it can be
+    % incorporated into the updating q
+    aopt.precisionQ = Q;
+elseif iscell(Q)
+    aopt.precisionQ = Q;
 end
 
-function sse = objective(r,iS,X,J,pp)
+if ~isfield(aopt,'precisionQ')
+    Q  = spm_Ce(1*ones(1,length(spm_vec(y)))); %
+    ny  = length(spm_vec(y));
+    nq  = ny ./ length(Q);
+elseif isfield(aopt,'precisionQ') && isnumeric(aopt.precisionQ)
+    Q   = {aopt.precisionQ};
+    clear Q;
+    lpq = length(aopt.precisionQ);
+    for ijq = 1:length(aopt.precisionQ)
+       Q{ijq} = sparse(ijq,ijq,aopt.precisionQ(ijq,ijq),lpq,lpq);
+    end
 
-ny  = length(r);
-Dg  = VtoGauss(real(r));
+    ny  = length(spm_vec(y));
+    nq  = ny ./ length(Q{1});
+elseif isfield(aopt,'precisionQ') && iscell(aopt.precisionQ)
+    Q = aopt.precisionQ;
+    ny  = length(spm_vec(y));
+    nq  = ny ./ length(Q{1});
+end
+
+if ~isfield(aopt,'h') 
+    h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
+else
+    h = aopt.h;
+end
+
+if any(isinf(h))
+    h = denan(h)+1/8;
+end
+
+iS = sparse(0);
+
+for i  = 1:length(Q)
+    iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+end
+
+e   = (spm_vec(Y) - spm_vec(y)).^2;
+ipC = aopt.ipC;
+
+warning off;                                % suppress singularity warnings
+Cp  = spm_inv( (J*iS*J') + ipC );
+%Cp = (Cp + Cp')./2;
+warning on
+
+p  = ( x0(:) - pp(:) );
+
+if any(isnan(Cp(:))) 
+    Cp = denan(Cp,1/8);
+end
+
+
+% pulled directly from SPM's spm_nlsi_GN.m ...
+% ascent on h / precision {M-step}
+%==========================================================================
+%for m = 1:8
+clear P;
+nh  = length(Q);
+warning off;
+S   = spm_inv(iS);warning on;
+
+ihC = speye(nh,nh)*exp(4);
+hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
+for i = 1:nh
+    P{i}   = Q{i}*exp(h(i));
+    PS{i}  = P{i}*S;
+    P{i}   = kron(speye(nq),P{i});
+    JPJ{i} = real(J*P{i}*J');
+end
+
+% derivatives: dLdh
+%------------------------------------------------------------------
+for i = 1:nh
+    dFdh(i,1)      =   trace(PS{i})*nq/2 ...
+        - real(e'*P{i}*e)/2 ...
+        - spm_trace(Cp,JPJ{i})/2;
+    for j = i:nh
+        dFdhh(i,j) = - spm_trace(PS{i},PS{j})*nq/2;
+        dFdhh(j,i) =   dFdhh(i,j);
+    end
+end
+
+% add hyperpriors
+%------------------------------------------------------------------
+d     = h     - hE;
+dFdh  = dFdh  - ihC*d;
+dFdhh = dFdhh - ihC;
+Ch    = spm_inv(-dFdhh);
+
+% update ReML estimate
+%------------------------------------------------------------------
+warning off;
+dh    = spm_dx(dFdhh,dFdh,{4});
+dh    = min(max(dh,-1),1);
+warning on;
+h     = h  + dh;
+
+%if aopt.updateh
+    aopt.h = h;
+    aopt.JPJ = JPJ;
+    aopt.Ch  = Ch;
+    aopt.d   = d;
+    aopt.ihC = ihC;
+    aopt.iS = iS;
+%end
+
+
+% compute accuracy of model
+dgY = VtoGauss(real(Y));
+dgy = VtoGauss(real(y));
+
+Dg  = dgY - dgy;
 e   = trace(Dg*iS*Dg');
-p   = ( X(:) - pp(:) );
 
-Cp  = spm_inv(J*iS*J');
-ipC = inv(Cp);
+% and scaled version
+dgYn = VtoGauss(real(Y./sum(Y)));
+dgyn = VtoGauss(real(y./sum(y)));
 
-L(1) = spm_logdet(iS)*1/2  - e/2 - ny*log(8*atan(1))/2;
-L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+Dgn  = dgYn - dgyn;
+en   = trace(Dgn*iS*Dgn');
+
+e = e + 8*en;
+
+
+% Compute objective function;
+
+L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
+%L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
 
 F    = sum(L);
-sse    = (-F);
+e    = (-F);
+
+
+
+
+
+
+% model = data - r(:);
+% 
+% Vmodel = VtoGauss(model);
+% Vdata  = VtoGauss(data);
+% e      = mvgkl(data,Vdata,model,Vmodel);
+% %e = e + mvgkl(model,Vmodel,data,Vdata);;
+% 
+% % Parameters;
+% 
+% for i = 1:length(pp)
+%     pd(i)  = makedist('normal','mu', pp(i),'sigma', V(i) );
+% end
+% 
+% % Compute relative change in cdf
+% f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
+% 
+% for i = 1:length(X)    
+%     PX(i) = f(X(i),pd(i));
+% end
+% 
+% px = 1 - (PX*J)*data; %sum(PX);%1 - (PX*J)'\data;
+% 
+% e = e * px;
 
 end
+
+% function sse = objective(r,iS,X,J,pp)
+% 
+% ny  = length(r);
+% Dg  = VtoGauss(real(r));
+% e   = trace(Dg*iS*Dg');
+% p   = ( X(:) - pp(:) );
+% 
+% Cp  = spm_inv(J*iS*J');
+% ipC = inv(Cp);
+% 
+% L(1) = spm_logdet(iS)*1/2  - e/2 - ny*log(8*atan(1))/2;
+% L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+% 
+% F    = sum(L);
+% sse    = (-F);
+% 
+% end
 
 
 

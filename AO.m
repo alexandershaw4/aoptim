@@ -39,7 +39,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % The Hessian is approximated via a sort of feature-scoring of the parameter
 % gradients (partial derivatives; J(n_param x n_out) ) weighted by Q;
 %
-%    H(i,j) = J*Q*J'
+%    H(i,j) = J[Q]J'
 %
 % this (information matrix) scoring is then used to weight the Hessian in
 % the Newton update scheme (under default settings, though see GaussNewton
@@ -131,51 +131,6 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % 
 % where t is a (temperature) hyperparameter controlled through a separate gradient
 % descent routine.
-%
-% Expectation-Maximization
-%---------------------------------------------------------------------------
-% Setting either (or both) opts.hyperparams = 1 or opts.ahyper=1 & opts.ahyper_p=1
-% will invoke an EM routine whereby hyperparameter estimation acts as the
-% E-step and the gradient flow / Gauss-Newton step acts as the
-% maximisation. These are linked through;
-%
-%   E-step
-% ---------------------------
-%  B  = gausfit(data);
-%  b  = B'\model
-%  B  = b.*B;          <- residuals modelled as ~multivariate Gaussian
-%
-%  for pp = 1:size(B,1)
-%     iQ{pp} = diag(B(pp,:)) * ah(pp);
-%     bQ{pp} = real(J*iQ{pp}*aopt.J');  <- J = dp/dy, i.e. partial gradients
-%  end
-% 
-%  derivatives; gradient (dfdQ) and curvature (dfdQQ)
-%  for i = 1:size(pr,1)
-%      dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
-%                       - real(e'*iQ{i}*e)/2 ...
-%                       - spm_trace(Cp,bQ{i})/2;
-%      for j = i:size(pr,1)
-%          dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
-%          dFdQQ(j,i) =   dFdQQ(i,j);
-%      end
-%  end
-% 
-%  Newton's step: ascent on ah; (hyperparameter)
-%
-%  dh      = step * (dFdQQ\dFdQ);
-%  dh      = denan(dh);
-%  ah      = ah + dh;
-%
-%   M-step
-% ---------------------------
-%  b     = J \ (B'*diag(ah)*B);
-%  [L,D] = ldl(b,Cp); 
-%  H     = L*D*L';    <-- weighted Hessian
-%
-%  dFdpp  = H - ipC ;
-%  dFdp   = Jx * res - ipC * x;
-%  dx     = x  - red.*spm_dx(-H,-J,{4}); <-- GN-step
 %
 %
 % ALSO SET:
@@ -597,71 +552,6 @@ while iterate
         end
     end
     
-    % Feature Scoring for MIMOs - using aopt.Q updated above   
-    %----------------------------------------------------------------------    
-    % this section computes the Hessian matrix for routines that need it
-    % (Newton, GaussNewton, Trust) - but since matrix Q0 contains the
-    % features we aim to fit on this iteration, fitting the gradients to this gives us a
-    % weighted Hessian that links the E-step with a corresponding
-    % maximisation
-
-    % i.e. where J(np,nf) & nf > 1
-    % if ismimo
-    %     if verbose; pupdate(loc,n,0,e0,e0,'scoring',toc); end
-    % 
-    %     JJ = params.aopt.J;
-    %     Q0 = aopt.Q;
-    % 
-    %     if iscell(Q0)
-    %         Q0 = sum(cat(3,Q0{:}),3);
-    %     end
-    % 
-    %     if norm(Q0 - eye(length(Q0))) ~= 0
-    %         % when Q0 has something informative (~= eye)      
-    % 
-    %         if isempty(Q0)
-    %             Q0 = eye(length(y(:)));
-    %         end
-    % 
-    %         padQ = size(JJ,2) - length(Q0);
-    %         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
-    % 
-    %         %Hessian
-    %         for i = 1:np
-    %           for j = 1:np
-    %               JJ(i,:) = denan(JJ(i,:));
-    %               JJ(j,:) = denan(JJ(j,:));
-    %               HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
-    %           end
-    %         end
-    % 
-    %     elseif aopt.ahyper_p
-    % 
-    %         for i = 1:np
-    %            for j = 1:np
-    %                JJ(i,:) = denan(JJ(i,:));
-    %                JJ(j,:) = denan(JJ(j,:));
-    %                B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
-    %                HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
-    %            end
-    %         end
-    % 
-    %     else            
-    %         JJ = denan(JJ);
-    %         HQ = JJ*JJ';
-    %     end
-    % 
-    % end
-
-    % Select step size method
-    %----------------------------------------------------------------------    
-    %if ismimo
-    %    JJ = params.aopt.J;
-    %    for i = 1:size(JJ,1)
-    %        JJ(i,:) = JJ(i,:)./norm(JJ(i,:));
-    %    end
-    %    params.aopt.J = JJ;
-    %end
 
     if ~ismimo
         [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0);
@@ -732,7 +622,7 @@ while iterate
         res = y(:) - mp(:);
         res = res./norm(res);
 
-        % Levenberg-Marquardt step
+        % regulariser for Levenberg-Marquardt step
         lambda  = .01;
 
         diagJtJ = sum(abs(J').^2, 1);
@@ -740,13 +630,15 @@ while iterate
 
         Jplus = [J'; diag(sqrt(lambda*diagJtJ))];
         rplus = [res; zerosp];
-        %step  = Jplus \ rplus;
+        
+        % Levenberg-Marquardt step
         step = pinv(Jplus)*rplus;
         LM   = x1 + step;
 
         % Maximum aposteriori step
         MAP = x1 + atcm.fun.aregress(J',res,'MAP');
 
+        % Gauss-Newton step
         GN  = x1 + red.*spm_dx(J*J',J*res);
 
         ES = [obj(LM,params) obj(MAP,params) obj(GN,params)];
@@ -771,264 +663,38 @@ while iterate
 
             switch routine
                 case 'LM'
+                    fprintf('\b (optimising)\n');
                     while obj(dx,params) > obj(x1,params)
                         lambda = 10*lambda;
                         Jplus  = [J'; diag(sqrt(lambda*sum(J'.^2,1)))];
-                        step   = Jplus \ rplus;
+                        step   = pinv(Jplus)*rplus;
                         dx     = x1 + step;
                     end
                     fprintf('| Finished Regularising Stepsize\n');
 
                 case 'MAP'
+                    fprintf('\b (optimising)\n');
                     % optimise the regulariser r in inv(rI + J'J)*Jres
                     of    = @(r) obj(x1 + atcm.fun.aregress(J',res,'MAP',r),params);
                     [reg] = fminsearch(of,1);
                     MAP   = x1 + atcm.fun.aregress(J',res,'MAP',reg);
                     dx    = MAP;
                     fprintf('| Finished Optimising Stepsize\n');
+                
+                case 'GN'
+                    fprintf('\b (optimising)\n');
+                    % optimise step size in GN routine (not regularisation)
+                    gof    = @(r) obj(x1 + (r*red).*spm_dx(J*J',J*res), params);
+                    [greg] = fminsearch(gof,1);
+                    GN     = x1 + (greg*red).*spm_dx(J*J',J*res);
+                    dx     = GN;
+                    fprintf('| Finished Optimising Stepsize\n');
             end
         end
 
         de = obj(dx,params);
 
-         % section switches for Newton, GaussNewton and Quasi-Newton Schemes
-         %-----------------------------------------------------------------
 
-        %  % Newton's Method
-        %  %-----------------------------------------------------------------
-        % if (isNewton && ismimo) || (isQuasiNewton && ismimo)
-        %     if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc); end
-        % 
-        %     % Norm Hessian 
-        %     H = HQ./norm(HQ);
-        % 
-        %     % search (step) method 7 performs a factorisation of the full
-        %     % Jacobian for the vanilla descent scheme, incorporate into
-        %     % Hessian here for Newton step
-        %     if search_method == 7
-        %         H = HQ*pinv(a);
-        %     end
-        % 
-        %     % Quasi-Newton uses left singular values of H
-        %     if isQuasiNewton
-        %         [u,s0,v0] = svd(H);
-        %         H = pinv(u);
-        %     end
-        % 
-        %     % the mimo finite different functions return gradients
-        %     % in reduced space - embed in full vector space
-        %     %Jo = cat(1,aopt.Jo{:,1});%./e1;
-        %     %JJ = x0*0;
-        %     %JJ(find(diag(pC))) = Jo;
-        %     %JJ = denan(JJ);
-        %     %JJ = JJ./norm(JJ);
-        % 
-        %     % components
-        %     if order == 1 || order == 5
-        %         Jx  = aopt.J ;%./ norm(aopt.J);
-        %     elseif order == 2
-        %         Jx = cat(2,params.aopt.Jo{:,3});
-        %         Jx = denan(Jx);
-        %         %Jx = Jx ./ norm(Jx);
-        %         JJ = zeros(length(x0*0),size(Jx,1));
-        %         ic = find(diag(pC));
-        %         JJ(ic,:) = Jx';
-        %         Jx = JJ;
-        %     end
-        % 
-        %     for i = 1:size(JJ,1); 
-        %         JJ(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
-        %     end
-        % 
-        %     % get residual vector
-        %     [~,~,res,~]  = obj(x1,params);
-        %     res = res./norm(res);
-        % 
-        %     % recompute lambda
-        %     a = 1;%compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
-        % 
-        %     % Compute step using matrix exponential (see spm_dx)
-        %     Hstep = spm_dx(-H,-JJ*res,{-4});            
-        %     Gdx   = x1 - Hstep;
-        %     dx    = Gdx;
-        % 
-        %     NewtonStep = dx;
-        % 
-        %     if verbose; fprintf('Selected Newton Step\n'); end
-        % end
-        % 
-        % % Newton's Method with tunable regularisation of inverse hessian
-        % %------------------------------------------------------------------
-        % if isNewtonReg && ismimo
-        %     if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
-        % 
-        %     H = HQ;
-        % 
-        %     % the non-parallel finite different functions return gradients
-        %     % in reduced space - embed in full vector space
-        %     Jo = cat(1,aopt.Jo{:,1});
-        %     if length(Jo) ~= length(x1)
-        %         JJ = x0*0;
-        %         JJ(find(diag(pC))) = Jo;
-        %     else
-        %         JJ = Jo;
-        %     end
-        % 
-        %     % essentially here we are tiuning this part of the Newton
-        %     % scheme:
-        %     %                ______
-        %     % xhat = x - inv(H*L*H')*J
-        %     % tunable regularisation function
-        %     Gf   = @(L) pinv(H*(L*eye(length(H)))*H');
-        %     Gff  = @(x) obj(x1 - Gf(x)*JJ,params);
-        %     [XX] = fminsearch(Gff,1);
-        %     H0 = (H*(XX*eye(length(H)))*H');
-        % 
-        %     Hstep = spm_dx(H0,JJ,{-4}); 
-        %     GRdx  = x1 - Hstep;
-        %     dx     = GRdx;
-        % 
-        % end
-        % 
-        % % Now also give a Gauss-Newton option rather than just Newton
-        % %------------------------------------------------------------------
-        % if isGaussNewton && ismimo
-        %     if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
-        % 
-        %     % Norm Hessian
-        %     H = HQ./norm(HQ);
-        % 
-        %     % get residual vector
-        %     [~,~,res,~]  = obj(x1,params);
-        % 
-        %     % components
-        %     if order == 1 || order == 5
-        %         Jx  = aopt.J ;%./ norm(aopt.J);
-        %     elseif order == 2
-        %         Jx = cat(2,params.aopt.Jo{:,3});
-        %         Jx = denan(Jx);
-        %         %Jx = Jx ./ norm(Jx);
-        %         JJ = zeros(length(x0*0),size(Jx,1));
-        %         ic = find(diag(pC));
-        %         JJ(ic,:) = Jx';
-        %         Jx = JJ;
-        %     end
-        % 
-        %     for i = 1:size(JJ,1); 
-        %         Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
-        %     end
-        % 
-        %     res = res ./ norm(res);
-        %     ipC = diag(red);%spm_inv(score);
-        % 
-        %     %a = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
-        % 
-        %     % the GN routine jumps to the minimum of the second order Taylor-approximation
-        %     dFdpp  = H - ipC ;
-        %     dFdp   = Jx * res - ipC * x1;
-        %     dx     = x1 - red.*spm_dx(-dFdpp,-dFdp,{-4}); 
-        % 
-        %     GNStep = dx;
-        %     de  = obj(dx,params);
-        % 
-        % end
-                     
-        % % For almost-linear systems, a lsq fit of the partial gradients to
-        % % the data would give an estimate of the parameter update
-        % %------------------------------------------------------------------
-        % if lsqjacobian
-        %     jx = aopt.J'\y;
-        %     dx = x1 - jx;
-        % end
-        % 
-        % % a Trust-Region method (a variation on GN scheme)
-        % %------------------------------------------------------------------
-        % if isTrust && ismimo
-        %     if n == 1; mu = 1e-2; end
-        % 
-        %     % Norm Hessian
-        %     H = HQ./norm(HQ);
-        % 
-        %     % get residual vector
-        %     [~,~,res,~]  = obj(x1,params);
-        % 
-        %     % components
-        %     if order == 1
-        %         Jx  = aopt.J ;%./ norm(aopt.J);
-        %     elseif order == 2
-        %         Jx = cat(2,params.aopt.Jo{:,3});
-        %         Jx = denan(Jx);
-        %         %Jx = Jx ./ norm(Jx);
-        %         JJ = zeros(length(x0*0),size(Jx,1));
-        %         ic = find(diag(pC));
-        %         JJ(ic,:) = Jx';
-        %         Jx = JJ;
-        %     end
-        % 
-        %     for i = 1:size(JJ,1); 
-        %         Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
-        %     end
-        % 
-        %     res = res ./ norm(res);
-        %     ipC = diag(red);%spm_inv(score);
-        % 
-        %     if n == 1; del = 1;  end
-        % 
-        %     % solve trust problem
-        %     d  = subproblem(H,J,del);
-        %     dr = J' * d + (1/2) * d' * H * d;
-        % 
-        %     if n == 1; r   = dr; end
-        % 
-        %     % evaluate
-        %     fx0 = obj(x1,params);
-        %     fx1 = obj(x1 - d,params);
-        %     rk  = (fx1 - fx0) / max((dr - r),1);
-        % 
-        %     % adjust radius of trust region
-        %     rtol = 0;
-        %     if rk < rtol;  del = 1.2 * del;           
-        %     else;          del = del * .8;
-        %     end
-        % 
-        %     % accept update
-        %     if fx1 < fx0
-        %         pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
-        %         dx = x1 - d;
-        %         %dx = fixbounds(dx,x1,red);
-        %         r  = dr;
-        %     end
-        % 
-        %     % essentially the GN routine with a constraint [d]
-        %     % d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
-        %     % d     = d ./ norm(d);
-        %     % dFdpp = (d*d') - ipC;
-        %     % dFdp  = Jx * res - ipC * x1;
-        %     % dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
-        % 
-        %     %dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
-        %     mu  = mu * 2;
-        % 
-        % end
-        % 
-        % % Compare steps if N and GN are both selected
-        % %---------------------------------------------------------------
-        % if isNewton && isGaussNewton
-        %     % compare N, GN and vanilla;
-        %     ec(1) = obj(gdx,params);
-        %     ec(2) = obj(NewtonStep,params);
-        %     ec(3) = obj(GNStep,params);
-        % 
-        %     [~,win] = min(ec);
-        % 
-        %     if win == 1
-        %         fprintf('Selected GD\n'); dx = gdx;
-        %     elseif win == 2
-        %         fprintf('Selected Newton\n'); dx = NewtonStep;
-        %     elseif win == 3
-        %         fprintf('Selected G-N\n'); dx = GNStep;
-        %     end
-        % end
 
         % Probabilities Section
         %---------------------------------------------------------------
@@ -1073,7 +739,7 @@ while iterate
         
         % Compute relative change in cdf
         pdx = pt*0;
-        f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
+        f   = @(dx,pd)  (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
         for i = 1:length(x1)
             if red(i)
                 pdx(i) = f(dx(i),pd(i));
@@ -1289,88 +955,6 @@ while iterate
         deltap = cdist(dx',x1');
         deltaptol = 1e-6;
         
-        % MEMORY
-        %------------------------------------------------------------------
-        % treat iterations as an optimisable quadratic integration scheme
-        % i.e. dx_dot = dx + w([t-1])*history(dx[t-1]) + w([t-2]*h([t-2]) ...
-        %
-        % this effectively equips the optimisation with a 'memory' over
-        % iteration cycles, with which to finess the gradient flow
-        
-        % integration_nc=memory_optimise;
-        % if integration_nc && n == 1;
-        %     %Hist.hyperdx(maxit+1,maxit) = nan;
-        %     Hist.hyperdx= zeros(3,maxit);
-        % end
-        % 
-        % if integration_nc && n > 1
-        %     pupdate(loc,n,nfun,e1,e1,'f: memr',toc);
-        % 
-        %     try
-        % 
-        %         % fminsearch memory-hyperparmeter options
-        %         options.MaxIter = 25;
-        %         options.Display = 'off';
-        %         if doparallel
-        %             options.UseParallel = 1;
-        %         end
-        % 
-        %         k  = [cat(2,Hist.p{:}) dx];
-        % 
-        %         % limit memory depth
-        %         try; k = k(:,end-4:end); end
-        % 
-        %         hp = zeros(size(k,2),1);
-        %         hp(end)=1;
-        % 
-        %         % memory [k] and weights [x]
-        %         gx = @(x) obj(k*x,params);
-        % 
-        %         LB  = zeros(size(hp))-1;
-        %         UB  = ones(size(hp))+2;
-        %         dim = length(hp);
-        % 
-        %         SearchAgents_no = 6;
-        %         Max_iteration   = 6*2;
-        %         fun = @(x) obj(k*x(:),params);
-        % 
-        %         [Frk,X,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,hp,ones(size(hp))/8);              
-        %         X=X(:);
-        % 
-        %         if obj(k*X,params) < obj(dx,params)
-        %             dx = k*X;
-        %             de = obj(dx,params);
-        %             if verbose; fprintf('Memory helped improve gradient flow update\n');end
-        %         end
-        % 
-        %         try
-        %             if n < 3
-        %                Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + [X];
-        %             else
-        %                 Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + X(end-2:end);
-        %             end
-        %         catch 
-        %             try
-        %                 Hist.hyperdx(:,n) = [X];
-        %             catch
-        %                 Hist.hyperdx(:,n) = 0;
-        %             end
-        %         end
-        % 
-        %         % plot memory usage (sensory, STM, LTM)
-        %         s(1) = subplot(5,3,11);cla;
-        %         block = Hist.hyperdx;
-        %         imagesc(block);
-        %         caxis([-1 1]*.01);
-        %         colormap(cmocean('balance'));
-        %         title('Update Rate','color','w','fontsize',18);
-        %         s(1).YColor = [1 1 1];
-        %         s(1).XColor = [1 1 1];
-        %         s(1).Color  = [38 54 72]./255;
-        %         set(gca,'ytick',1:3,'yticklabel',{'STM' 'LTM' 'GradFlow'});
-        % 
-        %     end         
-        % end
                 
         % log deltaxs
         Hist.dx(:,n) = dx;
@@ -1451,12 +1035,12 @@ while iterate
             
             % Make the U/L bounds proportional to the probability over the
             % prior variance (derived from feature scoring on jacobian)
-            LB  = denan( dx - ( abs(red) ) );
-            UB  = denan( dx + ( abs(red) ) );
+            LB  = denan( x1 - ( abs(red)*8 ) );
+            UB  = denan( x1 + ( abs(red)*8 ) );
             B   = find(UB==LB);
 
-            LB(B) = dx(B) - 1;
-            UB(B) = dx(B) + 1;
+            LB(B) = x1(B) - 1;
+            UB(B) = x1(B) + 1;
 
             % Use the Runge-Kutta search algorithm
             SearchAgents_no = rungekutta;
@@ -1466,7 +1050,7 @@ while iterate
             fun = @(x) obj(x,params);
 
             try
-                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,dx,red);
+                [Frk,rdx,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,x1,red);
                 rdx = rdx(:);
                 dde = obj(rdx,params);
 
@@ -2491,6 +2075,12 @@ switch lower(method)
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); 
             e  = abs(e);
 
+            %Yn = Y./sum(Y);
+            %yn = y./sum(y);
+
+            %en  = sum( (spm_vec(Yn) - spm_vec(yn) ).^2 ); 
+
+            %e = e + 4*en;
 
         % case 'sseg'
         % 
@@ -2628,6 +2218,7 @@ switch lower(method)
 
             % Compute relative change in cdf
             f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
+           % f   = @(dx,pd) abs( ((1./(1+exp(-pdf(pd,dx)))) - (1./(1+exp(-pdf(pd,pd.mu)))))./(1./(1+exp(-pdf(pd,pd.mu)))) );
             for i = 1:length(x0)
                 if vv(i)
                     pdx(i) = f(x0(i),pd(i));
@@ -4024,6 +3615,246 @@ end
 
 
 
+         % section switches for Newton, GaussNewton and Quasi-Newton Schemes
+         %-----------------------------------------------------------------
+
+        %  % Newton's Method
+        %  %-----------------------------------------------------------------
+        % if (isNewton && ismimo) || (isQuasiNewton && ismimo)
+        %     if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc); end
+        % 
+        %     % Norm Hessian 
+        %     H = HQ./norm(HQ);
+        % 
+        %     % search (step) method 7 performs a factorisation of the full
+        %     % Jacobian for the vanilla descent scheme, incorporate into
+        %     % Hessian here for Newton step
+        %     if search_method == 7
+        %         H = HQ*pinv(a);
+        %     end
+        % 
+        %     % Quasi-Newton uses left singular values of H
+        %     if isQuasiNewton
+        %         [u,s0,v0] = svd(H);
+        %         H = pinv(u);
+        %     end
+        % 
+        %     % the mimo finite different functions return gradients
+        %     % in reduced space - embed in full vector space
+        %     %Jo = cat(1,aopt.Jo{:,1});%./e1;
+        %     %JJ = x0*0;
+        %     %JJ(find(diag(pC))) = Jo;
+        %     %JJ = denan(JJ);
+        %     %JJ = JJ./norm(JJ);
+        % 
+        %     % components
+        %     if order == 1 || order == 5
+        %         Jx  = aopt.J ;%./ norm(aopt.J);
+        %     elseif order == 2
+        %         Jx = cat(2,params.aopt.Jo{:,3});
+        %         Jx = denan(Jx);
+        %         %Jx = Jx ./ norm(Jx);
+        %         JJ = zeros(length(x0*0),size(Jx,1));
+        %         ic = find(diag(pC));
+        %         JJ(ic,:) = Jx';
+        %         Jx = JJ;
+        %     end
+        % 
+        %     for i = 1:size(JJ,1); 
+        %         JJ(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
+        %     end
+        % 
+        %     % get residual vector
+        %     [~,~,res,~]  = obj(x1,params);
+        %     res = res./norm(res);
+        % 
+        %     % recompute lambda
+        %     a = 1;%compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
+        % 
+        %     % Compute step using matrix exponential (see spm_dx)
+        %     Hstep = spm_dx(-H,-JJ*res,{-4});            
+        %     Gdx   = x1 - Hstep;
+        %     dx    = Gdx;
+        % 
+        %     NewtonStep = dx;
+        % 
+        %     if verbose; fprintf('Selected Newton Step\n'); end
+        % end
+        % 
+        % % Newton's Method with tunable regularisation of inverse hessian
+        % %------------------------------------------------------------------
+        % if isNewtonReg && ismimo
+        %     if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
+        % 
+        %     H = HQ;
+        % 
+        %     % the non-parallel finite different functions return gradients
+        %     % in reduced space - embed in full vector space
+        %     Jo = cat(1,aopt.Jo{:,1});
+        %     if length(Jo) ~= length(x1)
+        %         JJ = x0*0;
+        %         JJ(find(diag(pC))) = Jo;
+        %     else
+        %         JJ = Jo;
+        %     end
+        % 
+        %     % essentially here we are tiuning this part of the Newton
+        %     % scheme:
+        %     %                ______
+        %     % xhat = x - inv(H*L*H')*J
+        %     % tunable regularisation function
+        %     Gf   = @(L) pinv(H*(L*eye(length(H)))*H');
+        %     Gff  = @(x) obj(x1 - Gf(x)*JJ,params);
+        %     [XX] = fminsearch(Gff,1);
+        %     H0 = (H*(XX*eye(length(H)))*H');
+        % 
+        %     Hstep = spm_dx(H0,JJ,{-4}); 
+        %     GRdx  = x1 - Hstep;
+        %     dx     = GRdx;
+        % 
+        % end
+        % 
+        % % Now also give a Gauss-Newton option rather than just Newton
+        % %------------------------------------------------------------------
+        % if isGaussNewton && ismimo
+        %     if verbose; pupdate(loc,n,nfun,e1,e1,'Newton ',toc);end
+        % 
+        %     % Norm Hessian
+        %     H = HQ./norm(HQ);
+        % 
+        %     % get residual vector
+        %     [~,~,res,~]  = obj(x1,params);
+        % 
+        %     % components
+        %     if order == 1 || order == 5
+        %         Jx  = aopt.J ;%./ norm(aopt.J);
+        %     elseif order == 2
+        %         Jx = cat(2,params.aopt.Jo{:,3});
+        %         Jx = denan(Jx);
+        %         %Jx = Jx ./ norm(Jx);
+        %         JJ = zeros(length(x0*0),size(Jx,1));
+        %         ic = find(diag(pC));
+        %         JJ(ic,:) = Jx';
+        %         Jx = JJ;
+        %     end
+        % 
+        %     for i = 1:size(JJ,1); 
+        %         Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
+        %     end
+        % 
+        %     res = res ./ norm(res);
+        %     ipC = diag(red);%spm_inv(score);
+        % 
+        %     %a = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
+        % 
+        %     % the GN routine jumps to the minimum of the second order Taylor-approximation
+        %     dFdpp  = H - ipC ;
+        %     dFdp   = Jx * res - ipC * x1;
+        %     dx     = x1 - red.*spm_dx(-dFdpp,-dFdp,{-4}); 
+        % 
+        %     GNStep = dx;
+        %     de  = obj(dx,params);
+        % 
+        % end
+                     
+        % % For almost-linear systems, a lsq fit of the partial gradients to
+        % % the data would give an estimate of the parameter update
+        % %------------------------------------------------------------------
+        % if lsqjacobian
+        %     jx = aopt.J'\y;
+        %     dx = x1 - jx;
+        % end
+        % 
+        % % a Trust-Region method (a variation on GN scheme)
+        % %------------------------------------------------------------------
+        % if isTrust && ismimo
+        %     if n == 1; mu = 1e-2; end
+        % 
+        %     % Norm Hessian
+        %     H = HQ./norm(HQ);
+        % 
+        %     % get residual vector
+        %     [~,~,res,~]  = obj(x1,params);
+        % 
+        %     % components
+        %     if order == 1
+        %         Jx  = aopt.J ;%./ norm(aopt.J);
+        %     elseif order == 2
+        %         Jx = cat(2,params.aopt.Jo{:,3});
+        %         Jx = denan(Jx);
+        %         %Jx = Jx ./ norm(Jx);
+        %         JJ = zeros(length(x0*0),size(Jx,1));
+        %         ic = find(diag(pC));
+        %         JJ(ic,:) = Jx';
+        %         Jx = JJ;
+        %     end
+        % 
+        %     for i = 1:size(JJ,1); 
+        %         Jx(i,:) = denan(Jx(i,:)./norm(Jx(i,:))); 
+        %     end
+        % 
+        %     res = res ./ norm(res);
+        %     ipC = diag(red);%spm_inv(score);
+        % 
+        %     if n == 1; del = 1;  end
+        % 
+        %     % solve trust problem
+        %     d  = subproblem(H,J,del);
+        %     dr = J' * d + (1/2) * d' * H * d;
+        % 
+        %     if n == 1; r   = dr; end
+        % 
+        %     % evaluate
+        %     fx0 = obj(x1,params);
+        %     fx1 = obj(x1 - d,params);
+        %     rk  = (fx1 - fx0) / max((dr - r),1);
+        % 
+        %     % adjust radius of trust region
+        %     rtol = 0;
+        %     if rk < rtol;  del = 1.2 * del;           
+        %     else;          del = del * .8;
+        %     end
+        % 
+        %     % accept update
+        %     if fx1 < fx0
+        %         pupdate(loc,n,nfun,e1,e1,'trust! ',toc);
+        %         dx = x1 - d;
+        %         %dx = fixbounds(dx,x1,red);
+        %         r  = dr;
+        %     end
+        % 
+        %     % essentially the GN routine with a constraint [d]
+        %     % d     = (0.5*(H + H') + mu^2*eye(length(H))) \ -Jx;
+        %     % d     = d ./ norm(d);
+        %     % dFdpp = (d*d') - ipC;
+        %     % dFdp  = Jx * res - ipC * x1;
+        %     % dx    = x1 - spm_dx(dFdpp,dFdp,{-4}); 
+        % 
+        %     %dx  = x1 - ( (0.5*(d'*H*d) * Jx')' * (.5*res) );
+        %     mu  = mu * 2;
+        % 
+        % end
+        % 
+        % % Compare steps if N and GN are both selected
+        % %---------------------------------------------------------------
+        % if isNewton && isGaussNewton
+        %     % compare N, GN and vanilla;
+        %     ec(1) = obj(gdx,params);
+        %     ec(2) = obj(NewtonStep,params);
+        %     ec(3) = obj(GNStep,params);
+        % 
+        %     [~,win] = min(ec);
+        % 
+        %     if win == 1
+        %         fprintf('Selected GD\n'); dx = gdx;
+        %     elseif win == 2
+        %         fprintf('Selected Newton\n'); dx = NewtonStep;
+        %     elseif win == 3
+        %         fprintf('Selected G-N\n'); dx = GNStep;
+        %     end
+        % end
+
+
 
 % Other experiment stuff
 %---------------------------------------------
@@ -4228,3 +4059,196 @@ end
 %             aopt.updateh = true;
 %             
 %         end
+
+        % MEMORY
+        %------------------------------------------------------------------
+        % treat iterations as an optimisable quadratic integration scheme
+        % i.e. dx_dot = dx + w([t-1])*history(dx[t-1]) + w([t-2]*h([t-2]) ...
+        %
+        % this effectively equips the optimisation with a 'memory' over
+        % iteration cycles, with which to finess the gradient flow
+        
+        % integration_nc=memory_optimise;
+        % if integration_nc && n == 1;
+        %     %Hist.hyperdx(maxit+1,maxit) = nan;
+        %     Hist.hyperdx= zeros(3,maxit);
+        % end
+        % 
+        % if integration_nc && n > 1
+        %     pupdate(loc,n,nfun,e1,e1,'f: memr',toc);
+        % 
+        %     try
+        % 
+        %         % fminsearch memory-hyperparmeter options
+        %         options.MaxIter = 25;
+        %         options.Display = 'off';
+        %         if doparallel
+        %             options.UseParallel = 1;
+        %         end
+        % 
+        %         k  = [cat(2,Hist.p{:}) dx];
+        % 
+        %         % limit memory depth
+        %         try; k = k(:,end-4:end); end
+        % 
+        %         hp = zeros(size(k,2),1);
+        %         hp(end)=1;
+        % 
+        %         % memory [k] and weights [x]
+        %         gx = @(x) obj(k*x,params);
+        % 
+        %         LB  = zeros(size(hp))-1;
+        %         UB  = ones(size(hp))+2;
+        %         dim = length(hp);
+        % 
+        %         SearchAgents_no = 6;
+        %         Max_iteration   = 6*2;
+        %         fun = @(x) obj(k*x(:),params);
+        % 
+        %         [Frk,X,~]=RUN(SearchAgents_no,Max_iteration,LB',UB',dim,fun,hp,ones(size(hp))/8);              
+        %         X=X(:);
+        % 
+        %         if obj(k*X,params) < obj(dx,params)
+        %             dx = k*X;
+        %             de = obj(dx,params);
+        %             if verbose; fprintf('Memory helped improve gradient flow update\n');end
+        %         end
+        % 
+        %         try
+        %             if n < 3
+        %                Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + [X];
+        %             else
+        %                 Hist.hyperdx(:,n) = Hist.hyperdx(:,n) + X(end-2:end);
+        %             end
+        %         catch 
+        %             try
+        %                 Hist.hyperdx(:,n) = [X];
+        %             catch
+        %                 Hist.hyperdx(:,n) = 0;
+        %             end
+        %         end
+        % 
+        %         % plot memory usage (sensory, STM, LTM)
+        %         s(1) = subplot(5,3,11);cla;
+        %         block = Hist.hyperdx;
+        %         imagesc(block);
+        %         caxis([-1 1]*.01);
+        %         colormap(cmocean('balance'));
+        %         title('Update Rate','color','w','fontsize',18);
+        %         s(1).YColor = [1 1 1];
+        %         s(1).XColor = [1 1 1];
+        %         s(1).Color  = [38 54 72]./255;
+        %         set(gca,'ytick',1:3,'yticklabel',{'STM' 'LTM' 'GradFlow'});
+        % 
+        %     end         
+        % end
+
+    % Feature Scoring for MIMOs - using aopt.Q updated above   
+    %----------------------------------------------------------------------    
+    % this section computes the Hessian matrix for routines that need it
+    % (Newton, GaussNewton, Trust) - but since matrix Q0 contains the
+    % features we aim to fit on this iteration, fitting the gradients to this gives us a
+    % weighted Hessian that links the E-step with a corresponding
+    % maximisation
+
+    % i.e. where J(np,nf) & nf > 1
+    % if ismimo
+    %     if verbose; pupdate(loc,n,0,e0,e0,'scoring',toc); end
+    % 
+    %     JJ = params.aopt.J;
+    %     Q0 = aopt.Q;
+    % 
+    %     if iscell(Q0)
+    %         Q0 = sum(cat(3,Q0{:}),3);
+    %     end
+    % 
+    %     if norm(Q0 - eye(length(Q0))) ~= 0
+    %         % when Q0 has something informative (~= eye)      
+    % 
+    %         if isempty(Q0)
+    %             Q0 = eye(length(y(:)));
+    %         end
+    % 
+    %         padQ = size(JJ,2) - length(Q0);
+    %         Q0(end+1:end+padQ,end+1:end+padQ)=mean(Q0(:))/10;
+    % 
+    %         %Hessian
+    %         for i = 1:np
+    %           for j = 1:np
+    %               JJ(i,:) = denan(JJ(i,:));
+    %               JJ(j,:) = denan(JJ(j,:));
+    %               HQ(i,j) = trace(JJ(i,:).*Q0.*JJ(j,:)');
+    %           end
+    %         end
+    % 
+    %     elseif aopt.ahyper_p
+    % 
+    %         for i = 1:np
+    %            for j = 1:np
+    %                JJ(i,:) = denan(JJ(i,:));
+    %                JJ(j,:) = denan(JJ(j,:));
+    %                B = params.aopt.B'*diag(params.aopt.ah)*params.aopt.B;
+    %                HQ(i,j) = trace(JJ(i,:)*B*JJ(j,:)');
+    %            end
+    %         end
+    % 
+    %     else            
+    %         JJ = denan(JJ);
+    %         HQ = JJ*JJ';
+    %     end
+    % 
+    % end
+
+    % Select step size method
+    %----------------------------------------------------------------------    
+    %if ismimo
+    %    JJ = params.aopt.J;
+    %    for i = 1:size(JJ,1)
+    %        JJ(i,:) = JJ(i,:)./norm(JJ(i,:));
+    %    end
+    %    params.aopt.J = JJ;
+    %end
+    % Expectation-Maximization
+%---------------------------------------------------------------------------
+% Setting either (or both) opts.hyperparams = 1 or opts.ahyper=1 & opts.ahyper_p=1
+% will invoke an EM routine whereby hyperparameter estimation acts as the
+% E-step and the gradient flow / Gauss-Newton step acts as the
+% maximisation. These are linked through;
+%
+%   E-step
+% ---------------------------
+%  B  = gausfit(data);
+%  b  = B'\model
+%  B  = b.*B;          <- residuals modelled as ~multivariate Gaussian
+%
+%  for pp = 1:size(B,1)
+%     iQ{pp} = diag(B(pp,:)) * ah(pp);
+%     bQ{pp} = real(J*iQ{pp}*aopt.J');  <- J = dp/dy, i.e. partial gradients
+%  end
+% 
+%  derivatives; gradient (dfdQ) and curvature (dfdQQ)
+%  for i = 1:size(pr,1)
+%      dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
+%                       - real(e'*iQ{i}*e)/2 ...
+%                       - spm_trace(Cp,bQ{i})/2;
+%      for j = i:size(pr,1)
+%          dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
+%          dFdQQ(j,i) =   dFdQQ(i,j);
+%      end
+%  end
+% 
+%  Newton's step: ascent on ah; (hyperparameter)
+%
+%  dh      = step * (dFdQQ\dFdQ);
+%  dh      = denan(dh);
+%  ah      = ah + dh;
+%
+%   M-step
+% ---------------------------
+%  b     = J \ (B'*diag(ah)*B);
+%  [L,D] = ldl(b,Cp); 
+%  H     = L*D*L';    <-- weighted Hessian
+%
+%  dFdpp  = H - ipC ;
+%  dFdp   = Jx * res - ipC * x;
+%  dx     = x  - red.*spm_dx(-H,-J,{4}); <-- GN-step

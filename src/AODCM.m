@@ -485,12 +485,12 @@ classdef AODCM < handle
                 
                 F = sum( (Y-y).^2 );
 
-                Yn = Y./sum(Y);
-                yn = y./sum(y);
-
-                F = F + 8*sum( (Yn-yn).^2 );
-
-                F=abs(F);
+                % Yn = Y./sum(Y);
+                % yn = y./sum(y);
+                % 
+                % F = F + 8*sum( (Yn-yn).^2 );
+                % 
+                % F=abs(F);
     
                 % dgY = VtoGauss(real(Y));
                 % dgy = VtoGauss(real(y));

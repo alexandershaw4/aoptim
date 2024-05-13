@@ -377,7 +377,7 @@ e = e + 8*en;
 % Compute objective function;
 
 L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
-%L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
+L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;
 L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2;
 
 F    = sum(L);

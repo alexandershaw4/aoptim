@@ -18,46 +18,8 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % 
 % change objective to 'gaussmap' for MAP estimation or 'fe' to use the free
 % energy objective function. 
-% 
-% The gauss and gaussmap objectives treat the underlying function as a 
-% Gaussian process, such that for a given function f and parameters x;
-% 
-%    y    = f(x)
-%    y(i) s.t. N(mu[i],sigma[i])
-%
-% as such output y is formed (approximated) by a sum of multiple, univariate 
-% Gaussians (a 1D GMM). Thssee Gauss objective is formally:
-%  
-%    D = Gfun(Y) - Gfun(f(x))
-%    e = norm(D*D','fro');
-%
-% where Gfun is the function estimating a Gaussian process (matrix) from the 
-% input vector. The advantage here, is that because both the data we are fitting (Y) 
-% and model output f(x) are approximated as a set of Gaussians, the error is 
-% smooth and matrix D represents the residuals also as a set of Gaussians.
-%
-% The Hessian is approximated via a sort of feature-scoring of the parameter
-% gradients (partial derivatives; J(n_param x n_out) ) weighted by Q;
-%
-%    H(i,j) = J[Q]J'
-%
-% this (information matrix) scoring is then used to weight the Hessian in
-% the Newton update scheme (under default settings, though see GaussNewton
-% and Trust methods also);
-%
-%    H   = |H|;
-%    t   = exp(t - logdet(J)/n);    ... {t} is a regulariser
-%    dx  = x - lambda * inv(t*H')*(t*Jacobian)        
 %
 %-----------------------------------------------------------------
-% By default the step in the descent is a vanilla GD, however you can
-% flag the following in the input structure:
-%
-% op.isNewton       = 1; ... switch to Newton's method
-% op.isQuasiNewton  = 0; ... switch to quasi-Newton
-% op.isGaussNewton  = 0; ... switch to Gauss Newton
-% op.isTrust        = 0; ... switch to a GN with trust region
-%
 % See jaco.m for options, although by default the gradients are computed using a 
 % finite difference approximation of the curvature, which retains the sign of the gradient:
 %
@@ -308,15 +270,12 @@ aopt.factorise_gradients = factorise_gradients;
 aopt.hypertune       = hypertune;
 aopt.verbose = verbose;
 aopt.makevideo = makevideo;
-aopt.ahyper = ahyper;
-aopt.ahyper_p = ahyper_p;
 
 IncMomentum         = im;               % Observe and use momentum data            
 givetol             = allow_worsen;     % Allow bad updates within a tolerance
 EnforcePriorProb    = EnforcePriorProb; % Force updates to comply with prior distribution
 WeightByProbability = WeightByProbability; % weight parameter updates by probability
 
-params.aopt        = aopt;      
 params.userplotfun = userplotfun;
 
 % save each iteration
@@ -347,17 +306,11 @@ aopt.pC      = red;      % store for derivative & objective function access
 aopt.ipC     = ipC;      % store ^
 red_x0       = red;
 
+
 % initial probs
 aopt.pt = zeros(length(x0),1) + (1/length(x0));
 params.aopt = aopt;
     
-
-% initial objective value (approx at this point as missing covariance data)
-[e0]       = obj(x0,params);
-n          = 0;
-iterate    = true;
-Vb         = V;
-
 % initialise Q if running but empty
 if isempty(Q) && updateQ
     Qc  = VtoGauss(real(y(:)));    
@@ -373,6 +326,16 @@ end
 if updateQ
     Qx = Q;
 end
+
+% put aopt in params
+params.aopt        = aopt;      
+
+% initial objective value (approx at this point as missing covariance data)
+[e0]       = obj(x0,params);
+n          = 0;
+iterate    = true;
+Vb         = V;
+
 
 % initial error plot(s)
 %--------------------------------------------------------------------------
@@ -487,34 +450,6 @@ while iterate
     
     % catch instabilities in the gradient - ie explosive parameters
     df0(isinf(df0)) = 0;
-
-    % also get gradient of hyperparameters
-    if aopt.ahyper_p
-        if n == 1
-            h = 1;
-        end
-
-        pupdate(loc,n,0,e0,e0,'f: dfdh',toc);
-
-        if isfield(params,'nh')
-            params = rmfield(params,'nh');
-        end
-
-        hfun = @(h) obj(x0,params,h);
-        dfdh = jaco(hfun,h,1/8,0,1);
-
-        params.nh = h - (dfdh/8);
-        [ex,~,er] = obj(x0,params);
-
-        iex = 0;
-        while ex < e0
-            e0 = ex;
-            iex = iex + 1;
-            params.nh = h - (iex*dfdh/8);
-            [ex,~,er] = obj(x0,params);
-        end
-
-    end
     
     % Update aopt structure and place in params
     aopt         = params.aopt;
@@ -526,7 +461,7 @@ while iterate
     if verbose; pupdate(loc,n,0,e0,e0,'grd-fin',toc); end
     
     % update hyperparameter tuning plot
-    %if hypertune; plot_hyper(params.hyper_tau,[Hist.e  e0]); end
+    if hypertune; plot_hyper(params.hyper_tau,[Hist.e  e0]); end
     
     % update h_opt plot
     if hyperparams; plot_h_opt(params.h_opt); drawnow; end
@@ -615,12 +550,25 @@ while iterate
         if search_method == 9
             a = red;
         end
+
+        % [~,~,~,mp]  = obj(x1,params);
+        % res = y(:) - mp(:);
+        % res = res./norm(res);
+        % 
+        % dx = compute_dx(x1,a,-J*res,red,search_method,params);
         
         % Compute the LM and MAP steps
         %---------------------------------------------------
         [~,~,~,mp]  = obj(x1,params);
         res = y(:) - mp(:);
         res = res./norm(res);
+
+        % residual as a set of gaussian features
+        %b = pinv(tdQ(ones(length(Q),1),Q))'*res;
+        %res = diag(tQ(b,Q));
+        %[parts,moments]=iterate_gauss(res,2);
+        %nc = atcm.fun.findthenearest(1-sum(((res'-cumsum(parts)).^2)'),.9);
+        %res = sum(parts(1:nc,:),1)';
 
         % regulariser for Levenberg-Marquardt step
         lambda  = .01;
@@ -630,18 +578,27 @@ while iterate
 
         Jplus = [J'; diag(sqrt(lambda*diagJtJ))];
         rplus = [res; zerosp];
-        
-        % Levenberg-Marquardt step
+
+        % (1) Levenberg-Marquardt step
         step = pinv(Jplus)*rplus;
         LM   = x1 + step;
 
-        % Maximum aposteriori step
+        % (2) Maximum aposteriori step
         MAP = x1 + atcm.fun.aregress(J',res,'MAP');
 
-        % Gauss-Newton step
-        GN  = x1 + red.*spm_dx(J*J',J*res);
+        % (3) Gauss-Newton step
+        GN  = x1 + red.*spm_dx(J*J',J*res,1/8);
 
-        ES = [obj(LM,params) obj(MAP,params) obj(GN,params)];
+        % (4) GN/MAP ins reduced space
+        [u,v] = lu(J);
+        MAPr = x1 + (u*u')\(u*v*res);
+
+        % (5) Full GP / Bayesian step
+        [bx,bvx] = atcm.fun.agaussreg(J',res);
+        GPs = x1 - red.*bx;
+
+        % Compare steps, pick best
+        ES = [obj(LM,params) obj(MAP,params) obj(GN,params) obj(MAPr,params) obj(GPs,params)];
         [~,MES] = min(ES);
 
         if MES == 2
@@ -656,42 +613,72 @@ while iterate
             dx = GN;
             fprintf('| --> Using Gauss-Newton solution\n');
             routine = 'GN';
+        elseif MES == 4
+            dx = MAPr;
+            fprintf('| --> Using Reduced-Space MAP solution\n');
+            routine = 'MAPr';
+        elseif MES == 5
+            dx = GPs;
+            fprintf('| --> Using GP / Bayes solution\n');
         end
 
-        % Check we are on steepest trajectory;
-        if obj(dx,params) > obj(x1,params)
+        % check magnitude of update; solve step length
+        %------------------------------------------------------------------
+        bi  = @(dx,x,red) (1 - spm_Ncdf(0,abs(dx-x),red)).*dx;
+        
+        px  = bi(dx,x1,red);
 
-            switch routine
-                case 'LM'
-                    fprintf('\b (optimising)\n');
-                    while obj(dx,params) > obj(x1,params)
-                        lambda = 10*lambda;
-                        Jplus  = [J'; diag(sqrt(lambda*sum(J'.^2,1)))];
-                        step   = pinv(Jplus)*rplus;
-                        dx     = x1 + step;
-                    end
-                    fprintf('| Finished Regularising Stepsize\n');
+        ddx = dx - x1;
 
-                case 'MAP'
-                    fprintf('\b (optimising)\n');
-                    % optimise the regulariser r in inv(rI + J'J)*Jres
-                    of    = @(r) obj(x1 + atcm.fun.aregress(J',res,'MAP',r),params);
-                    [reg] = fminsearch(of,1);
-                    MAP   = x1 + atcm.fun.aregress(J',res,'MAP',reg);
-                    dx    = MAP;
-                    fprintf('| Finished Optimising Stepsize\n');
-                
-                case 'GN'
-                    fprintf('\b (optimising)\n');
-                    % optimise step size in GN routine (not regularisation)
-                    gof    = @(r) obj(x1 + (r*red).*spm_dx(J*J',J*res), params);
-                    [greg] = fminsearch(gof,1);
-                    GN     = x1 + (greg*red).*spm_dx(J*J',J*res);
-                    dx     = GN;
-                    fprintf('| Finished Optimising Stepsize\n');
-            end
-        end
+        magobj = @(umag) obj(x1 + umag*px .* ddx,params);
 
+        X = fminsearch(magobj,1);
+
+        dx = x1 + X*px .* ddx;
+
+
+
+        % % Check we are on steepest trajectory;
+        % if obj(dx,params) > obj(x1,params)
+        % 
+        %     ddx = dx - x1;
+        % 
+        %     if obj(x1 - ddx,params) < obj(dx,params)
+        %         fprintf('Flipping sign\n');
+        %         dx = x1 - ddx;
+        %     end
+        % 
+        %     % switch routine
+        %     %     case 'LM'
+        %     %         fprintf('\b (optimising)\n');
+        %     %         while obj(dx,params) > obj(x1,params)
+        %     %             lambda = 10*lambda;
+        %     %             Jplus  = [J'; diag(sqrt(lambda*sum(J'.^2,1)))];
+        %     %             step   = pinv(Jplus)*rplus;
+        %     %             dx     = x1 + step;
+        %     %         end
+        %     %         fprintf('| Finished Regularising Stepsize\n');
+        %     % 
+        %     %     case 'MAP'
+        %     %         fprintf('\b (optimising)\n');
+        %     %         % optimise the regulariser r in inv(rI + J'J)*Jres
+        %     %         of    = @(r) obj(x1 + atcm.fun.aregress(J',res,'MAP',r),params);
+        %     %         [reg] = fminsearch(of,1);
+        %     %         MAP   = x1 + atcm.fun.aregress(J',res,'MAP',reg);
+        %     %         dx    = MAP;
+        %     %         fprintf('| Finished Optimising Stepsize\n');
+        %     % 
+        %     %     case 'GN'
+        %     %         fprintf('\b (optimising)\n');
+        %     %         % optimise step size in GN routine (not regularisation)
+        %     %         gof    = @(r) obj(x1 + (r*red).*spm_dx(J*J',J*res), params);
+        %     %         [greg] = fminsearch(gof,1);
+        %     %         GN     = x1 + (greg*red).*spm_dx(J*J',J*res);
+        %     %         dx     = GN;
+        %     %         fprintf('| Finished Optimising Stepsize\n');
+        %     % end
+        % end
+        % 
         de = obj(dx,params);
 
 
@@ -706,47 +693,10 @@ while iterate
         red = real(red);
         pt  = zeros(1,length(x1));
 
-        % [Prior] distributions
-        if n > 1
-            try
-                ax    = [cat(2,Hist.p{:}) dx];                  
-                for i = 1:length(x1)
-                    pd(i)  = fitdist(ax(i,:)','Normal');
-                end
-            end
-        else
-            for i = 1:length(x1)
-                try
-                    pd(i)  = makedist('normal','mu', real(x1(i)),'sigma', real(sqrt(red(i))));
-                end
-            end
-        end
-            
-        % Curb parameter estimates trying to exceed their distirbution bounds
-        if EnforcePriorProb
-            odx = dx;
-            nst = 1;
-            for i = 1:length(x1)
-                if red(i)
-                    if dx(i) < ( pd(i).mu - (nst*pd(i).sigma) )
-                        dx(i) = pd(i).mu - (nst*pd(i).sigma);
-                    elseif dx(i) > ( pd(i).mu + (nst*pd(i).sigma) )
-                        dx(i) = pd(i).mu + (nst*pd(i).sigma);
-                    end
-                end
-            end
-        end
+        dp  = dx - x1;
+        pt  = 1 - spm_Ncdf(0,abs(dp),red);
+        pt  = denan(pt);
         
-        % Compute relative change in cdf
-        pdx = pt*0;
-        f   = @(dx,pd)  (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
-        for i = 1:length(x1)
-            if red(i)
-                pdx(i) = f(dx(i),pd(i));
-            else
-            end
-        end
-        pt = pdx;
         prplot(pt);
         aopt.pt = [aopt.pt pt(:)];
         
@@ -757,24 +707,18 @@ while iterate
         if WeightByProbability
             dx = x1 + ( pt(:).*(dx-x1) );
             
-            if verbose; pupdate(loc,n,1,e1,e1,'OptP(p)',toc); end
+            pupdate(loc,n,1,e1,e1,'OptP(p)',toc); 
             
             optimise = true;
             num_optloop = 0;
             while optimise
                 pdx = pt*0;
                 num_optloop = num_optloop + 1;
-                
-                for i = 1:length(x1)
-                    if red(i)
-                        vv     = real(sqrt( red(i) ))*2;
-                        if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-                        pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-                        pdx(i) = f(dx(i),pd(i));
-                    else
-                    end
-                end
-                
+
+                dp  = dx - aopt.pp;
+                pt  = 1 - spm_Ncdf(0,abs(dp),red);
+                pt  = denan(pt);
+                                
                 % integrate (update) dx
                 dx = x1 + ( pt(:).*(dx-x1) );
                 
@@ -981,7 +925,23 @@ while iterate
             aopt.modpred(:,n) = spm_vec(params.aopt.fun(spm_unvec(x1,aopt.x0x0)));
         else
             % If it hasn't improved, flag to stop this loop...
-            improve = false;            
+            improve = false;  
+
+
+            % sampling
+            fprintf('Invoking Gaussian Sampling\n');
+
+            [dx,de] = opt_sample_gauss(aopt.fun,x1,red,y,10,10);
+
+            if de  < ( obj(x1,params) + abs(etol) )
+                improve = true;
+                
+                x1 = dx;
+                e1 = de;
+
+            end
+            
+
         end
         
         % upper limit on the length of this loop (force recompute dfdx)
@@ -1172,6 +1132,22 @@ end
 %     
 % end
 % end
+function V = tdQ(h,Q)
+
+for i = 1:length(h)
+    V(i,:) = ( (h(i))) * diag(Q{i});
+end
+
+end
+
+function iS = tQ(h,Q)
+
+iS     = 0;
+for i  = 1:length(h)
+    iS = iS + ( (( (h(i))) * Q{i}) );
+end
+
+end
 
 function errordot(e)
 
@@ -1868,87 +1844,6 @@ if any(isnan(Cp(:)))
     Cp = denan(Cp,1/8);
 end
 
-% Alex's hyperparameter routine here; works with Gauss & Gauss-trace objectives
-% by projecting error on a smooth basis set, then performing hyperparameter
-% ascent on it - which goes into objective as frob norm(B*h*B')
-if aopt.ahyper
-
-    if aopt.ahyper > 1
-        N = aopt.ahyper;
-    else
-        N = 28;
-    end
-
-    if isfield(aopt,'ah')
-        ah = aopt.ah;
-    else
-        ah = ones(N,1);
-    end
-
-    % construct error basis set
-    B  = gaubasis(length(Y),N);
-    
-
-    warning off;
-    %B = atcm.fun.agauss_smooth_mat(Y,1);
-
-    b = B'\y;
-    B = b.*B;
-    B = B(1:N,:);
-    warning on;
-    
-    pr = B;
-
-    for pp = 1:size(pr,1)
-        
-        iQ{pp} = diag(pr(pp,:)) * ah(pp);
-        bQ{pp} = real(aopt.J*iQ{pp}*aopt.J');
-
-    end
-    
-    % derivatives; gradient (dfdQ) and curvature (dfdQQ)
-    for i = 1:size(pr,1)
-        dFdQ(i,1)      =   trace(iQ{i})*nq/2 ...
-                         - real(e'*iQ{i}*e)/2 ...
-                         - spm_trace(Cp,bQ{i})/2;
-        for j = i:size(pr,1)
-            dFdQQ(i,j) = - spm_trace(iQ{i},iQ{j})*nq/2;
-            dFdQQ(j,i) =   dFdQQ(i,j);
-        end
-    end
-
-    if aopt.ahyper_p && nargin == 3
-        step = hstep;
-    elseif isfield(params,'nh')
-        step = params.nh;
-    else
-        step = 1;
-    end
-
-    % update by Newton step
-    dh       = step*spm_dx(dFdQQ,dFdQ,{-4});
-    %dh      = step * (dFdQQ\dFdQ);
-    dh      = denan(dh);
-    ah      = ah + dh;
-    aopt.ah = ah;
-    aopt.B  = B;
-
-    % if isfield(params.aopt,'n');%params.aopt.n > 1
-    %     % plot it too
-    %     sx=subplot(5,3,14); imagesc(real(B'*diag(ah)*B));
-    %     drawnow;
-    %     ax = gca;
-    %     ax.XGrid = 'on';
-    %     ax.YGrid = 'on';
-    %     sx.YColor = [1 1 1];
-    %     sx.XColor = [1 1 1];
-    %     sx.Color  = [.3 .3 .3];
-    % end
-
-end
-
-
-
 if aopt.hyperparameters
     % pulled directly from SPM's spm_nlsi_GN.m ...
     % ascent on h / precision {M-step}
@@ -2063,10 +1958,6 @@ switch lower(method)
                 e = -F;
             end
         end
-
-        if aopt.ahyper
-                e = e + norm(B'*diag(ah)*B,'fro');
-        end
     
         % Other Objective Functions
         %------------------------------------------------------------------ 
@@ -2075,6 +1966,7 @@ switch lower(method)
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); 
             e  = abs(e);
 
+            
             %Yn = Y./sum(Y);
             %yn = y./sum(y);
 
@@ -2703,11 +2595,6 @@ switch lower(method)
         case {'logistic' 'lr'}
             % logistic optimisation 
             e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
-end
-
-% hyperfunctions & parameters
-if aopt.ahyper
-    e = e + norm(B'*diag(ah)*B,'fro');
 end
 
 
@@ -3518,8 +3405,6 @@ X.gV   = [];
 
 X.hyperparams  = 1;
 X.hypertune    = 1;
-X.ahyper = 0;
-X.ahyper_p = 0;
 
 X.force_ls     = 0;
 X.doplot       = 1;

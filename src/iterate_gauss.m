@@ -1,6 +1,7 @@
 function [parts,mom] = iterate_gauss(y,k)
 
 y = y(:); y0 = y;
+y = abs(y);
 
 for i = 1:k
 

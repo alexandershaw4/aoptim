@@ -38,6 +38,7 @@ classdef AODCM < handle
         params
         Pp
         FreeEnergyF
+        iS
     end
     
     methods
@@ -633,7 +634,32 @@ classdef AODCM < handle
             V  = spm_vec(obj.DCM.M.pC);
             y  = spm_vec(obj.DCM.xY.y);
             
-            [x0,e] = aoptim(fun,x0,V,y)
+            [x0,vx,e,iS] = aoptim(fun,x0,V,y);
+
+            obj.Ep = spm_unvec(x1,obj.DCM.M.pE);
+            obj.CP = vx;
+            obj.F  = e;
+            obj.iS = iS;
+
+        end
+
+        function obj = GaussSample(obj,N)
+
+            if nargin < 2; N = 32; end
+
+            fun = @(P,M) spm_vec(obj.DCM.M.IS(spm_unvec(P,obj.DCM.M.pE),obj.DCM.M,obj.DCM.xU));
+
+            x0 = spm_vec(obj.DCM.M.pE);
+            M  = obj.DCM.M;
+            V  = spm_vec(obj.DCM.M.pC);
+            y  = spm_vec(obj.DCM.xY.y);
+            
+            [X,F] = opt_sample_gauss(fun,x0,V,y,N);
+
+            obj.X = X;
+            obj.F = F;
+
+            obj.Ep = spm_unvec(spm_vec(obj.X),obj.DD.P);
 
         end
 

@@ -3383,7 +3383,7 @@ function X = DefOpts()
 % Returns an empty options structure with defaults
 X.step_method = 9;
 X.im          = 1;
-X.objective   = 'gauss';
+X.objective   = 'sse';
 X.writelog    = 0;
 X.order       = 1;
 X.min_df      = 0;
@@ -3403,8 +3403,8 @@ X.gfun = [];
 X.gx0  = [];
 X.gV   = [];
 
-X.hyperparams  = 1;
-X.hypertune    = 1;
+X.hyperparams  = 0;
+X.hypertune    = 0;
 
 X.force_ls     = 0;
 X.doplot       = 1;
@@ -3430,19 +3430,19 @@ X.normalise_gradients=0;
 X.sample_mvn   = 0;
 X.steps_choice = [];
 
-X.rungekutta = 8;
+X.rungekutta =5;
 X.wolfelinesearch=0;
 X.agproptls = 0;
 X.surrls = 0;
 X.memory_optimise = 0;
-X.updateQ = 1;
+X.updateQ = 0;
 X.crit = [0 0 0 0 0 0 0 0];
 X.save_constant = 0; 
 
 X.gradtol = 1e-8;
 
 
-X.orthogradient = 1;
+X.orthogradient = 0;
 X.rklinesearch=0;
 X.verbose = 0;
 

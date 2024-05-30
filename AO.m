@@ -4,160 +4,27 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % Getting started with default options:
 % 
-% op = AO('options')
-% 
+% op     = AO('options')
 % op.fun = func;       % function/model f(x0)
 % op.x0  = x0(:);      % start values: x0
 % op.y   = Y(:);       % data we're fitting (for computation of objective fun, e.g. e = Y - f(x)
 % op.V   = V(:);       % variance / step for each parameter, e.g. ones(length(x0),1)/8
 % 
-% op.objective='gauss'; % select smooth Gaussian error function
+% op.objective = 'sse'; 
 % 
 % Run the routine:
 % [X,F,CV,~,Hi] = AO(op); 
 % 
-% change objective to 'gaussmap' for MAP estimation or 'fe' to use the free
+% change objective to 'sse', 'gauss', 'gaussmap' or 'fe' to use the free
 % energy objective function. 
 %
-%-----------------------------------------------------------------
-% See jaco.m for options, although by default the gradients are computed using a 
-% finite difference approximation of the curvature, which retains the sign of the gradient:
+% By default, the ordinary gradient descent, Gauss-Newton,
+% Levenberg-Marquardt and (Bayes) MAP, and a reduced-space MAP step are
+% computed on each iteration; the best is selected - meaning that this
+% routine switches between these algorithms throughout the optimisation.
+% A line search and local sampling is also invoked. 
 %
-% f0 = F(x[p]+h) 
-% fx = F(x[p]  )
-% f1 = F(x[p]-h) 
-%
-% j(p,:) =        (f0 - f1) / 2h  
-%          ----------------------------
-%            (f0 - 2 * fx + f1) / h^2  
-%
-% The algorithm computes the objective function itself based on user
-% option; to retreive an empty options structure, do:
-%
-% opts = AO('options')
-%
-% Compulsory arguments are: (full list of optionals below)
-%
-% opts.y     = data to fit
-% opts.fun   = model or function f(x)  
-% opts.x0    = parameter vector (initial guesses) for x in f(x)
-% opts.V     = Var vector, with initial variance for each elemtn of x
-% opts.objective = the objective function selected from:
-% {'sse' 'mse' 'rmse' 'mvgkl' 'gauss' 'gaussmap' 'gaussq' 'jsd' 'euclidean' 'gkld'}
-%
-% then to run the optmisation, pass the opts structure back into AO with
-% these outputs:
-%
-%  [X,F,Cp,PP,Hist,params] = AO(opts)
-%
-% Optional "step" methods (def 9: normal fixed step GD):
-% -- op.step_method = 1 invokes steepest descent
-% -- op.step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
-% -- op.step_method = 6 invokes hyperparameter tuning of the step size.
-% -- op.step_method = 7 invokes an eigen decomp of the Jacobian matrix
-% -- op.step_method = 8 converts the routine to a mirror descent with
-%    Bregman proximity term.
-%
-% By default momentum is included (opts.im=1). The idea is that we can 
-% have more confidence in parameters that are repeatedly updated in the 
-% same direction, so we can take bigger steps for those parameters as the
-% optimisation progresses.
-%---------------------------------------------------------------------------
-% The (best and default) objective function is you are unsure, is 'gauss'
-% which is simply a smooth (approx Gaussian) error function, or 'gaussq'
-% which is similar to gauss but implements a sort of pca. 
-%
-% If you want true MAP estimates (or just to be Bayesian), use 'gaussmap'
-% which implements a MAP routine: 
-%
-%  log(f(X|p)) + log(g(p))
-%
-% Other important stuff to know:
-%--------------------------------------------------------------------------
-% if your function f(x) generates a vector output (not a single value),
-% then you can compute the partial gradients along each oputput, which is
-% necessary for proper implementation of some functions e.g. GaussNewton;
-% flag:
-%
-% opts.ismimo = 1;
-%
-% The gradient computation can be done in parallel if you have a cluster or
-% multicore computer, set:
-%
-% opts.doparallel = 1;
-%
-% Set opts.hypertune = 1 to append an exponential cost function to the chosen 
-% objective function. This is defined as:
-% 
-% c = t * exp(1/t * data - pred)
-% 
-% where t is a (temperature) hyperparameter controlled through a separate gradient
-% descent routine.
-%
-%
-% ALSO SET:
-%
-% opts.memory_optimise = 1; to optimise the weighting of dx on the gradient flow and recent memories 
-% opts.opts.rungekutta = 1; to invoke a runge-kutta optimisation locally around the gradient predicted dx
-% opts.updateQ = 1; to update the error weighting on the precision matrix 
-%
-% Full list of input options / flags
-%-------------------------------------------------------------------------
-% X.step_method = 9;
-% X.im          = 1;
-% X.objective   = 'gauss';
-% X.writelog    = 0;
-% X.order       = 1;
-% X.min_df      = 0;
-% X.criterion   = 1e-3;
-% X.Q           = [];
-% X.inner_loop  = 1;
-% X.maxit       = 4;
-% X.y           = 0;
-% X.V           = [];
-% X.x0          = [];
-% X.fun         = [];
-% X.hyperparams  = 1;
-% X.hypertune    = 0;
-% X.force_ls     = 0;
-% X.doplot       = 1;
-% X.ismimo       = 1;
-% X.gradmemory   = 0;
-% X.doparallel   = 0;
-% X.fsd          = 1;
-% X.allow_worsen = 0;
-% X.doimagesc    = 0;
-% X.EnforcePriorProb = 0;
-% X.FS = [];
-% X.userplotfun  = [];
-% X.corrweight   = 0;
-% X.WeightByProbability = 0;
-% X.faster  = 0;
-% X.nocheck = 0;
-% X.factorise_gradients = 0;
-% X.normalise_gradients=0;
-% X.sample_mvn   = 0;
-% X.steps_choice = [];
-% X.rungekutta = 6;
-% X.memory_optimise = 1;
-% X.updateQ = 1;
-% X.crit = [0 0 0 0 0 0 0 0];
-% X.save_constant = 0; 
-% X.gradtol = 1e-4;
-% X.orthogradient = 1;
-% X.rklinesearch=0;
-% X.verbose = 0;
-% X.isNewton = 0;
-% X.isNewtonReg = 0 ;
-% X.isQuasiNewton = 0;
-% X.isGaussNewton=0;
-% X.lsqjacobian=0;
-% X.forcenewton   = 0;
-% X.isTrust = 0;
-%
-% [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
-%
-% OUTPUTS:
+% outputs:
 %-------------------------------------------------------------------------
 % X   = posterior parameters
 % F   = fit value (depending on objective function specified)
@@ -167,12 +34,12 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 %
 % *If the optimiser isn't working well, try making V smaller!
 %
-% Dependencies
+% dependencies
 %-------------------------------------------------------------------------
 % atcm -> https://github.com/alexandershaw4/atcm
 % spm  -> https://github.com/spm/
 %
-% References
+% references
 %-------------------------------------------------------------------------
 % "SOLVING NONLINEAR LEAST-SQUARES PROBLEMS WITH THE GAUSS-NEWTON AND
 % LEVENBERG-MARQUARDT METHODS"  CROEZE,  PITTMAN, AND  REYNOLDS
@@ -323,8 +190,9 @@ if isempty(Q) && updateQ
     aopt.Q = Q;
 end
     
-if updateQ
-    Qx = Q;
+for i    = 1:length(Q)
+    q    = diag(Q{i});
+    Q{i} = diag(denan(q./sum(q),1));
 end
 
 % put aopt in params
@@ -410,7 +278,7 @@ while iterate
             fprintf('Search for fixed point...\n');
 
             % trigger the fixed-point (Newton-Raphson) search function
-            FPSS = atcm.fun.alexfixed(spm_unvec(x0,M.pE),M,k);
+            FPSS = atcm.fun.alexfixed(spm_unvec(x0'*M.V,M.pE),M,k);
             M.x  = spm_unvec(FPSS,M.x);
             % update function handles with new points
             fun  = @(P)rfun(P,M);
@@ -563,12 +431,14 @@ while iterate
         res = y(:) - mp(:);
         res = res./norm(res);
 
-        % residual as a set of gaussian features
-        %b = pinv(tdQ(ones(length(Q),1),Q))'*res;
-        %res = diag(tQ(b,Q));
-        %[parts,moments]=iterate_gauss(res,2);
-        %nc = atcm.fun.findthenearest(1-sum(((res'-cumsum(parts)).^2)'),.9);
-        %res = sum(parts(1:nc,:),1)';
+        % % residual as a set of gaussian features
+        % b = pinv(tdQ(ones(length(Q),1),Q))'*res;
+        % %res = diag(tQ(b,Q));
+        % iQ  = tQ(b,Q)'*tQ(b,Q);
+        % J   = J*tdQ(b,Q)'*tdQ(b,Q);
+        % %[parts,moments]=iterate_gauss(res,2);
+        % %nc = atcm.fun.findthenearest(1-sum(((res'-cumsum(parts)).^2)'),.9);
+        % %res = sum(parts(1:nc,:),1)';
 
         % regulariser for Levenberg-Marquardt step
         lambda  = .01;
@@ -594,7 +464,7 @@ while iterate
         MAPr = x1 + (u*u')\(u*v*res);
 
         % (5) Full GP / Bayesian step
-        [bx,bvx] = atcm.fun.agaussreg(J',res);
+        [bx,bvx,mb,vb] = atcm.fun.agaussreg(J',res);
         GPs = x1 - red.*bx;
 
         % Compare steps, pick best
@@ -630,11 +500,11 @@ while iterate
 
         ddx = dx - x1;
 
-        magobj = @(umag) obj(x1 + umag*px .* ddx,params);
+        magobj = @(umag) obj(x1 + umag .* ddx,params);
 
         X = fminsearch(magobj,1);
 
-        dx = x1 + X*px .* ddx;
+        dx = x1 + X .* ddx;
 
 
 
@@ -728,7 +598,7 @@ while iterate
                 end
                 
             end
-            
+            de = obj(dx,params);
         end
         
         % Save for computing gradient ascent on probabilities
@@ -1032,7 +902,7 @@ while iterate
                 else
                     df = 0;
                     pupdate(loc,n,nfun,e1,e0,'reject ',toc);
-                    red = red + 1/8;
+                    red = red + (red.*1/8);
                 end
                 if verbose; pupdate(loc,n,nfun,de,e1,'RK fini',toc); end
             catch
@@ -1047,7 +917,7 @@ while iterate
             pupdate(loc,n,nfun,e0,e0,'reject ',toc);
 
             % decrease learning rate by 50%
-            red = red + 1/8;
+            red = red + (red.*1/8);
             df  = 0;
 
             % Update global store of V & keep counting rejections
@@ -1966,6 +1836,10 @@ switch lower(method)
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); 
             e  = abs(e);
 
+            %if aopt.hyperparameters
+            %   r = (spm_vec(Y) - spm_vec(y) );
+            %   e = r'*iS*r;
+            %end
             
             %Yn = Y./sum(Y);
             %yn = y./sum(y);
@@ -3498,7 +3372,143 @@ end
 
 end
 
-
+%-----------------------------------------------------------------
+% See jaco.m for options, although by default the gradients are computed using a 
+% finite difference approximation of the curvature, which retains the sign of the gradient:
+%
+% f0 = F(x[p]+h) 
+% fx = F(x[p]  )
+% f1 = F(x[p]-h) 
+%
+% j(p,:) =        (f0 - f1) / 2h  
+%          ----------------------------
+%            (f0 - 2 * fx + f1) / h^2  
+%
+% The algorithm computes the objective function itself based on user
+% option; to retreive an empty options structure, do:
+%
+% opts = AO('options')
+%
+% Compulsory arguments are: (full list of optionals below)
+%
+% opts.y     = data to fit
+% opts.fun   = model or function f(x)  
+% opts.x0    = parameter vector (initial guesses) for x in f(x)
+% opts.V     = Var vector, with initial variance for each elemtn of x
+% opts.objective = the objective function selected from:
+% {'sse' 'mse' 'rmse' 'mvgkl' 'gauss' 'gaussmap' 'gaussq' 'jsd' 'euclidean' 'gkld'}
+%
+% then to run the optmisation, pass the opts structure back into AO with
+% these outputs:
+%
+%  [X,F,Cp,PP,Hist,params] = AO(opts)
+%
+% Optional "step" methods (def 9: normal fixed step GD):
+% -- op.step_method = 1 invokes steepest descent
+% -- op.step_method = 3 or 4 invokes a vanilla dx = x + a*-J descent
+% -- op.step_method = 6 invokes hyperparameter tuning of the step size.
+% -- op.step_method = 7 invokes an eigen decomp of the Jacobian matrix
+% -- op.step_method = 8 converts the routine to a mirror descent with
+%    Bregman proximity term.
+%
+% By default momentum is included (opts.im=1). The idea is that we can 
+% have more confidence in parameters that are repeatedly updated in the 
+% same direction, so we can take bigger steps for those parameters as the
+% optimisation progresses.
+%---------------------------------------------------------------------------
+% The (best and default) objective function is you are unsure, is 'gauss'
+% which is simply a smooth (approx Gaussian) error function, or 'gaussq'
+% which is similar to gauss but implements a sort of pca. 
+%
+% If you want true MAP estimates (or just to be Bayesian), use 'gaussmap'
+% which implements a MAP routine: 
+%
+%  log(f(X|p)) + log(g(p))
+%
+% Other important stuff to know:
+%--------------------------------------------------------------------------
+% if your function f(x) generates a vector output (not a single value),
+% then you can compute the partial gradients along each oputput, which is
+% necessary for proper implementation of some functions e.g. GaussNewton;
+% flag:
+%
+% opts.ismimo = 1;
+%
+% The gradient computation can be done in parallel if you have a cluster or
+% multicore computer, set:
+%
+% opts.doparallel = 1;
+%
+% Set opts.hypertune = 1 to append an exponential cost function to the chosen 
+% objective function. This is defined as:
+% 
+% c = t * exp(1/t * data - pred)
+% 
+% where t is a (temperature) hyperparameter controlled through a separate gradient
+% descent routine.
+%
+%
+% ALSO SET:
+%
+% opts.memory_optimise = 1; to optimise the weighting of dx on the gradient flow and recent memories 
+% opts.opts.rungekutta = 1; to invoke a runge-kutta optimisation locally around the gradient predicted dx
+% opts.updateQ = 1; to update the error weighting on the precision matrix 
+%
+% Full list of input options / flags
+%-------------------------------------------------------------------------
+% X.step_method = 9;
+% X.im          = 1;
+% X.objective   = 'gauss';
+% X.writelog    = 0;
+% X.order       = 1;
+% X.min_df      = 0;
+% X.criterion   = 1e-3;
+% X.Q           = [];
+% X.inner_loop  = 1;
+% X.maxit       = 4;
+% X.y           = 0;
+% X.V           = [];
+% X.x0          = [];
+% X.fun         = [];
+% X.hyperparams  = 1;
+% X.hypertune    = 0;
+% X.force_ls     = 0;
+% X.doplot       = 1;
+% X.ismimo       = 1;
+% X.gradmemory   = 0;
+% X.doparallel   = 0;
+% X.fsd          = 1;
+% X.allow_worsen = 0;
+% X.doimagesc    = 0;
+% X.EnforcePriorProb = 0;
+% X.FS = [];
+% X.userplotfun  = [];
+% X.corrweight   = 0;
+% X.WeightByProbability = 0;
+% X.faster  = 0;
+% X.nocheck = 0;
+% X.factorise_gradients = 0;
+% X.normalise_gradients=0;
+% X.sample_mvn   = 0;
+% X.steps_choice = [];
+% X.rungekutta = 6;
+% X.memory_optimise = 1;
+% X.updateQ = 1;
+% X.crit = [0 0 0 0 0 0 0 0];
+% X.save_constant = 0; 
+% X.gradtol = 1e-4;
+% X.orthogradient = 1;
+% X.rklinesearch=0;
+% X.verbose = 0;
+% X.isNewton = 0;
+% X.isNewtonReg = 0 ;
+% X.isQuasiNewton = 0;
+% X.isGaussNewton=0;
+% X.lsqjacobian=0;
+% X.forcenewton   = 0;
+% X.isTrust = 0;
+%
+% [X,F,Cp,PP,Hist] = AO(opts);       % call the optimser, passing the options struct
 
          % section switches for Newton, GaussNewton and Quasi-Newton Schemes
          %-----------------------------------------------------------------

@@ -245,7 +245,7 @@ classdef AODCM < handle
             end
             
             if nargout(IS) < 8
-            % generic, works for all functions....
+            %generic, works for all functions....
                 y    = IS(PP,DD.M,DD.xU);
  
             elseif nargout(IS) == 8
@@ -258,7 +258,7 @@ classdef AODCM < handle
                 t = pst;
                % centrefreqs = l{1}.centrals{1};
                centrefreqs=[];
-            end
+           end
             
             %y    = IS(PP,DD.M,DD.xU);           % Prediction
             y    = spm_vec(y);
@@ -426,6 +426,41 @@ classdef AODCM < handle
 
             obj.CP = obj.DD.cm*Cp*obj.DD.cm';
 
+        end
+
+        function obj = gauss_sample(obj,NN)
+
+            if nargin < 2; 
+                NN = 10;
+            end
+
+            fun = @(P,M) spm_vec(obj.DCM.M.IS(spm_unvec(P,obj.DCM.M.pE),obj.DCM.M,obj.DCM.xU));
+
+            x0 = spm_vec(obj.DCM.M.pE);
+            M  = obj.DCM.M;
+            V  = spm_vec(obj.DCM.M.pC);
+            y  = spm_vec(obj.DCM.xY.y);
+            
+            [x1,e] = opt_sample_gauss(fun,x0,V,y,10,NN,1);
+
+            obj.Ep = spm_unvec(x1,obj.DCM.M.pE);
+            obj.F  = e;
+
+        end
+
+        function obj = agpgd(obj)
+
+            fun = @(P,M) spm_vec(obj.DCM.M.IS(spm_unvec(P,obj.DCM.M.pE),obj.DCM.M,obj.DCM.xU));
+
+            x0 = spm_vec(obj.DCM.M.pE);
+            M  = obj.DCM.M;
+            V  = spm_vec(obj.DCM.M.pC);
+            y  = spm_vec(obj.DCM.xY.y);
+
+            [x1,F] = gp_gd(fun,x0,V,y);
+
+            obj.Ep = spm_unvec(x1,obj.DCM.M.pE);
+            obj.F  = F;
         end
 
         function obj = alex_lm(obj)

@@ -15,7 +15,7 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % Run the routine:
 % [X,F,CV,~,Hi] = AO(op); 
 % 
-% change objective to 'sse', 'gauss', 'gaussmap' or 'fe' to use the free
+% change objective to 'sse', 'loglik' or 'fe' to use the free
 % energy objective function. 
 %
 % By default, the ordinary gradient descent, Gauss-Newton,
@@ -71,9 +71,6 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 
 % Print the description of steps and exit
 %--------------------------------------------------------------------------
-if nargin == 1 && strcmp(lower(funopts),'help')
-    PrintHelp(); return;
-end
 if nargin == 1 && strcmp(lower(funopts),'options');
     X = DefOpts; return;
 end
@@ -128,22 +125,16 @@ aopt.memory  = gradmemory;% incorporate previous gradients when recomputing
 aopt.fixedstepderiv  = fsd;% fixed or adjusted step for derivative calculation
 aopt.ObjectiveMethod = objective; % 'sse' 'fe' 'mse' 'rmse' (def sse)
 aopt.hyperparameters = hyperparams;
-aopt.forcels         = force_ls;  % force line search
 aopt.mimo            = ismimo;    % derivatives w.r.t multiple output fun
 aopt.parallel        = doparallel; % compute dpdy in parfor
 aopt.doimagesc       = doimagesc;  % change plot to a surface 
-aopt.corrweight      = corrweight;
 aopt.factorise_gradients = factorise_gradients;
 aopt.hypertune       = hypertune;
 aopt.verbose = verbose;
 aopt.makevideo = makevideo;
 
-IncMomentum         = im;               % Observe and use momentum data            
 givetol             = allow_worsen;     % Allow bad updates within a tolerance
-EnforcePriorProb    = EnforcePriorProb; % Force updates to comply with prior distribution
-WeightByProbability = WeightByProbability; % weight parameter updates by probability
-
-params.userplotfun = userplotfun;
+params.userplotfun  = userplotfun;
 
 % save each iteration
 if save_constant
@@ -171,7 +162,6 @@ red   = (diag(pC));
 aopt.updateh = true; % update hyperpriors
 aopt.pC      = red;      % store for derivative & objective function access
 aopt.ipC     = ipC;      % store ^
-red_x0       = red;
 
 
 % initial probs
@@ -179,7 +169,7 @@ aopt.pt = zeros(length(x0),1) + (1/length(x0));
 params.aopt = aopt;
     
 % initialise Q if running but empty
-if isempty(Q) && updateQ
+if isempty(Q);% && updateQ
     Qc  = VtoGauss(real(y(:)));    
     fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
     b = atcm.fun.lsqnonneg(Qc,y);
@@ -196,14 +186,15 @@ for i    = 1:length(Q)
 end
 
 % put aopt in params
-params.aopt        = aopt;      
+params.aopt = aopt;      
 
 % initial objective value (approx at this point as missing covariance data)
+aopt.updatej  = true; aopt.updateh = true; params.aopt  = aopt;
+[e0,df0,~,~,~,~,params]  = obj(x0,params);
 [e0]       = obj(x0,params);
 n          = 0;
 iterate    = true;
-Vb         = V;
-
+aopt       = params.aopt; % get versios with precomputed gradients
 
 % initial error plot(s)
 %--------------------------------------------------------------------------
@@ -215,12 +206,6 @@ end
 % initialise counters
 %--------------------------------------------------------------------------
 n_reject_consec = 0;
-search          = 0;
-
-% Initial probability threshold for inclusion (i.e. update) of a parameter
-Initial_JPDtol = 1e-10;
-JPDtol = Initial_JPDtol;
-etol = 0;
 
 % parameters (in reduced space)
 %--------------------------------------------------------------------------
@@ -229,7 +214,6 @@ p     = x0;
 ip    = (1:np)';
 Ep    = p;
 
-dff          = []; % tracks changes in error over iterations
 localminflag = 0;  % triggers when stuck in local minima
 
 % print options before we start printing updates
@@ -238,16 +222,9 @@ fprintf('User fun has %d varying parameters\n',length(find(red)));
 % print start point - to console or logbook (loc)
 refdate(loc);pupdate(loc,n,0,e0,e0,'start: ');
 
-if step_method == 0
-    % step method can switch between 1 (big) and 3 (small) automatcically
-     autostep = 1;
-else autostep = 0;
-end
-
 all_dx = [];
 all_ex = [];
 Hist.e = [];
-%etol   = 0;
 
 % start optimisation loop
 %==========================================================================
@@ -266,9 +243,10 @@ while iterate
         aopt.pp = x0(:);
     end
 
-    % is optimising parameters of a state-space dynamical system, find a
+    % if optimising parameters of a state-space dynamical system, find a
     % fixed point in the system at the beginning of each optimisation
-    % iteration
+    % iteration - assuming DCM-like 'M' structure was passed with M.x
+    % containing initial variables / hidden states
     %----------------------------------------------------------------------
     if isDynamicalSS    
 
@@ -289,6 +267,8 @@ while iterate
 
     end
 
+
+
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
     aopt.updatej  = true; aopt.updateh = true; params.aopt  = aopt;
@@ -298,7 +278,10 @@ while iterate
     pupdate(loc,n,0,e0,e0,'f: dfdp',toc);
     
     % first order partial derivates of F w.r.t x0 using Jaco.m
-    [e0,df0,~,~,~,~,params]  = obj(x0,params);
+    if n > 1
+        [e0,df0,~,~,~,~,params]  = obj(x0,params);
+    end
+
     [e0,~,er] = obj(x0,params);
     df0 = real(df0);
 
@@ -316,7 +299,7 @@ while iterate
         end
     end
     
-    % catch instabilities in the gradient - ie explosive parameters
+    % catch instabilities in the gradient s
     df0(isinf(df0)) = 0;
     
     % Update aopt structure and place in params
@@ -333,58 +316,19 @@ while iterate
     
     % update h_opt plot
     if hyperparams; plot_h_opt(params.h_opt); drawnow; end
-    
-    % Switching for different methods for calculating 'a' / step size
-    if autostep; search_method = autostepswitch(n,e0,Hist);
-    else;        search_method = step_method;
-    end
-    
-    % initial search direction (steepest) and slope
-    %----------------------------------------------------------------------    
-    % Compute step, a, in scheme: dx = x0 + a*-J
-    if  n == 1
-        a = red*0;
-    end
-    
-    % Setting step size to 6 invokes low-dimensional hyperparameter tuning
-    if verbose
-        if search_method ~= 6
-            pupdate(loc,n,0,e0,e0,'stepsiz',toc);
-        else
-            pupdate(loc,n,0,e0,e0,'hyprprm',toc);
-        end
-    end
-    
+           
 
-    if ~ismimo
-        [a,J,nJ,L,D] = compute_step(df0,red,e0,search_method,params,x0,a,df0);
-    else
-        [a,J,nJ,L,D] = compute_step(params.aopt.J,red,e0,search_method,params,x0,a,df0);
-        %J = -df0(:);
-        J = df0;
-    end
-
-    if verbose;
-        if search_method ~= 6
-            pupdate(loc,n,0,e0,e0,'stp-fin',toc);
-        else
-            pupdate(loc,n,0,e0,e0,'hyp-fin',toc);
-        end    
-    end
-    
+    J = df0;
+  
     % Log start of iteration (these are returned)
     Hist.e(n) = e0;
     Hist.p{n} = x0;
     Hist.J{n} = df0;
-    Hist.a{n} = a;
+    Hist.Jfull{n} = aopt.J;
 
     % update error plot
     errordot(Hist.e)
-    
-    if ismimo
-        Hist.Jfull{n} = aopt.J;
-    end
-    
+        
     % Make copies of error and param set for inner while loops
     x1  = x0;
     e1  = e0;
@@ -409,36 +353,29 @@ while iterate
                 
         % Log number of function calls on this iteration
         nfun = nfun + 1;
-        
-        % Compute The Parameter Step (from gradients and step sizes):
-        % % x[p,t+1] = x[p,t] + a[p]*-dfdx[p] 
-        %------------------------------------------------------------------
-        % dx ~ x1 + ( a * J );
-
-        if search_method == 9
-            a = red;
-        end
-
-        % [~,~,~,mp]  = obj(x1,params);
-        % res = y(:) - mp(:);
-        % res = res./norm(res);
-        % 
-        % dx = compute_dx(x1,a,-J*res,red,search_method,params);
-        
+                
         % Compute the LM and MAP steps
         %---------------------------------------------------
         [~,~,~,mp]  = obj(x1,params);
-        res = y(:) - mp(:);
-        res = res./norm(res);
+        res  = y(:) - mp(:);
+        res  = res./norm(res);
+        rsd  = 1./(length(y) - length(x0)) * sum((y - mp).^2);
+        res  = (1 - spm_Ncdf(0,abs(res),rsd));
 
-        % % residual as a set of gaussian features
-        % b = pinv(tdQ(ones(length(Q),1),Q))'*res;
-        % %res = diag(tQ(b,Q));
-        % iQ  = tQ(b,Q)'*tQ(b,Q);
-        % J   = J*tdQ(b,Q)'*tdQ(b,Q);
-        % %[parts,moments]=iterate_gauss(res,2);
-        % %nc = atcm.fun.findthenearest(1-sum(((res'-cumsum(parts)).^2)'),.9);
-        % %res = sum(parts(1:nc,:),1)';
+        % residual as a gaussian set with optimisable coefficients;
+        % hQ = ones(length(Q),1);
+        % [Mu,Cov,b,bv] = atcm.fun.agaussreg(tdQ(hQ,Q)',(res));
+        % Qi = tdQ(hQ,Q)';
+        % G  = Qi*diag(Mu)*Qi';
+        % W  = pinv(J*G*J')*J*G;
+        % J  = W;
+
+        % project residual vector on a low dim Gaussian basis set then
+        % transform back to original features
+        GCs = iterate_gauss(res,2);
+        b   = GCs'\res;
+        bp  = b.*GCs;
+        J   = pinv(J*bp')'*bp;
 
         % regulariser for Levenberg-Marquardt step
         lambda  = .01;
@@ -492,10 +429,10 @@ while iterate
             fprintf('| --> Using GP / Bayes solution\n');
         end
 
-        % check magnitude of update; solve step length
+        % bayesian inference & check magnitude of update; solve step length
         %------------------------------------------------------------------
         bi  = @(dx,x,red) (1 - spm_Ncdf(0,abs(dx-x),red)).*dx;
-        
+        %bi = @(dx,x,red) (1 - (0.5 + 0.5*erf(real(full(dx-x0)'/sqrt(full(2*aopt.Cp))))')).*dx;        
         px  = bi(dx,x1,red);
 
         ddx = dx - x1;
@@ -505,53 +442,7 @@ while iterate
         X = fminsearch(magobj,1);
 
         dx = x1 + X .* ddx;
-
-
-
-        % % Check we are on steepest trajectory;
-        % if obj(dx,params) > obj(x1,params)
-        % 
-        %     ddx = dx - x1;
-        % 
-        %     if obj(x1 - ddx,params) < obj(dx,params)
-        %         fprintf('Flipping sign\n');
-        %         dx = x1 - ddx;
-        %     end
-        % 
-        %     % switch routine
-        %     %     case 'LM'
-        %     %         fprintf('\b (optimising)\n');
-        %     %         while obj(dx,params) > obj(x1,params)
-        %     %             lambda = 10*lambda;
-        %     %             Jplus  = [J'; diag(sqrt(lambda*sum(J'.^2,1)))];
-        %     %             step   = pinv(Jplus)*rplus;
-        %     %             dx     = x1 + step;
-        %     %         end
-        %     %         fprintf('| Finished Regularising Stepsize\n');
-        %     % 
-        %     %     case 'MAP'
-        %     %         fprintf('\b (optimising)\n');
-        %     %         % optimise the regulariser r in inv(rI + J'J)*Jres
-        %     %         of    = @(r) obj(x1 + atcm.fun.aregress(J',res,'MAP',r),params);
-        %     %         [reg] = fminsearch(of,1);
-        %     %         MAP   = x1 + atcm.fun.aregress(J',res,'MAP',reg);
-        %     %         dx    = MAP;
-        %     %         fprintf('| Finished Optimising Stepsize\n');
-        %     % 
-        %     %     case 'GN'
-        %     %         fprintf('\b (optimising)\n');
-        %     %         % optimise step size in GN routine (not regularisation)
-        %     %         gof    = @(r) obj(x1 + (r*red).*spm_dx(J*J',J*res), params);
-        %     %         [greg] = fminsearch(gof,1);
-        %     %         GN     = x1 + (greg*red).*spm_dx(J*J',J*res);
-        %     %         dx     = GN;
-        %     %         fprintf('| Finished Optimising Stepsize\n');
-        %     % end
-        % end
-        % 
         de = obj(dx,params);
-
-
 
         % Probabilities Section
         %---------------------------------------------------------------
@@ -602,13 +493,9 @@ while iterate
         end
         
         % Save for computing gradient ascent on probabilities
-        p_hist(n,:) = pt;
         Hist.pt(:,n)  = pt;
-        
-        % Update plot: probabilities
-        [~,oo]  = sort(pt(:),'descend');
-                            
-        % %------------------------------------------------------------------
+                                    
+        %------------------------------------------------------------------
         aopt.updatej = false; % switch off objective fun triggers
         aopt.updateh = false;
         params.aopt  = aopt;
@@ -797,7 +684,6 @@ while iterate
             % If it hasn't improved, flag to stop this loop...
             improve = false;  
 
-
             % sampling
             fprintf('Invoking Gaussian Sampling\n');
 
@@ -805,13 +691,9 @@ while iterate
 
             if de  < ( obj(x1,params) + abs(etol) )
                 improve = true;
-                
                 x1 = dx;
                 e1 = de;
-
             end
-            
-
         end
         
         % upper limit on the length of this loop (force recompute dfdx)
@@ -820,7 +702,6 @@ while iterate
         end
     end  % end while improve... ends iter descent on this trajectory
       
-    
     % ignore complex parameter values - for most functions, yes
     %----------------------------------------------------------------------
     x1 = (x1); % (put 'real' here)
@@ -835,8 +716,7 @@ while iterate
         dp =  x1 - x0;
         x0 =  dp + x0;
         e0 =  e1;
-        
-        
+             
         % Update best-so-far estimates
         e0 = e1;
         x0 = x1;
@@ -1797,12 +1677,6 @@ if aopt.hyperparameters
     L(3) = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; 
 end
 
-if aopt.corrweight
-    L(1) = L(1) * corr(spm_vec(Y),spm_vec(y)).^2;
-    %sQ   = smooth(diag(aopt.precisionQ));
-    %QCx  = atcm.fun.wcor([real(spm_vec(Y)),real(spm_vec(y))],sQ./sum(sQ));
-    %L(1) = L(1) * QCx(1,2).^2;
-end
 
 try aopt.Cp = Cp;
 catch
@@ -1812,6 +1686,8 @@ end
 
 params.aopt = aopt;
        
+grad_of_obj_or_fun = 'fun';
+
 switch lower(method)
     case {'free_energy','fe','freeenergy','logevidence'};
         F    = sum(L);
@@ -1831,6 +1707,33 @@ switch lower(method)
     
         % Other Objective Functions
         %------------------------------------------------------------------ 
+        case 'loglik'
+
+            n = length(y);
+            r = (spm_vec(Y) - spm_vec(y) );
+            sigma = std(r'*iS);
+
+            %logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r.^2) / (2 * sigma^2));
+
+            logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r'*iS*r) / (2 * sigma^2));
+
+            %logLikelihood = -0.5 * sum(r.^2);
+
+            % Prior distribution (multivariate Gaussian)
+            mu_P =  aopt.pp(:); 
+            P    = x0(:);
+            dp   = P(:) - mu_P(:);
+            logPrior = -0.5 *  (dp' * spm_inv(Cp) * dp);
+
+            % % Log-posterior is sum of log-prior and log-likelihood
+             logPosterior = logPrior + logLikelihood;
+             e = -(logPosterior);
+
+             grad_of_obj_or_fun = 'obj';
+
+            %e = -n/2 * log(2 * pi) - sum(0.5 * log(sigma2) + (r').^2 ./ (2 * sigma2));
+            %e = sum(abs(e));
+
         case 'sse'
             % sse: sum of error squared
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); 
@@ -2506,31 +2409,9 @@ if aopt.hypertune
 end
 
 
-%if aopt.hyperparameters
-%    e = e - L(3);
-%end
-
-% if aopt.hypertun e && length(params.hyper_tau)>1
-%     if fc(params.hyper_tau(end-1)) < fc(t)
-%         params.hyper_tau(end) = params.hyper_tau(end-1);
-%         e = fc(params.hyper_tau(end));
-%         fprintf('Retaining prious hyperparam\n');
-%     end
-% end
-
 % Error along output vector (when fun is a vector output function)
 er = ( spm_vec(Y) - spm_vec(y) );
 mp = spm_vec(y);
-
-% function e = gausscomps(Y,y,x)
-%     PY = sum(atcm.fun.agauss_smooth_mat(Y,x));
-%     Py = sum(atcm.fun.agauss_smooth_mat(y,x));
-% 
-%     dgY = VtoGauss(real((PY)));
-%     dgy = VtoGauss(real((Py)));
-%     Dg  = (dgY - dgy).^2;
-%     e   = norm(Dg*iS*Dg','fro');
-% end
 
 function t = hypertune(fc,t,N)
     if nargin<3; N=1000;end
@@ -2634,16 +2515,26 @@ if nargout == 2 || nargout == 7
         if ~aopt.parallel
             % option 3: dfdp, not parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            %[J,ip,Jo,f0,f1] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
-            [J,ip,Jo,f0,f1] = jaco_mimo(f,x0,V,0,Ord);
+            switch grad_of_obj_or_fun
+                case 'obj'
+                    [J,ip,Jo,f0,f1] = jaco_mimo(@obj,x0,V,0,Ord,nout,{params});
+                case 'fun';
+                    [J,ip,Jo,f0,f1] = jaco_mimo(f,x0,V,0,Ord);
+            end
             %J=J';
             %J0     = cat(1,J{:,1});
         else
             % option 4: dfdp, parallel, ObjF has multiple outputs
             %----------------------------------------------------------
-            %[J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
-            
-            [J,ip,Jo] = jaco_mimo_par(f,x0,V,0,Ord);
+            switch grad_of_obj_or_fun
+                case 'obj'
+                    [J,ip,Jo] = jaco_mimo_par(@obj,x0,V,0,Ord,nout,{params});
+                    J0     = cat(2,J{:,3})';
+                    J0 = denan(J0);
+                case 'fun'
+                    [J,ip,Jo] = jaco_mimo_par(f,x0,V,0,Ord);
+                    J0     = cat(2,J{:,1})';
+            end
 
             %J = jaco_gauss(f,x0);
             
@@ -2659,7 +2550,7 @@ if nargout == 2 || nargout == 7
             %J0     = cat(2,J{:,1})';
         end
 
-         J0     = cat(2,J{:,1})';
+         %J0     = cat(2,J{:,1})';
          %
          % if size(J0) ~= ny
          %     J0     = cat(1,J{:,1});
@@ -3255,8 +3146,6 @@ end
 
 function X = DefOpts()
 % Returns an empty options structure with defaults
-X.step_method = 9;
-X.im          = 1;
 X.objective   = 'sse';
 X.writelog    = 0;
 X.order       = 1;
@@ -3270,13 +3159,6 @@ X.V           = [];
 X.x0          = [];
 X.fun         = [];
 
-% for coupled dfdx + dfdg systems, e.g.
-% dfdx = f(x,p0)
-% y    = g(x,p1)
-X.gfun = [];
-X.gx0  = [];
-X.gV   = [];
-
 X.hyperparams  = 0;
 X.hypertune    = 0;
 
@@ -3284,55 +3166,33 @@ X.force_ls     = 0;
 X.doplot       = 1;
 X.ismimo       = 1;
 X.gradmemory   = 0;
-X.doparallel   = 0;
+X.doparallel   = 1;
 X.fsd          = 0;
 X.allow_worsen = 0;
 X.doimagesc    = 0;
-X.EnforcePriorProb = 0;
 X.FS = [];
 
 X.userplotfun  = [];
-X.corrweight   = 0;
 X.WeightByProbability = 0;
 
-X.faster  = 0;
-X.nocheck = 0;
-
 X.factorise_gradients = 0;
-X.normalise_gradients=0;
+X.normalise_gradients=1;
 
 X.sample_mvn   = 0;
-X.steps_choice = [];
 
 X.rungekutta =5;
 X.wolfelinesearch=0;
 X.agproptls = 0;
 X.surrls = 0;
-X.memory_optimise = 0;
 X.updateQ = 0;
 X.crit = [0 0 0 0 0 0 0 0];
 X.save_constant = 0; 
 
 X.gradtol = 1e-8;
-
-
-X.orthogradient = 0;
 X.rklinesearch=0;
 X.verbose = 0;
-
-X.isNewton = 0;
-X.isNewtonReg = 0 ;
-X.isQuasiNewton = 0;
-X.isGaussNewton=0;
-X.lsqjacobian=0;
-X.forcenewton   = 0;
-X.isTrust = 0;
 X.bayesoptls=0;
-X.DoEM=0;
 X.dopowell=0;
-
-X.alex_mvn_ls = 0;
-
 X.makevideo = 0;
 
 X.isDynamicalSS=0;
@@ -3371,6 +3231,51 @@ for i = 1:length(opt)
 end
 
 end
+
+
+
+
+        % % Check we are on steepest trajectory;
+        % if obj(dx,params) > obj(x1,params)
+        % 
+        %     ddx = dx - x1;
+        % 
+        %     if obj(x1 - ddx,params) < obj(dx,params)
+        %         fprintf('Flipping sign\n');
+        %         dx = x1 - ddx;
+        %     end
+        % 
+        %     % switch routine
+        %     %     case 'LM'
+        %     %         fprintf('\b (optimising)\n');
+        %     %         while obj(dx,params) > obj(x1,params)
+        %     %             lambda = 10*lambda;
+        %     %             Jplus  = [J'; diag(sqrt(lambda*sum(J'.^2,1)))];
+        %     %             step   = pinv(Jplus)*rplus;
+        %     %             dx     = x1 + step;
+        %     %         end
+        %     %         fprintf('| Finished Regularising Stepsize\n');
+        %     % 
+        %     %     case 'MAP'
+        %     %         fprintf('\b (optimising)\n');
+        %     %         % optimise the regulariser r in inv(rI + J'J)*Jres
+        %     %         of    = @(r) obj(x1 + atcm.fun.aregress(J',res,'MAP',r),params);
+        %     %         [reg] = fminsearch(of,1);
+        %     %         MAP   = x1 + atcm.fun.aregress(J',res,'MAP',reg);
+        %     %         dx    = MAP;
+        %     %         fprintf('| Finished Optimising Stepsize\n');
+        %     % 
+        %     %     case 'GN'
+        %     %         fprintf('\b (optimising)\n');
+        %     %         % optimise step size in GN routine (not regularisation)
+        %     %         gof    = @(r) obj(x1 + (r*red).*spm_dx(J*J',J*res), params);
+        %     %         [greg] = fminsearch(gof,1);
+        %     %         GN     = x1 + (greg*red).*spm_dx(J*J',J*res);
+        %     %         dx     = GN;
+        %     %         fprintf('| Finished Optimising Stepsize\n');
+        %     % end
+        % end
+        % 
 
 %-----------------------------------------------------------------
 % See jaco.m for options, although by default the gradients are computed using a 

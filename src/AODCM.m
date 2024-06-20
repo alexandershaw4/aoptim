@@ -811,8 +811,8 @@ classdef AODCM < handle
             fun = @(varargin)obj.wrapdm(varargin{:});
             objective = @(x) errfun(obj,fun,x);
             
-            options.Plot = 'on';
-            options.iterations = 32;
+            options.Plot = 'off';
+            options.MaxIter = 32;
             [obj.X,obj.F,elbo_sd] = vbmc(objective,obj.opts.x0',[],[],LB',UB',options);
             
             [~, P] = obj.opts.fun(spm_vec(obj.X));

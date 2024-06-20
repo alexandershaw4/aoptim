@@ -119,7 +119,7 @@ for k = 1:Nit
     %step = tdQ(hQ,Q)'\(r);
     
     [Mu,Cov,b,bv] = atcm.fun.agaussreg(tdQ(hQ,Q)',(r));
-    step = b;
+    step = b*r;
     dh   = hQ(:) - St * step(:);% hQ(:) - St * step(:);
     
     % if new estimate not better, iterate reducing step

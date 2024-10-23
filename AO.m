@@ -287,18 +287,21 @@ while iterate
 
     pupdate(loc,n,0,e0,e0,'-finish',toc);
        
+    % Gradient clipping
     if normalise_gradients
         if ~ismimo
             df0 = df0./norm(df0);
         elseif ismimo
             df0 = df0./norm(df0);
+            thr = 2;
             for i = 1:size(params.aopt.J,1);
-                params.aopt.J(i,:) = params.aopt.J(i,:)./norm(params.aopt.J(i,:)); 
+                params.aopt.J(i,:) = params.aopt.J(i,:)./(thr*norm(params.aopt.J(i,:))); 
                 params.aopt.J(i,:) = denan(params.aopt.J(i,:));
             end
         end
     end
-    
+
+     
     % catch instabilities in the gradient s
     df0(isinf(df0)) = 0;
     
@@ -359,8 +362,8 @@ while iterate
         [~,~,~,mp]  = obj(x1,params);
         res  = y(:) - mp(:);
         res  = res./norm(res);
-        rsd  = 1./(length(y) - length(x0)) * sum((y - mp).^2);
-        res  = (1 - spm_Ncdf(0,abs(res),rsd));
+        %rsd  = 1./(length(y) - length(x0)) * sum((y - mp).^2);
+        %res  = (1 - spm_Ncdf(0,abs(res),rsd));
 
         % residual as a gaussian set with optimisable coefficients;
         % hQ = ones(length(Q),1);
@@ -396,7 +399,7 @@ while iterate
         % (3) Gauss-Newton step
         GN  = x1 + red.*spm_dx(J*J',J*res,1/8);
 
-        % (4) GN/MAP ins reduced space
+        % (4) GN/MAP in reduced space
         [u,v] = lu(J);
         MAPr = x1 + (u*u')\(u*v*res);
 
@@ -1510,6 +1513,7 @@ if isfield(params,'FS')
             Q = eye(length(yfs));
         end
     end
+    fprintf('applied FS(y)\n');
 end
 
 % if all(y) = 0 then the feature selection may fail, so double check:
@@ -1708,26 +1712,37 @@ switch lower(method)
         % Other Objective Functions
         %------------------------------------------------------------------ 
         case 'loglik'
+            % The log-likelihood function measures how likely the observed 
+            % data is given the model parameters
 
             n = length(y);
             r = (spm_vec(Y) - spm_vec(y) );
-            sigma = std(r'*iS);
 
-            %logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r.^2) / (2 * sigma^2));
+            levidence = log(sum(r.^2));
 
-            logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r'*iS*r) / (2 * sigma^2));
+            divg = mvgkl(aopt.pp(:),inv(aopt.ipC),x0(:),Cp);
 
-            %logLikelihood = -0.5 * sum(r.^2);
+            e = - divg - levidence;
 
-            % Prior distribution (multivariate Gaussian)
-            mu_P =  aopt.pp(:); 
-            P    = x0(:);
-            dp   = P(:) - mu_P(:);
-            logPrior = -0.5 *  (dp' * spm_inv(Cp) * dp);
+            e=-e;
 
-            % % Log-posterior is sum of log-prior and log-likelihood
-             logPosterior = logPrior + logLikelihood;
-             e = -(logPosterior);
+            % sigma = std(r'*iS);
+            % 
+            % %logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r.^2) / (2 * sigma^2));
+            % 
+            % logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r'*iS*r) / (2 * sigma^2));
+            % 
+            % %logLikelihood = -0.5 * sum(r.^2);
+            % 
+            % % Prior distribution (multivariate Gaussian)
+            % mu_P =  aopt.pp(:); 
+            % P    = x0(:);
+            % dp   = P(:) - mu_P(:);
+            % logPrior = -0.5 *  (dp' * spm_inv(Cp) * dp);
+            % 
+            % % % Log-posterior is sum of log-prior and log-likelihood
+            %  logPosterior = logPrior + logLikelihood;
+            %  e = -(logPosterior);
 
              grad_of_obj_or_fun = 'obj';
 
@@ -1739,10 +1754,14 @@ switch lower(method)
             e  = sum( (spm_vec(Y) - spm_vec(y) ).^2 ); 
             e  = abs(e);
 
-            %if aopt.hyperparameters
-            %   r = (spm_vec(Y) - spm_vec(y) );
-            %   e = r'*iS*r;
-            %end
+          %  qY = tdQ(h,Q)';
+
+          %  e =  norm(pinv(qY)*Y - pinv(qY)*y);
+
+            if aopt.hyperparameters
+              r = (spm_vec(Y) - spm_vec(y) );
+              e = r'*iS*r;
+            end
             
             %Yn = Y./sum(Y);
             %yn = y./sum(y);

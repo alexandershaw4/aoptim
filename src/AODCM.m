@@ -1010,8 +1010,12 @@ classdef AODCM < handle
             gaopts = optimoptions('ga','MaxTime', 86400/2,'PlotFcn',...
          {@gaplotbestf,@gaplotbestindiv,@gaplotexpectation,@gaplotstopping}); % 12hours
         
-            [obj.X,obj.F] = ga(objective,length(Px),[],[],[],[],LB,UB,[],[],gaopts);        
+
+            %[obj.X,obj.F] 
+            [obj.X,obj.F,EXITFLAG,OUTPUT,POPULATION,SCORES] = ga(objective,length(Px),[],[],[],[],LB,UB,[],[],gaopts);        
             
+            %save('GA_FullOutputPatients');
+
             [~, P] = obj.opts.fun(spm_vec(obj.X));
             obj.Ep = spm_unvec(spm_vec(P),obj.DD.P);
             

@@ -10,13 +10,13 @@ function [X,F,Cp,PP,Hist,params] = AO(funopts)
 % op.y   = Y(:);       % data we're fitting (for computation of objective fun, e.g. e = Y - f(x)
 % op.V   = V(:);       % variance / step for each parameter, e.g. ones(length(x0),1)/8
 % 
-% op.objective = 'sse'; 
+% op.objective = 'loglik'; 
 % 
 % Run the routine:
 % [X,F,CV,~,Hi] = AO(op); 
 % 
 % change objective to 'sse', 'loglik' or 'fe' to use the free
-% energy objective function. 
+% energy objective function. Defaults to loglikelihood
 %
 % By default, the ordinary gradient descent, Gauss-Newton,
 % Levenberg-Marquardt and (Bayes) MAP, and a reduced-space MAP step are
@@ -168,7 +168,7 @@ aopt.ipC     = ipC;      % store ^
 aopt.pt = zeros(length(x0),1) + (1/length(x0));
 params.aopt = aopt;
     
-% initialise Q if running but empty
+%initialise Q if running but empty
 if isempty(Q);% && updateQ
     Qc  = VtoGauss(real(y(:)));    
     fun = @(x) full(atcm.fun.HighResMeanFilt(diag(x),1,4));
@@ -179,11 +179,12 @@ if isempty(Q);% && updateQ
     end
     aopt.Q = Q;
 end
-    
+
 for i    = 1:length(Q)
     q    = diag(Q{i});
     Q{i} = diag(denan(q./sum(q),1));
 end
+aopt.Q = Q;
 
 % put aopt in params
 params.aopt = aopt;      
@@ -249,9 +250,7 @@ while iterate
     % containing initial variables / hidden states
     %----------------------------------------------------------------------
     if isDynamicalSS    
-
         k = 1e-6;
-
         if n > 0
             fprintf('Search for fixed point...\n');
 
@@ -264,10 +263,7 @@ while iterate
             params.aopt.fun = fun;
             e0 = obj(x0,params);
         end
-
     end
-
-
 
     % compute gradients J, & search directions
     %----------------------------------------------------------------------
@@ -300,7 +296,6 @@ while iterate
             end
         end
     end
-
      
     % catch instabilities in the gradient s
     df0(isinf(df0)) = 0;
@@ -309,7 +304,11 @@ while iterate
     aopt         = params.aopt;
     aopt.er      = er;
     aopt.updateh = false;
+    aopt.ipC     = ( (aopt.J*aopt.iS*aopt.J') + ipC ); % Update inverse covariance estimate 
+    %aopt.ipC     = ( (aopt.J*aopt.J') + ipC ); % Update inverse covariance estimate 
+
     params.aopt  = aopt;
+
                      
     % print end of gradient computation (just so we know it's finished)
     if verbose; pupdate(loc,n,0,e0,e0,'grd-fin',toc); end
@@ -375,10 +374,10 @@ while iterate
 
         % project residual vector on a low dim Gaussian basis set then
         % transform back to original features
-        GCs = iterate_gauss(res,2);
-        b   = GCs'\res;
-        bp  = b.*GCs;
-        J   = pinv(J*bp')'*bp;
+        % GCs = iterate_gauss(res,2);
+        % b   = GCs'\res;
+        % bp  = b.*GCs;
+        % J   = pinv(J*bp')'*bp;
 
         % regulariser for Levenberg-Marquardt step
         lambda  = .01;
@@ -1459,7 +1458,7 @@ function mp = obj2(x0,params,varargin)
 
 end
 
-function [e,J,er,mp,Cp,L,params] = obj(x0,params,hstep)
+function [e,J,er,mp,Cp,L,params] = obj(x0,params,h)
 % Computes the objective function - i.e. the Free Energy or squared error to 
 % minimise. Also returns the parameter Jacobian, error (vector), model prediction
 % (vector) and covariance
@@ -1568,14 +1567,16 @@ elseif isfield(aopt,'precisionQ') && iscell(aopt.precisionQ)
     nq  = ny ./ length(Q{1});
 end
 
-if ~isfield(aopt,'h') || ~aopt.hyperparameters
-    h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
-else
-    h = aopt.h;
-end
-
-if any(isinf(h))
-    h = denan(h)+1/8;
+if nargin < 3
+    if ~isfield(aopt,'h') || ~aopt.hyperparameters
+        h  = sparse(length(Q),1) - log(var(spm_vec(Y))) + 4;
+    else
+        h = aopt.h;
+    end
+    
+    if any(isinf(h))
+        h = denan(h)+1/8;
+    end
 end
 
 iS = sparse(0);
@@ -1599,6 +1600,23 @@ if any(isnan(Cp(:)))
 end
 
 if aopt.hyperparameters
+
+%     nh   = length(Q);
+% 
+%     pm    = params;
+%     pm.aopt.hyperparameters = 0;
+% 
+%     hfun = @(h) obj(x0,pm,h);
+% 
+%     Jh = spm_diff(hfun,h,1);
+% 
+%     h  = h + (1/64)*-Jh(:);
+% end
+% 
+% ihC = 0;
+% Ch = 0;
+% d=0;
+
     % pulled directly from SPM's spm_nlsi_GN.m ...
     % ascent on h / precision {M-step}
     %==========================================================================
@@ -1607,7 +1625,7 @@ if aopt.hyperparameters
         nh  = length(Q);
         warning off;
         S   = spm_inv(iS);warning on;
-        
+
         ihC = speye(nh,nh)*exp(4);
         hE  = sparse(nh,1) - log(var(spm_vec(Y))) + 4;
         for i = 1:nh
@@ -1651,7 +1669,7 @@ if aopt.hyperparameters
             aopt.d   = d;
             aopt.ihC = ihC;
         end
-    %end
+  %  end
 end % end of if hyperparams (from spm) ... 
 
 % record hyperparameter h over iterations
@@ -1662,6 +1680,13 @@ if aopt.hyperparameters && aopt.updateh
         params.h_opt = h;
     end
 end
+
+iS = 0;
+for i  = 1:length(Q)
+    iS = iS + Q{i}*(exp(-32) + exp(h(i)));
+end
+Cp  = spm_inv( (aopt.J*iS*aopt.J') + ipC );
+
 
 % FREE ENERGY TERMS
 %==========================================================================
@@ -1718,36 +1743,22 @@ switch lower(method)
             n = length(y);
             r = (spm_vec(Y) - spm_vec(y) );
 
-            levidence = log(sum(r.^2));
+            levidence = log(r'*iS*r);%log(sum(r.^2));
 
+            % multivariate KL divergence
             divg = mvgkl(aopt.pp(:),inv(aopt.ipC),x0(:),Cp);
 
             e = - divg - levidence;
 
-            e=-e;
+            % include precision term?
+            prec = spm_logdet(ihC*Ch)/2 - d'*ihC*d/2; 
+            e = e - prec;
 
-            % sigma = std(r'*iS);
-            % 
-            % %logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r.^2) / (2 * sigma^2));
-            % 
-            % logLikelihood = -sum(-0.5 * log(2 * pi * sigma^2) - (r'*iS*r) / (2 * sigma^2));
-            % 
-            % %logLikelihood = -0.5 * sum(r.^2);
-            % 
-            % % Prior distribution (multivariate Gaussian)
-            % mu_P =  aopt.pp(:); 
-            % P    = x0(:);
-            % dp   = P(:) - mu_P(:);
-            % logPrior = -0.5 *  (dp' * spm_inv(Cp) * dp);
-            % 
-            % % % Log-posterior is sum of log-prior and log-likelihood
-            %  logPosterior = logPrior + logLikelihood;
-            %  e = -(logPosterior);
+            % sign flip it so we can minimise it
+            e = -e;
 
              grad_of_obj_or_fun = 'obj';
 
-            %e = -n/2 * log(2 * pi) - sum(0.5 * log(sigma2) + (r').^2 ./ (2 * sigma2));
-            %e = sum(abs(e));
 
         case 'sse'
             % sse: sum of error squared
@@ -1763,25 +1774,6 @@ switch lower(method)
               e = r'*iS*r;
             end
             
-            %Yn = Y./sum(Y);
-            %yn = y./sum(y);
-
-            %en  = sum( (spm_vec(Yn) - spm_vec(yn) ).^2 ); 
-
-            %e = e + 4*en;
-
-        % case 'sseg'
-        % 
-        %     gY = atcm.fun.VtoGauss(Y);
-        %     gy = atcm.fun.VtoGauss(y);
-        % 
-        %     e = 0;
-        %     for i = 1:length(Y)
-        % 
-        %         e = e + (gY(i,:) * iS * gy(i,:)');
-        % 
-        %     end
-
             
         case 'sse2' % sse robust to complex systems
             e  = sum(sum( ( spm_vec(Y)-spm_vec(y)').^2 ));
@@ -1796,607 +1788,12 @@ switch lower(method)
             er = spm_vec(Y)-spm_vec(y);
             e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
 
-        case 'chi'
-
-            gY  = VtoGauss(real((Y)));
-            gy  = VtoGauss(real((y)));   
-
-            e = sum( ((y(:) - Y(:)).^2) ./ y(:) );
-            
-        case 'mvgkl'
-            % multivariate gaussian kullback lieb div
-            
-            %covQ = aopt.Q;
-            %covQ(covQ<0)=-covQ(covQ<0);
-            %covQ = (covQ + covQ')/2;
-            
-            % pad for when using FS(y) ~= length(y)
-            %padv = length(Y) - length(covQ);
-            %covQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            % make sure its positive semidefinite
-            %lbdmin = min(eig(covQ));
-            %boost = 2;
-            %covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-            
-            cY = VtoGauss(real(Y));
-            cy = VtoGauss(real(y));
-
-
-            % truth [Y] first = i.e. inclusive, mean-seeking
-            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-            e = mvgkl(Y,cY,spm_vec(y),cy);
-                        
-        case 'q'
-                                 
-            er = (AGenQ(Y)-AGenQ(y));
-            e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-                        
-        case 'gaussfe'
-
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-
-            Dg  = dgY - dgy;
-            e   = trace(Dg*iS*Dg'); 
-            
-            % and scaled version
-            dgYn = VtoGauss(real(Y./sum(Y)));
-            dgyn = VtoGauss(real(y./sum(y)));
-
-            Dgn  = dgYn - dgyn;
-            en   = trace(Dgn*iS*Dgn'); 
-
-            e = e + 8*en;
-
-            % % and component-wise
-            % [~,M0] = gau_signal_decomp(Y,.99);
-            % [~,M1] = gau_signal_decomp(y,.99);
-            % 
-            % e = e * norm(cdist(M0,M1));
-            
-            L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
-            L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
-           
-            F    = sum(L);
-            e    = (-F);
-            
-
-        case 'gaussmap'
-            %  this Maximum apriori error function is composed of 3 terms;
-            %
-            %  ec(1) = norm(Dg*iS*Dg','fro'); where Dg is a g.p. model of the residual
-            %  ec(2) = trace(diag(diag(dp))); where dp Euc dist between peaks in Y
-            %  e     = log(f(X|p)) + log(g(p)) == log(sum(ec)) + log(g(p))
-
-
-            % Gaussian erorr term using Frobenius distance
-            dgY  = VtoGauss(real((Y)));
-            dgy  = VtoGauss(real((y)));      
-            Dg   = (dgY - dgy).^2;
-            e    = norm(Dg*iS*Dg','fro');
-
-            % peaks?
-            p0  = atcm.fun.indicesofpeaks(real(Y));
-            p1  = atcm.fun.indicesofpeaks(real(y));
-            dp  = cdist(p0(:),p1(:));
-            if isvector(dp)
-                dp = abs(diag(dp));
-            end
-
-            dp = denan(dp);
-
-            peake = trace(diag(diag(dp)));
-
-            peake = denan(peake);
-            peake = abs(peake);
-            peake = max(peake,1/2);
-
-            e   = abs(e) * abs(peake);
-
-            % [Prior] distributions
-            
-            for i = 1:length(aopt.pp)
-                try
-                    vv(i) = real(sqrt( Cp(i,i) ))*2;
-                    pd(i) = makedist('normal','mu', real(aopt.pp(i)),'sigma',vv(i));
-                end
-            end
-           
-
-            % Compute relative change in cdf
-            f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
-           % f   = @(dx,pd) abs( ((1./(1+exp(-pdf(pd,dx)))) - (1./(1+exp(-pdf(pd,pd.mu)))))./(1./(1+exp(-pdf(pd,pd.mu)))) );
-            for i = 1:length(x0)
-                if vv(i)
-                    pdx(i) = f(x0(i),pd(i));
-                else
-                end
-            end
-
-
-
-
-
-            % Parameter p(th) given (prior) distributions
-            % for i = 1:length(p)
-            %     vv     = real(sqrt( Cp(i,i) ))*2;
-            %     if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
-            %     pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
-            %     pdx(i) = normcdf(x0(i),pd(i).mu,pd(i).sigma);
-            % end
-
-            % full map: log(f(X|p)) + log(g(p))
-            e         = log(e) + 1./(1-log(prod(pdx*2)));
-
-        case 'sse3'
-
-            er = (spm_vec(Y) - spm_vec(y)).^2;
-            W  = atcm.fun.VtoGauss(diag(iS));
-            e  = er'*W*er;
-
-
-        case 'logcosh'
-            error = spm_vec(Y) - spm_vec(y);
-            eV = atcm.fun.VtoGauss(error);
-            e = sum(sum(log(cosh(eV))));
-
-        case 'gausspdf'
-
-            % PpY  = atcm.fun.agauss_smooth_mat(Y,1.5); 
-            % Ppy  = atcm.fun.agauss_smooth_mat(y,1.5); 
-            % 
-            % w    = (1:length(Y))';
-            % 
-            % for i = 1:size(PpY,1)
-            %     F(i) = fitdist(PpY(i,:)','normal');
-            % 
-            %     for j = 1:size(Ppy,1)
-            %         ex(i,j) = -sum(pdf(F(i),Ppy(j,:)'));
-            %     end
-            % 
-            % end
-            % 
-            % e = norm(ex,'fro');
-
-
-
-        case {'gauss' 'gp'}
-            % Frobenius norm of (~Gaussian) chi-sq error
-          
-            dgY  = VtoGauss(real((Y)));
-            dgy  = VtoGauss(real((y)));      
-            Dg   = (dgY - dgy).^2;
-
-            e = (iS.*(dgY - dgy).^2)/Y(:)';
-
-            %dgY = atcm.fun.agauss_smooth_mat(Y,1);
-            %dgy = atcm.fun.agauss_smooth_mat(y,1);
-            %e = ((dgY*iS*dgy').^2)'/dgY';
-
-            e = norm(e,'fro');
-
-            %e    = norm(Dg*iS*Dg','fro');
-
-            % % peaks?
-            % p0  = atcm.fun.indicesofpeaks(real(Y));
-            % p1  = atcm.fun.indicesofpeaks(real(y));
-            % dp  = cdist(p0(:),p1(:));
-            % if isvector(dp)
-            %     dp = abs(diag(dp));
-            % end
-            % 
-            % dp = denan(dp);
-            % 
-            % peake = trace(diag(diag(dp)));
-            % 
-            % peake = denan(peake);
-            % peake = abs(peake);
-            % peake = max(peake,1/2);
-            % 
-            % e   = abs(e) * abs(peake);
-
-        
-
-        case 'gauss_svd'
-            er = errorsvd(Y,y,2);
-            e  = norm(er);
-        case 'crossentropy'
-            e = - (1/length(Y)) * sum(Y .* log(y) + (1 - Y) .* log(1 - y));
-
-        case 'mle_iid'
-
-            e = -sum(sum(log(Y(:) - y(:)')));
-
-
-        case 'gausskl'
-
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-
-            D = KLDiv(dgY,dgy)+KLDiv(dgy,dgY)';
-
-            e = norm(D); 
-
-            Dg = dgY - dgy;
-            e  = e + norm(Dg*Dg');
-            subplot(5,3,6);imagesc(D);
-
-            
-        case {'gauss_norm_trace'}
-
-            % first  pass gauss error
-            %dgY = QtoGauss(real(Y),12*2);
-            %dgy = QtoGauss(real(y),12*2);
-
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-
-            Dg  = dgY - dgy;
-            e   = norm(Dg*Dg') + trace(Dg*Dg');
-
-        case 'dfd' 
-
-            e = DiscreteFrechetDist(Y,y);
-
-        case 'gaussb'
-
-            %dgY = VtoGauss(real(Y));
-            %dgy = VtoGauss(real(y));
-
-            %Dg  = dgY - dgy;
-            e   = Y'*B'*diag(ah)*B*y;
-
-
-        case {'gauss_trace'}
-
-            % first  pass gauss error
-            %dgY = QtoGauss(real(Y),12*2);
-            %dgy = QtoGauss(real(y),12*2);
-
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-
-            Dg  = dgY - dgy;
-            e   = trace(Dg*iS*Dg');  
-
-
-    case {'gauss_trace_peaks'}
-
-            % first  pass gauss error
-            %dgY = QtoGauss(real(Y),12*2);
-            %dgy = QtoGauss(real(y),12*2);
-
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-
-            Dg  = dgY - dgy;
-            e   = trace(Dg*iS*Dg');     
-            
-            % peaks?
-            p0  = atcm.fun.indicesofpeaks(real(Y));
-            p1  = atcm.fun.indicesofpeaks(real(y));
-            dp  = cdist(p0(:),p1(:));
-            if isvector(dp)
-                dp = abs(diag(dp));
-            end
-
-            dp = denan(dp);
-
-            peake = trace(diag(diag(dp)));
-
-            peake = denan(peake);
-            peake = abs(peake);
-            peake = max(peake,1/2);
-
-            e   = abs(e) * abs(peake);
-
-
-        case 'gaussv'
-
-            % first  pass gauss error
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-            
-            Dg  = dgY - dgy;
-            e   = trace(Dg'*Dg);
-           
-            
-
-        case 'gauss_components'
-
-            [dgY] = atcm.fun.approxlinfitgaussian(Y);
-            [dgy] = atcm.fun.approxlinfitgaussian(y);
-
-            Dg  = cdist(dgY,dgy);
-            e   = trace(Dg'*Dg);
-
-
-
-    case {'gausspowspec'}
-        % a slightly extended version of the gauss error function but with 
-            
-            % first  pass gauss error
-            widths = [];
-            dgY = VtoGauss(real(Y));
-            dgy = VtoGauss(real(y));
-            Dg  = dgY - dgy;
-            e   = trace(Dg'*Dg);
-
-            % indices of biggest to smallest points ...
-            XY = atcm.fun.maxpointsinds(Y,length(Y));
-            Xy = atcm.fun.maxpointsinds(y,length(y));
-            
-            % difference in position for each element
-            YIND = XY*0;
-            for i = 1:length(Y)                
-               YIND(XY(i)) = find(XY(i)==Xy);
-            end
-
-            % place index difference into error
-            Dg = Dg*diag(YIND)*Dg';
-            e  = trace(Dg'*Dg);
-           
-            
-            
-        case {'gaussnorm'}
-            
-            % first  pass gauss error
-            dgY = QtoGauss(real(Y),12*2);
-            dgy = QtoGauss(real(y),12*2);
-            Dg  = dgY - dgy;
-            e   = norm(Dg'*Dg);
-                   
-
-
-        case 'gausscluster'
-
-            dY = atcm.fun.clustervec(Y);
-            dy = atcm.fun.clustervec(y);
-
-            Dg = cdist(dY,dy);
-            e  = sum(min(Dg)) + sum(min(Dg'));
-
-        case 'distancewei'
-
-            dY = distance_wei(fast_HVG(Y,1:length(Y)));
-            dy = distance_wei(fast_HVG(y,1:length(Y)));
-
-            Dg = dY - dy;
-
-            e = trace(Dg*Dg');
-
-        case 'gaussq'
-                                    
-            [dgY,~,qY] = gausvdpca(real(Y));
-            [dgy,~,qy] = gausvdpca(real(y));
-
-            Dg  = dgY - dgy;
-            
-            e   = trace(Dg*Dg');
-
-            
-            
-        case 'jsdmvgkl'
-            % Jensen-SHannon divergence using multivariate gaussian kullback lieb div
-            
-            covQ = aopt.Q;
-            covQ(covQ<0)=0;
-            covQ = (covQ + covQ')/2;
-            
-            % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-            
-            % truth [Y] first = i.e. inclusive, mean-seeking
-            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-            e = 0.5*mvgkl(Y,covQ,y(:),covQ) + 0.5*mvgkl(y(:),covQ,Y,covQ);
-            
-            e = abs(e);
-                        
-        case 'mvgkl_rmse'
-            % multivariate gaussian kullback lieb div
-            
-            covQ = aopt.Q;
-            covQ(covQ<0)=0;
-            covQ = (covQ + covQ')/2;
-            
-            % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-            
-            % truth [Y] first = i.e. inclusive, mean-seeking
-            % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
-            e = mvgkl(Y,covQ,y(:),covQ);
-            
-            %er = spm_vec(Y)-spm_vec(y);
-            %e  = e * ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
-            er = (spm_vec(Y)-spm_vec(y)).^2;
-            ed = cdist(Y,y);
-            
-            e = e + ( er'*ed*er )/2; 
-            
-            
-        case 'mvgklx'
-            % multivariate gaussian kullback lieb div - minimise the
-            % divergence between the model and data, as well as the propoability of the
-            % params
-            
-            covQ = aopt.Q;
-            covQ(covQ<0)=0;
-            covQ = (covQ + covQ')/2;
-            
-            % pad for when using FS(y) ~= length(y)
-            padv = length(Y) - length(covQ);
-            covQ(end+1:end+padv,end+1:end+padv)=.1;
-            
-            % make sure its positive semidefinite
-            lbdmin = min(eig(covQ));
-            boost = 2;
-            covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
-            
-            
-            e = mvgkl(Y,covQ,y(:),covQ);
-            
-            % KL(Data|Model) + KL( p(dx)|p(x) )
-            if size(aopt.pt,2) == 1
-                dxpt = aopt.pt(:,end);
-                dxpt = dxpt*dxpt';
-                e = e + log( mvgkl(P(:),makeposdef(dxpt),aopt.pp(:),makeposdef(dxpt)) );
-            
-            else
-                dxpt = aopt.pt(:,end);
-                xpt  = aopt.pt(:,end-1);
-                e = e + log( mvgkl(P(:),makeposdef(dxpt*dxpt'),aopt.pp(:),makeposdef(xpt*xpt')) );
-            end
-                
-                
-            
-                    
-        case 'mahal'    
-            
-            e = mahal(Y,y);
-            e = (e'*iS*e)/2;
-                        
-        case 'lognorm'
-            
-            e=length(Y)/2*log(norm(Y-y));
-        
-    case {'qrmse_g'}
-            % rmse: root mean squaree error incorporating precision
-            % components
-            er = spm_vec(Y)-spm_vec(y)';
-            er = (er + er')./2;
-            %G = VtoGauss(ones(size(er)),20,[],0); % 30
-            %er = er.*G;
-            
-            % which Q ?
-            if aopt.hyperparameters
-                er = real(er.*iS);
-            else
-                er = real(er.*aopt.precisionQ);
-            end
-            
-            er = full(er);
-
-            % complexity minus likelihood
-            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-
-            %e = e - ( L(2) + L(3) );
-
-        case {'qrmse' 'q_rmse'}
-            % rmse: root mean squaree error incorporating precision
-            % components
-            er = spm_vec(Y)-spm_vec(y);
-            
-            % which Q ?
-            if aopt.hyperparameters
-                er = real(er'.*iS.*er)/2;
-            else
-                er = real(er'.*aopt.precisionQ.*er)/2;
-            end
-            
-            er = full(er);
-            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-
-            %if aopt.hyperparameters
-            %    e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
-            %end
-                       
-            
-        case {'correlation','corr','cor','r2'}
-            % 1 - r^2 (bc. minimisation routine == maximisation)
-            e = 1 - ( distcorr( spm_vec(Y), spm_vec(y) ).^2 );
-            e = abs(e) .* abs(1 - (Y(:)'*y(:)./sum(Y.^2)));
-            
-
-        case 'combination'
-            % combination:
-            SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
-            R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
-            e   = SSE + R2;
-            
-        case 'euclidean'
-        
-            ED = cdist(spm_vec(Y),spm_vec(y));
-            ED = ED*iS*ED';
-            e  = sum(spm_vec(ED)).^2;
-            
-        case {'rmse_euc' 'bregman'}
-            % rmse: root mean squaree error incorporating precision
-            % components
-            er = spm_vec(Y)-spm_vec(y);
-            er = real(er'.*iS.*er)/2;
-            er = full(er);
-            dv = cdist(Y,y);
-            er = (er.*dv);
-            e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
-            
-                         
-        case {'g_kld' 'gkld' 'gkl' 'generalised_kld'}
-             e = sum( denan(Y.*log(Y./y)) ) - sum(Y) - sum(y);
-             
-        case {'kl' 'kldiv' 'divergence'}';
-            temp = denan(Y.*log(Y./y));
-            temp(isnan(temp))=0;
-            e   = sum(temp(:));
-
-         case {'itakura-saito' 'is' 'isd'};
-             e = sum( (Y./y) - denan(log(Y./y)) - 1 );
-        
-        case 'hvg_gl'
-        
-            w  = (1:length(Y))';
-            Q  = fast_HVG(Y,w);
-            A  = Q .* ~eye(length(Q));
-            N  = size(A,1);
-            GLY = speye(N,N) + (A - spdiags(sum(A,2),0,N,N))/4;
-            
-            Q   = fast_HVG(y,w);
-            A   = Q .* ~eye(length(Q));
-            N   = size(A,1);
-            GLy = speye(N,N) + (A - spdiags(sum(A,2),0,N,N))/4;
-            
-            % frobenius distance
-            e = sqrt( trace((GLY-GLy)*(GLY-GLy)') );
-            
-            %e = full(sum( (GLY(:)-GLy(:)).^2 ));
-            
-             
-        case 'mle';
-                        
-            % we can perform parameter estimation by maximum likelihood estimation 
-            % by minimising the negative log likelihood
-            warning off;
-                       
-            w  = (1:length(Y)).';
-            Y0 =  Y;% fit(w,Y,'Gauss4');
-            y0 = y;% fit(w,y,'Gauss4');
-            %e = log(sum(Y0(w)-y0(w)));
-            e = fitgmdist(Y0-y0,2);
-            e = e.NegativeLogLikelihood;
-            warning on;
-
-        case {'logistic' 'lr'}
-            % logistic optimisation 
-            e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
 end
 
 
-if aopt.hyperparameters
-    e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );
-end
+% if aopt.hyperparameters
+%     e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );
+% end
 
 % hyperparameter [noise] tuning by GD - by placing this here it can easily
 % be applied to any of the above cost functions
@@ -3165,7 +2562,7 @@ end
 
 function X = DefOpts()
 % Returns an empty options structure with defaults
-X.objective   = 'sse';
+X.objective   = 'loglik';
 X.writelog    = 0;
 X.order       = 1;
 X.min_df      = 0;
@@ -3178,7 +2575,7 @@ X.V           = [];
 X.x0          = [];
 X.fun         = [];
 
-X.hyperparams  = 0;
+X.hyperparams  = 1;
 X.hypertune    = 0;
 
 X.force_ls     = 0;
@@ -4071,3 +3468,606 @@ end
 %  dFdpp  = H - ipC ;
 %  dFdp   = Jx * res - ipC * x;
 %  dx     = x  - red.*spm_dx(-H,-J,{4}); <-- GN-step
+
+
+    % 
+    %     case 'chi'
+    % 
+    %         gY  = VtoGauss(real((Y)));
+    %         gy  = VtoGauss(real((y)));   
+    % 
+    %         e = sum( ((y(:) - Y(:)).^2) ./ y(:) );
+    % 
+    %     case 'mvgkl'
+    %         % multivariate gaussian kullback lieb div
+    % 
+    %         %covQ = aopt.Q;
+    %         %covQ(covQ<0)=-covQ(covQ<0);
+    %         %covQ = (covQ + covQ')/2;
+    % 
+    %         % pad for when using FS(y) ~= length(y)
+    %         %padv = length(Y) - length(covQ);
+    %         %covQ(end+1:end+padv,end+1:end+padv)=.1;
+    % 
+    %         % make sure its positive semidefinite
+    %         %lbdmin = min(eig(covQ));
+    %         %boost = 2;
+    %         %covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+    % 
+    %         cY = VtoGauss(real(Y));
+    %         cy = VtoGauss(real(y));
+    % 
+    % 
+    %         % truth [Y] first = i.e. inclusive, mean-seeking
+    %         % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+    %         e = mvgkl(Y,cY,spm_vec(y),cy);
+    % 
+    %     case 'q'
+    % 
+    %         er = (AGenQ(Y)-AGenQ(y));
+    %         e  = ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+    % 
+    %     case 'gaussfe'
+    % 
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    % 
+    %         Dg  = dgY - dgy;
+    %         e   = trace(Dg*iS*Dg'); 
+    % 
+    %         % and scaled version
+    %         dgYn = VtoGauss(real(Y./sum(Y)));
+    %         dgyn = VtoGauss(real(y./sum(y)));
+    % 
+    %         Dgn  = dgYn - dgyn;
+    %         en   = trace(Dgn*iS*Dgn'); 
+    % 
+    %         e = e + 8*en;
+    % 
+    %         % % and component-wise
+    %         % [~,M0] = gau_signal_decomp(Y,.99);
+    %         % [~,M1] = gau_signal_decomp(y,.99);
+    %         % 
+    %         % e = e * norm(cdist(M0,M1));
+    % 
+    %         L(1) = spm_logdet(iS)*nq/2  - e/2 - ny*log(8*atan(1))/2;
+    %         L(2) = spm_logdet(ipC*Cp)/2 - p'*ipC*p/2;    
+    % 
+    %         F    = sum(L);
+    %         e    = (-F);
+    % 
+    % 
+    %     case 'gaussmap'
+    %         %  this Maximum apriori error function is composed of 3 terms;
+    %         %
+    %         %  ec(1) = norm(Dg*iS*Dg','fro'); where Dg is a g.p. model of the residual
+    %         %  ec(2) = trace(diag(diag(dp))); where dp Euc dist between peaks in Y
+    %         %  e     = log(f(X|p)) + log(g(p)) == log(sum(ec)) + log(g(p))
+    % 
+    % 
+    %         % Gaussian erorr term using Frobenius distance
+    %         dgY  = VtoGauss(real((Y)));
+    %         dgy  = VtoGauss(real((y)));      
+    %         Dg   = (dgY - dgy).^2;
+    %         e    = norm(Dg*iS*Dg','fro');
+    % 
+    %         % peaks?
+    %         p0  = atcm.fun.indicesofpeaks(real(Y));
+    %         p1  = atcm.fun.indicesofpeaks(real(y));
+    %         dp  = cdist(p0(:),p1(:));
+    %         if isvector(dp)
+    %             dp = abs(diag(dp));
+    %         end
+    % 
+    %         dp = denan(dp);
+    % 
+    %         peake = trace(diag(diag(dp)));
+    % 
+    %         peake = denan(peake);
+    %         peake = abs(peake);
+    %         peake = max(peake,1/2);
+    % 
+    %         e   = abs(e) * abs(peake);
+    % 
+    %         % [Prior] distributions
+    % 
+    %         for i = 1:length(aopt.pp)
+    %             try
+    %                 vv(i) = real(sqrt( Cp(i,i) ))*2;
+    %                 pd(i) = makedist('normal','mu', real(aopt.pp(i)),'sigma',vv(i));
+    %             end
+    %         end
+    % 
+    % 
+    %         % Compute relative change in cdf
+    %         f   = @(dx,pd) (1./(1+exp(-pdf(pd,dx)))) ./ (1./(1+exp(-pdf(pd,pd.mu))));
+    %        % f   = @(dx,pd) abs( ((1./(1+exp(-pdf(pd,dx)))) - (1./(1+exp(-pdf(pd,pd.mu)))))./(1./(1+exp(-pdf(pd,pd.mu)))) );
+    %         for i = 1:length(x0)
+    %             if vv(i)
+    %                 pdx(i) = f(x0(i),pd(i));
+    %             else
+    %             end
+    %         end
+    % 
+    % 
+    % 
+    % 
+    % 
+    %         % Parameter p(th) given (prior) distributions
+    %         % for i = 1:length(p)
+    %         %     vv     = real(sqrt( Cp(i,i) ))*2;
+    %         %     if vv <= 0 || isnan(vv) || isinf(vv); vv = 1/64; end
+    %         %     pd(i)  = makedist('normal','mu', real(aopt.pp(i)),'sigma', vv);
+    %         %     pdx(i) = normcdf(x0(i),pd(i).mu,pd(i).sigma);
+    %         % end
+    % 
+    %         % full map: log(f(X|p)) + log(g(p))
+    %         e         = log(e) + 1./(1-log(prod(pdx*2)));
+    % 
+    %     case 'sse3'
+    % 
+    %         er = (spm_vec(Y) - spm_vec(y)).^2;
+    %         W  = atcm.fun.VtoGauss(diag(iS));
+    %         e  = er'*W*er;
+    % 
+    % 
+    %     case 'logcosh'
+    %         error = spm_vec(Y) - spm_vec(y);
+    %         eV = atcm.fun.VtoGauss(error);
+    %         e = sum(sum(log(cosh(eV))));
+    % 
+    %     case 'gausspdf'
+    % 
+    %         % PpY  = atcm.fun.agauss_smooth_mat(Y,1.5); 
+    %         % Ppy  = atcm.fun.agauss_smooth_mat(y,1.5); 
+    %         % 
+    %         % w    = (1:length(Y))';
+    %         % 
+    %         % for i = 1:size(PpY,1)
+    %         %     F(i) = fitdist(PpY(i,:)','normal');
+    %         % 
+    %         %     for j = 1:size(Ppy,1)
+    %         %         ex(i,j) = -sum(pdf(F(i),Ppy(j,:)'));
+    %         %     end
+    %         % 
+    %         % end
+    %         % 
+    %         % e = norm(ex,'fro');
+    % 
+    % 
+    % 
+    %     case {'gauss' 'gp'}
+    %         % Frobenius norm of (~Gaussian) chi-sq error
+    % 
+    %         dgY  = VtoGauss(real((Y)));
+    %         dgy  = VtoGauss(real((y)));      
+    %         Dg   = (dgY - dgy).^2;
+    % 
+    %         e = (iS.*(dgY - dgy).^2)/Y(:)';
+    % 
+    %         %dgY = atcm.fun.agauss_smooth_mat(Y,1);
+    %         %dgy = atcm.fun.agauss_smooth_mat(y,1);
+    %         %e = ((dgY*iS*dgy').^2)'/dgY';
+    % 
+    %         e = norm(e,'fro');
+    % 
+    %         %e    = norm(Dg*iS*Dg','fro');
+    % 
+    %         % % peaks?
+    %         % p0  = atcm.fun.indicesofpeaks(real(Y));
+    %         % p1  = atcm.fun.indicesofpeaks(real(y));
+    %         % dp  = cdist(p0(:),p1(:));
+    %         % if isvector(dp)
+    %         %     dp = abs(diag(dp));
+    %         % end
+    %         % 
+    %         % dp = denan(dp);
+    %         % 
+    %         % peake = trace(diag(diag(dp)));
+    %         % 
+    %         % peake = denan(peake);
+    %         % peake = abs(peake);
+    %         % peake = max(peake,1/2);
+    %         % 
+    %         % e   = abs(e) * abs(peake);
+    % 
+    % 
+    % 
+    %     case 'gauss_svd'
+    %         er = errorsvd(Y,y,2);
+    %         e  = norm(er);
+    %     case 'crossentropy'
+    %         e = - (1/length(Y)) * sum(Y .* log(y) + (1 - Y) .* log(1 - y));
+    % 
+    %     case 'mle_iid'
+    % 
+    %         e = -sum(sum(log(Y(:) - y(:)')));
+    % 
+    % 
+    %     case 'gausskl'
+    % 
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    % 
+    %         D = KLDiv(dgY,dgy)+KLDiv(dgy,dgY)';
+    % 
+    %         e = norm(D); 
+    % 
+    %         Dg = dgY - dgy;
+    %         e  = e + norm(Dg*Dg');
+    %         subplot(5,3,6);imagesc(D);
+    % 
+    % 
+    %     case {'gauss_norm_trace'}
+    % 
+    %         % first  pass gauss error
+    %         %dgY = QtoGauss(real(Y),12*2);
+    %         %dgy = QtoGauss(real(y),12*2);
+    % 
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    % 
+    %         Dg  = dgY - dgy;
+    %         e   = norm(Dg*Dg') + trace(Dg*Dg');
+    % 
+    %     case 'dfd' 
+    % 
+    %         e = DiscreteFrechetDist(Y,y);
+    % 
+    %     case 'gaussb'
+    % 
+    %         %dgY = VtoGauss(real(Y));
+    %         %dgy = VtoGauss(real(y));
+    % 
+    %         %Dg  = dgY - dgy;
+    %         e   = Y'*B'*diag(ah)*B*y;
+    % 
+    % 
+    %     case {'gauss_trace'}
+    % 
+    %         % first  pass gauss error
+    %         %dgY = QtoGauss(real(Y),12*2);
+    %         %dgy = QtoGauss(real(y),12*2);
+    % 
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    % 
+    %         Dg  = dgY - dgy;
+    %         e   = trace(Dg*iS*Dg');  
+    % 
+    % 
+    % case {'gauss_trace_peaks'}
+    % 
+    %         % first  pass gauss error
+    %         %dgY = QtoGauss(real(Y),12*2);
+    %         %dgy = QtoGauss(real(y),12*2);
+    % 
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    % 
+    %         Dg  = dgY - dgy;
+    %         e   = trace(Dg*iS*Dg');     
+    % 
+    %         % peaks?
+    %         p0  = atcm.fun.indicesofpeaks(real(Y));
+    %         p1  = atcm.fun.indicesofpeaks(real(y));
+    %         dp  = cdist(p0(:),p1(:));
+    %         if isvector(dp)
+    %             dp = abs(diag(dp));
+    %         end
+    % 
+    %         dp = denan(dp);
+    % 
+    %         peake = trace(diag(diag(dp)));
+    % 
+    %         peake = denan(peake);
+    %         peake = abs(peake);
+    %         peake = max(peake,1/2);
+    % 
+    %         e   = abs(e) * abs(peake);
+    % 
+    % 
+    %     case 'gaussv'
+    % 
+    %         % first  pass gauss error
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    % 
+    %         Dg  = dgY - dgy;
+    %         e   = trace(Dg'*Dg);
+    % 
+    % 
+    % 
+    %     case 'gauss_components'
+    % 
+    %         [dgY] = atcm.fun.approxlinfitgaussian(Y);
+    %         [dgy] = atcm.fun.approxlinfitgaussian(y);
+    % 
+    %         Dg  = cdist(dgY,dgy);
+    %         e   = trace(Dg'*Dg);
+    % 
+    % 
+    % 
+    % case {'gausspowspec'}
+    %     % a slightly extended version of the gauss error function but with 
+    % 
+    %         % first  pass gauss error
+    %         widths = [];
+    %         dgY = VtoGauss(real(Y));
+    %         dgy = VtoGauss(real(y));
+    %         Dg  = dgY - dgy;
+    %         e   = trace(Dg'*Dg);
+    % 
+    %         % indices of biggest to smallest points ...
+    %         XY = atcm.fun.maxpointsinds(Y,length(Y));
+    %         Xy = atcm.fun.maxpointsinds(y,length(y));
+    % 
+    %         % difference in position for each element
+    %         YIND = XY*0;
+    %         for i = 1:length(Y)                
+    %            YIND(XY(i)) = find(XY(i)==Xy);
+    %         end
+    % 
+    %         % place index difference into error
+    %         Dg = Dg*diag(YIND)*Dg';
+    %         e  = trace(Dg'*Dg);
+    % 
+    % 
+    % 
+    %     case {'gaussnorm'}
+    % 
+    %         % first  pass gauss error
+    %         dgY = QtoGauss(real(Y),12*2);
+    %         dgy = QtoGauss(real(y),12*2);
+    %         Dg  = dgY - dgy;
+    %         e   = norm(Dg'*Dg);
+    % 
+    % 
+    % 
+    %     case 'gausscluster'
+    % 
+    %         dY = atcm.fun.clustervec(Y);
+    %         dy = atcm.fun.clustervec(y);
+    % 
+    %         Dg = cdist(dY,dy);
+    %         e  = sum(min(Dg)) + sum(min(Dg'));
+    % 
+    %     case 'distancewei'
+    % 
+    %         dY = distance_wei(fast_HVG(Y,1:length(Y)));
+    %         dy = distance_wei(fast_HVG(y,1:length(Y)));
+    % 
+    %         Dg = dY - dy;
+    % 
+    %         e = trace(Dg*Dg');
+    % 
+    %     case 'gaussq'
+    % 
+    %         [dgY,~,qY] = gausvdpca(real(Y));
+    %         [dgy,~,qy] = gausvdpca(real(y));
+    % 
+    %         Dg  = dgY - dgy;
+    % 
+    %         e   = trace(Dg*Dg');
+    % 
+    % 
+    % 
+    %     case 'jsdmvgkl'
+    %         % Jensen-SHannon divergence using multivariate gaussian kullback lieb div
+    % 
+    %         covQ = aopt.Q;
+    %         covQ(covQ<0)=0;
+    %         covQ = (covQ + covQ')/2;
+    % 
+    %         % pad for when using FS(y) ~= length(y)
+    %         padv = length(Y) - length(covQ);
+    %         covQ(end+1:end+padv,end+1:end+padv)=.1;
+    % 
+    %         % make sure its positive semidefinite
+    %         lbdmin = min(eig(covQ));
+    %         boost = 2;
+    %         covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+    % 
+    %         % truth [Y] first = i.e. inclusive, mean-seeking
+    %         % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+    %         e = 0.5*mvgkl(Y,covQ,y(:),covQ) + 0.5*mvgkl(y(:),covQ,Y,covQ);
+    % 
+    %         e = abs(e);
+    % 
+    %     case 'mvgkl_rmse'
+    %         % multivariate gaussian kullback lieb div
+    % 
+    %         covQ = aopt.Q;
+    %         covQ(covQ<0)=0;
+    %         covQ = (covQ + covQ')/2;
+    % 
+    %         % pad for when using FS(y) ~= length(y)
+    %         padv = length(Y) - length(covQ);
+    %         covQ(end+1:end+padv,end+1:end+padv)=.1;
+    % 
+    %         % make sure its positive semidefinite
+    %         lbdmin = min(eig(covQ));
+    %         boost = 2;
+    %         covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+    % 
+    %         % truth [Y] first = i.e. inclusive, mean-seeking
+    %         % https://timvieira.github.io/blog/post/2014/10/06/kl-divergence-as-an-objective-function/
+    %         e = mvgkl(Y,covQ,y(:),covQ);
+    % 
+    %         %er = spm_vec(Y)-spm_vec(y);
+    %         %e  = e * ( (norm(full(er),2).^2)/numel(spm_vec(Y)) ).^(1/2);
+    % 
+    %         er = (spm_vec(Y)-spm_vec(y)).^2;
+    %         ed = cdist(Y,y);
+    % 
+    %         e = e + ( er'*ed*er )/2; 
+    % 
+    % 
+    %     case 'mvgklx'
+    %         % multivariate gaussian kullback lieb div - minimise the
+    %         % divergence between the model and data, as well as the propoability of the
+    %         % params
+    % 
+    %         covQ = aopt.Q;
+    %         covQ(covQ<0)=0;
+    %         covQ = (covQ + covQ')/2;
+    % 
+    %         % pad for when using FS(y) ~= length(y)
+    %         padv = length(Y) - length(covQ);
+    %         covQ(end+1:end+padv,end+1:end+padv)=.1;
+    % 
+    %         % make sure its positive semidefinite
+    %         lbdmin = min(eig(covQ));
+    %         boost = 2;
+    %         covQ = covQ + ( boost * max(-lbdmin,0)*eye(size(covQ)) );
+    % 
+    % 
+    %         e = mvgkl(Y,covQ,y(:),covQ);
+    % 
+    %         % KL(Data|Model) + KL( p(dx)|p(x) )
+    %         if size(aopt.pt,2) == 1
+    %             dxpt = aopt.pt(:,end);
+    %             dxpt = dxpt*dxpt';
+    %             e = e + log( mvgkl(P(:),makeposdef(dxpt),aopt.pp(:),makeposdef(dxpt)) );
+    % 
+    %         else
+    %             dxpt = aopt.pt(:,end);
+    %             xpt  = aopt.pt(:,end-1);
+    %             e = e + log( mvgkl(P(:),makeposdef(dxpt*dxpt'),aopt.pp(:),makeposdef(xpt*xpt')) );
+    %         end
+    % 
+    % 
+    % 
+    % 
+    %     case 'mahal'    
+    % 
+    %         e = mahal(Y,y);
+    %         e = (e'*iS*e)/2;
+    % 
+    %     case 'lognorm'
+    % 
+    %         e=length(Y)/2*log(norm(Y-y));
+    % 
+    % case {'qrmse_g'}
+    %         % rmse: root mean squaree error incorporating precision
+    %         % components
+    %         er = spm_vec(Y)-spm_vec(y)';
+    %         er = (er + er')./2;
+    %         %G = VtoGauss(ones(size(er)),20,[],0); % 30
+    %         %er = er.*G;
+    % 
+    %         % which Q ?
+    %         if aopt.hyperparameters
+    %             er = real(er.*iS);
+    %         else
+    %             er = real(er.*aopt.precisionQ);
+    %         end
+    % 
+    %         er = full(er);
+    % 
+    %         % complexity minus likelihood
+    %         e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+    % 
+    %         %e = e - ( L(2) + L(3) );
+    % 
+    %     case {'qrmse' 'q_rmse'}
+    %         % rmse: root mean squaree error incorporating precision
+    %         % components
+    %         er = spm_vec(Y)-spm_vec(y);
+    % 
+    %         % which Q ?
+    %         if aopt.hyperparameters
+    %             er = real(er'.*iS.*er)/2;
+    %         else
+    %             er = real(er'.*aopt.precisionQ.*er)/2;
+    %         end
+    % 
+    %         er = full(er);
+    %         e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+    % 
+    %         %if aopt.hyperparameters
+    %         %    e = e - exp( spm_logdet(ihC*Ch)/2 - d'*ihC*d/2 );    
+    %         %end
+    % 
+    % 
+    %     case {'correlation','corr','cor','r2'}
+    %         % 1 - r^2 (bc. minimisation routine == maximisation)
+    %         e = 1 - ( distcorr( spm_vec(Y), spm_vec(y) ).^2 );
+    %         e = abs(e) .* abs(1 - (Y(:)'*y(:)./sum(Y.^2)));
+    % 
+    % 
+    %     case 'combination'
+    %         % combination:
+    %         SSE = sum( ((spm_vec(Y) - spm_vec(y)).^2)./sum(spm_vec(Y)) );
+    %         R2  = 1 - abs( corr( spm_vec(Y), spm_vec(y) ).^2 );
+    %         e   = SSE + R2;
+    % 
+    %     case 'euclidean'
+    % 
+    %         ED = cdist(spm_vec(Y),spm_vec(y));
+    %         ED = ED*iS*ED';
+    %         e  = sum(spm_vec(ED)).^2;
+    % 
+    %     case {'rmse_euc' 'bregman'}
+    %         % rmse: root mean squaree error incorporating precision
+    %         % components
+    %         er = spm_vec(Y)-spm_vec(y);
+    %         er = real(er'.*iS.*er)/2;
+    %         er = full(er);
+    %         dv = cdist(Y,y);
+    %         er = (er.*dv);
+    %         e  = ( (norm(er,2).^2)/numel(spm_vec(Y)) ).^(1/2);
+    % 
+    % 
+    %     case {'g_kld' 'gkld' 'gkl' 'generalised_kld'}
+    %          e = sum( denan(Y.*log(Y./y)) ) - sum(Y) - sum(y);
+    % 
+    %     case {'kl' 'kldiv' 'divergence'}';
+    %         temp = denan(Y.*log(Y./y));
+    %         temp(isnan(temp))=0;
+    %         e   = sum(temp(:));
+    % 
+    %      case {'itakura-saito' 'is' 'isd'};
+    %          e = sum( (Y./y) - denan(log(Y./y)) - 1 );
+    % 
+    %     case 'hvg_gl'
+    % 
+    %         w  = (1:length(Y))';
+    %         Q  = fast_HVG(Y,w);
+    %         A  = Q .* ~eye(length(Q));
+    %         N  = size(A,1);
+    %         GLY = speye(N,N) + (A - spdiags(sum(A,2),0,N,N))/4;
+    % 
+    %         Q   = fast_HVG(y,w);
+    %         A   = Q .* ~eye(length(Q));
+    %         N   = size(A,1);
+    %         GLy = speye(N,N) + (A - spdiags(sum(A,2),0,N,N))/4;
+    % 
+    %         % frobenius distance
+    %         e = sqrt( trace((GLY-GLy)*(GLY-GLy)') );
+    % 
+    %         %e = full(sum( (GLY(:)-GLy(:)).^2 ));
+    % 
+    % 
+    %     case 'mle';
+    % 
+    %         % we can perform parameter estimation by maximum likelihood estimation 
+    %         % by minimising the negative log likelihood
+    %         warning off;
+    % 
+    %         w  = (1:length(Y)).';
+    %         Y0 =  Y;% fit(w,Y,'Gauss4');
+    %         y0 = y;% fit(w,y,'Gauss4');
+    %         %e = log(sum(Y0(w)-y0(w)));
+    %         e = fitgmdist(Y0-y0,2);
+    %         e = e.NegativeLogLikelihood;
+    %         warning on;
+    % 
+    %     case {'logistic' 'lr'}
+    %         % logistic optimisation 
+    %         e = -( spm_vec(Y)'*log(spm_vec(y)) + (1 - spm_vec(Y))'*log(1-spm_vec(y)) );
+
+
+
+
+

@@ -94,7 +94,7 @@ for k = 1:Nit
     %[u,v] = lu(J');
     %dx    = x0 + (u*u')\(u*v*r);
 
-    vx = diag(cov((J'*iS*J)'));
+    vx = diag(inv((J'*iS*J)'));
 
     subplot(3,2,4);errplot(dx(ip),(vx(ip)));
     title('Parameters: Mean & Variance');drawnow;
@@ -222,6 +222,10 @@ r = (y(:) - m(:)).^2;
 
 % accuracy model
 e =  r(:)'*iS*r(:);
+
+
+
+
 
 %e = KLDiv((iS*y)',(iS*m)');
 

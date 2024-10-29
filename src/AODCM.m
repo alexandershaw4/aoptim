@@ -136,16 +136,14 @@ classdef AODCM < handle
             else;         opts.y   = spm_vec(obj.DCM.xY.y);
             end
             
-            opts.inner_loop  = 10;
+            opts.inner_loop  = 1;
             opts.Q           = [];
             opts.criterion   = -inf;
             opts.min_df      = 1e-12;
-            opts.order       = 2;
+            opts.order       = 1;
             opts.writelog    = 0;
-            opts.objective   = 'fe';
-            opts.step_method = 1;
+            opts.objective   = 'loglik';
             
-            opts.BTLineSearch = 0;
             opts.hyperparams  = 1;
             %if ~isempty(obj.n_it)
             %    opts.maxit = obj.n_it;
@@ -521,31 +519,6 @@ classdef AODCM < handle
                 
                 F = sum( (Y-y).^2 );
 
-                % Yn = Y./sum(Y);
-                % yn = y./sum(y);
-                % 
-                % F = F + 8*sum( (Yn-yn).^2 );
-                % 
-                % F=abs(F);
-    
-                % dgY = VtoGauss(real(Y));
-                % dgy = VtoGauss(real(y));
-                % 
-                % Dg  = (dgY - dgy).^2;
-                % e   = norm(Dg*Dg','fro') ;
-                % 
-                % 
-                % % peaks?
-                % p0  = atcm.fun.indicesofpeaks(real(Y));
-                % p1  = atcm.fun.indicesofpeaks(real(y));
-                % dp = cdist(p0(:),p1(:));
-                % if isvector(dp)
-                %     dp = diag(dp);
-                % end
-                % 
-                %  e   = e * trace(diag(diag(dp)));
-
-               % F=e;
 
             elseif erropt == 2
                 Y = spm_vec(obj.opts.y);
@@ -560,6 +533,25 @@ classdef AODCM < handle
                 if aopt.ahyper
                     e = e + norm(B'*diag(ah)*B,'fro');
                 end
+
+            elseif erropt == 3
+
+                Y = spm_vec(obj.opts.y);
+                y = spm_vec(f(x));
+                %e  = (Y - y);
+                %Q  = obj.opts.Q;
+                %nq = length(Q);
+                %ny = length(e);
+                
+                r = (spm_vec(Y) - spm_vec(y) );
+
+                levidence = log(sum(r.^2));
+
+                divg = mvgkl(aopt.pp(:),inv(aopt.ipC),x(:),Cp);
+
+                e = - divg - levidence;
+                F = -e;
+
 
             end
 
@@ -708,6 +700,11 @@ classdef AODCM < handle
             y  = spm_vec(obj.DCM.xY.y);
 
             [X,F] = aoptim_(fun,x0,V,y,32)
+
+            obj.X = X;
+            obj.F = F;
+
+            obj.Ep = spm_unvec(spm_vec(obj.X),obj.DD.P);
 
         end
 
